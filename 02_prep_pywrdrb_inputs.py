@@ -3,7 +3,7 @@ from pprint import pprint
 
 import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
-from piep import PredictedInflowEnsemblePreprocessor
+from pywrdrb.pre import PredictedInflowEnsemblePreprocessor
 
 
 ensemble_folder = "./pywrdrb/inputs/stationary_ensemble/" 

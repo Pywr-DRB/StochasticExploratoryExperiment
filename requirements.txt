@@ -1,0 +1,5 @@
+numpy
+pandas
+matplotlib
+pywrdrb @ git+https://github.com/Pywr-DRB/Pywr-DRB.git
+sglib @ git+https://github.com/TrevorJA/SGLib.git
