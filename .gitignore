@@ -197,3 +197,6 @@ pywrdrb/figures/
 pywrdrb/outputs/
 pywrdrb/inputs/
 pywrdrb/models/
+borg.py
+/logs/
+logs/

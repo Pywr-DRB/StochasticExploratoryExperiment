@@ -1,8 +1,7 @@
 from sglib import KirschNowakGenerator
 
 class Objectives:
-    def __init__(self, name, functions):
-        self.name = name
+    def __init__(self, functions):
         
         # list of functions
         self.functions = functions
@@ -35,7 +34,7 @@ class Objectives:
     
     
 class Constraints:
-    def __init__(self, name, functions):
+    def __init__(self, functions):
         """Initialize the Constraints class.
         
         Parameters
