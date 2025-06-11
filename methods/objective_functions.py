@@ -25,8 +25,7 @@ def combine_historic_and_synthetic(Qh, Qs):
     array-like
         Combined flow data.
     """
-    Qcombined = Qh.copy()
-    Qcombined = np.concatenate((Qcombined, Qs), axis=0)
+    Qcombined = np.concatenate((Qh, Qs), axis=0)
     return Qcombined.flatten() 
 
 
@@ -47,21 +46,17 @@ def get_drought_metrics(Qh, Qs):
     """
     Qcombined = combine_historic_and_synthetic(Qh, Qs)
     
-    # Convert Qcombined to a pd.Series
-    Qcombined_series = pd.Series(Qcombined, 
-                                 index=pd.date_range(start='1945-01-01', 
-                                                     periods=len(Qcombined), 
-                                                     freq='D'))
-    
     try:
         # Run SSI and drought calculation
         ssi = SSIDroughtMetrics(timescale='M', window=12)
-        ssi_values = ssi.calculate_ssi(data=Qcombined_series)
+        ssi_values = ssi.calculate_ssi(data=Qcombined)
         droughts = ssi.calculate_drought_metrics(ssi_values)
     
         # Keep only the drought in the synthetic period (>2024-01-01)
-        droughts = droughts[droughts['start_date'] >= '2024-01-01']
-
+        droughts = droughts[droughts['start'] >= pd.to_datetime('2024-01-01')]
+    
+        return droughts
+    
     except Exception as e:
         print(f"Error calculating drought metrics: {e}\n\n")
         
@@ -74,8 +69,9 @@ def get_drought_metrics(Qh, Qs):
         print(f'\n   Qcombined max: {np.max(Qcombined)}')
         print(f'\n   Qcombined std: {np.std(Qcombined)}')
         
+        raise e
     
-    return droughts
+    
 
 def mean_drought_severity(Qh, Qs):
     """
@@ -94,6 +90,7 @@ def mean_drought_severity(Qh, Qs):
         Drought severity value.
     """
     droughts = get_drought_metrics(Qh, Qs)
+    
     if droughts.empty:
         return 0.0
     
