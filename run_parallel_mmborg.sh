@@ -2,7 +2,7 @@
 #SBATCH --job-name=BKN
 #SBATCH --output=./logs/Borg.out
 #SBATCH --error=./logs/Borg.err
-#SBATCH --nodes=2
+#SBATCH --nodes=8
 #SBATCH --ntasks-per-node=40
 #SBATCH --exclusive
 
@@ -24,5 +24,10 @@ echo "Total processors: $n_processors"
 # Run with MPI
 time mpirun --oversubscribe -np $n_processors python kirsch_borg_run.py
 
+echo "Generating synthetic ensemble from Borg output solutions..."
+time mpirun --oversubscribe -np $n_processors python kirsch_borg_generate.py
 
-echo "Completed."
+echo "Plotting ensemble diagnostics..."
+time python 02_plot_ensemble_diagnostics.py
+
+echo "Completed!"

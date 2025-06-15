@@ -1,8 +1,7 @@
 import numpy as np
 from methods.load import load_drb_reconstruction
 from methods.moea_generator import Objectives
-from methods.objective_functions import mean_drought_duration, mean_drought_severity, mean_drought_magnitude
-from methods.constraint_functions import ks_constraint, willcoxon_test, uniform_ks_test
+from methods.constraint_functions import uniform_ks_test
 
 from sglib.methods.nonparametric.kirsch import KirschGenerator
 
@@ -26,55 +25,23 @@ n_years_with_buffer = n_years + 1
 
 ##### Borg Settings #########################################
 
-NFE = 1000
+NFE = 50000
 NVARS = int(n_years_with_buffer * 12)  # Each variable represents a month in the n_years period
 BOUNDS = [[0.0, int(np.floor(Q_monthly.shape[0]/12))]] * NVARS # limited by Q_monthly size
 
 ### Objectives
 NOBJS = 4
-EPSILONS = [0.1, 1.0, 1.0, 1.0]
+EPSILONS = [0.01, 1.0, 1.0, 0.01]
 
 ### Borg Settings
 NCONSTRS = 1
-runtime_freq = 250      # output frequency
+runtime_freq = 1000      # output frequency
 islands = 4             # 1 = MW, >1 = MM  # Note the total NFE is islands * nfe
 borg_seed = 711
 
 ### Objective functions ###############################
-# Each function will recieve historic flows (Qh) and synthetic flows (Qs) as input
 
-obj_functions = [mean_drought_severity,
-                 mean_drought_duration,
-                  mean_drought_magnitude]
-
-# The final objective is the Mahalanobis distance from all other objectives and 
-# the x* which is opposite the ideal point.
-# The objectives are all min, so these should be large positive
-x_star = np.array([100, 100, 5])  # Ideal point for the objectives
-
-def manhattan_distance(objs):
-    """
-    Calculate the Mahalanobis distance from the objectives to the ideal point.
-    
-    Parameters:
-    -----------
-    objs : list
-        List of objective values.
-    x_star : array-like
-        Ideal point for the objectives.
-    
-    Returns:
-    --------
-    float
-        Mahalanobis distance from the objectives to the ideal point.
-    """
-    objs = np.array(objs)
-    diff = objs - x_star
-    return np.sqrt(np.sum(diff))
-
-obj_functions.append(manhattan_distance)
-
-obj_func = Objectives(obj_functions)
+obj_func = Objectives(Qh=Q_monthly.squeeze())
 
 
 ### Evaluation function ###################################### 
@@ -106,16 +73,16 @@ def evaluate(*vars):
     M = np.floor(M).astype(int)
     M = np.clip(M, 0, 79)
 
-    constr = uniform_ks_test(M, alpha=0.1)
-    if constr == 0.0:
+    is_uniform = uniform_ks_test(M, alpha=0.1)
+    if not is_uniform:
         # If the constraint is not satisfied, return a large penalty
         objectives = [1e6] * NOBJS
-        return objectives, [constr]
+        return objectives, [1.0]
 
     # Generate a single synthetic trace
     Qs_out = generator.generate_single_series(n_years=n_years,
                                               M=M, 
-                                              as_array=True).flatten()
+                                              as_array=False)
 
 
     # Check if any -np.inf or np.inf values are present in Qs_out
@@ -127,18 +94,12 @@ def evaluate(*vars):
         raise ValueError("Generated synthetic flow contains zero values, which is not allowed.")
     
 
-    # check constraint
-    # constr = ks_constraint(Q_monthly.values.flatten(), Qs_out)
-    # if constr == 0.0:
-    #     # If the constraint is not satisfied, return a large penalty
-    #     objectives = [1e6] * NOBJS
-    #     return objectives, [constr]
-    # else:
     try:
-        objectives = obj_func.value(Qh=Q_monthly.values.flatten(), 
-                                    Qs=Qs_out)
-    
-        print(f"Evaluating: {vars} -> Objectives: {objectives}, Constraint: {constr}")
+        objectives = obj_func.value(Qh=Q_monthly.squeeze(), 
+                                    Qs=Qs_out.squeeze())
+            
+        return objectives, [0.0]
+
     except Exception as e:
         
         print(f"ERROR with:\n\n")  # Debugging output
@@ -148,8 +109,6 @@ def evaluate(*vars):
 
         raise RuntimeError(f"Error evaluating objectives: {e}")
     
-    return objectives, [0.0]
-
 
 # Pack borg settings into dict
 borg_settings = {

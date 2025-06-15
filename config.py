@@ -17,7 +17,6 @@ ensemble_folder = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/stationary_ensembl
 catchment_inflow_ensemble_fname = os.path.abspath(f"{ensemble_folder}/catchment_inflow_mgd.hdf5")
 gage_flow_ensemble_fname = os.path.abspath(f"{ensemble_folder}/gage_flow_mgd.hdf5")
 
-
 RECONSTRUCTION_OUTPUT_FNAME = os.path.abspath(f"{OUTPUT_DIR}/reconstruction.hdf5")
 STATIONARY_ENSEMBLE_OUTPUT_FNAME = os.path.abspath(f"{OUTPUT_DIR}/stationary_ensemble.hdf5")
 

@@ -200,3 +200,4 @@ pywrdrb/models/
 borg.py
 /logs/
 logs/
+/outputs/

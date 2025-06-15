@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.stats import wilcoxon
-from scipy.stats import kstest
 from scipy.stats import uniform, kstest
 
 def uniform_ks_test(M, alpha=0.05):
@@ -12,9 +11,9 @@ def uniform_ks_test(M, alpha=0.05):
     
     # True if distributions are similar
     if p_value < alpha:
-        return 1.0
+        return True
     else:      
-        return 0.0 
+        return False
 
 def ks_constraint(Qh, Qs, alpha=0.1):
     """Two-sample KS test for distribution equality"""
