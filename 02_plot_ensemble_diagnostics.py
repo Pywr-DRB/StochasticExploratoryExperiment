@@ -1,9 +1,9 @@
+#%%
 import numpy as np
 import pandas as pd
 
-from pywrdrb.utils.hdf5 import extract_realization_from_hdf5
-from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 
+from sglib.plotting.monthly_flow_statistics import plot_validation
 from sglib.plotting.plot import plot_autocorrelation, plot_fdc_ranges, plot_flow_ranges
 from sglib.plotting.plot import plot_correlation
 from sglib.plotting.drought import drought_metric_scatter_plot
@@ -12,13 +12,10 @@ from sglib.utils.load import HDF5Manager
 
 from methods.load import load_drb_reconstruction
 from config import gage_flow_ensemble_fname, catchment_inflow_ensemble_fname
-from config import FIG_DIR
+from config import FIG_DIR, pywrdrb_nodes, pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
 
 
-gage_flow_ensemble_fname = "./pywrdrb/inputs/borg_stationary_ensemble/gage_flow_mgd.hdf5"
-catchment_inflow_ensemble_fname = "./pywrdrb/inputs/borg_stationary_ensemble/catchment_inflow_mgd.hdf5"
-
-
+#%%
 ### Loading data
 ## Historic reconstruction data
 # Total flow
@@ -46,17 +43,35 @@ realization_ids = Qs_gageflow.realization_ids
 n_realizations = len(realization_ids)
 
 
-# Qs_inflows = hdf_manager.load_ensemble(catchment_inflow_ensemble_fname)
-# Qs_inflows = Qs_inflows.data_by_site
-# inflow_ensemble = Qs_inflows.data_by_realization
 
+#%% Plot statistical validation
+for site in pywrdrb_nodes:
+
+    if site == 'delTrenton':
+        continue
+    
+    logscale = False
+    
+    fname = f"{site}_log.png" if logscale else f"{site}.png"
+    fname = f"{FIG_DIR}/statistical_validation/{fname}"
+    
+    plot_validation(H_df=Q.loc[:, [site]], 
+                    S_df=Q_syn[site].loc[:'2019-12-31', :],
+                    scale='monthly',
+                    logspace=logscale,
+                    fname=fname,
+                    sitename=site)
+                            
+
+
+#%%
 
 print(f"Loaded synthetic ensemble with {n_realizations} realizations for {len(Q_syn)} sites.")
 
 ### SSI Drought Metrics
 drought_calculator = SSIDroughtMetrics()
 
-ssi_calculator = SSI()
+ssi_calculator = SSI(normal_scores_transform=False)
 ssi_calculator.fit(Q_monthly.loc[:,'delMontague'])
 
 ssi_obs = ssi_calculator.get_training_ssi()
@@ -95,51 +110,63 @@ for i in realization_ids:
         syn_droughts = pd.concat([syn_droughts, 
                                   drought_chars], axis=0)
 
-print(f"Calculated SSI drought metrics for {n_realizations} realizations.")
-print(f"Observed drought metrics: {obs_droughts.shape[0]} events")
-print(f"Synthetic drought metrics: {syn_droughts.shape[0]} events")
-print(f"syn_droughts columns: {syn_droughts.columns.tolist()}")
+# save drought metrics
+obs_droughts.reset_index(inplace=True, drop=True)
+obs_droughts.to_csv(f"./pywrdrb/drought_metrics/observed_drought_events.csv")
+
+syn_droughts.reset_index(inplace=True, drop=True)
+syn_droughts.to_csv(f"./pywrdrb/drought_metrics/synthetic_drought_events.csv")
+
+
+## Plot scatter of drought metrics
+fname = f"delMontague_stationary_drought_metrics_scatter.png"
+fname = f"{FIG_DIR}/drought_metrics/{fname}"
 
 drought_metric_scatter_plot(obs_droughts, 
                             syn_drought_metrics=syn_droughts, 
-                            x_char='severity', y_char='magnitude', color_char='duration',
-                            fname=f"{FIG_DIR}/borg_stationary_drought_metrics_scatter.png")
+                            x_char='severity', 
+                            y_char='magnitude', 
+                            color_char='duration',
+                            fname=fname)
+
+
+#%% Plotting
+
+## Spatial correlation of flows
+
+Qs_df = syn_ensemble[realization_ids[0]].drop(columns=['delTrenton', 'datetime'])
+Qs_df = Qs_df.loc[:, Q.columns]
+
+fname = f"gage_flow_ensemble_syn.png"
+fname = f"{FIG_DIR}/spatial_correlation/{fname}"
+plot_correlation(Q, Qs_df,
+                 savefig=True,
+                 fname=fname)
 
 
 
-# print(f"Historic flow columns: {Q.columns.tolist()}")
-# print(f"Ensemble flow columns: {syn_ensemble[realization_ids[0]].columns.tolist()}")
+#%%
+for plot_site in ['cannonsville', '01425000', 'delLordville', 'delMontague', 'delDRCanal']:
+
+    fname = f"{site}_gage_flow.png"
+    fname = f"{FIG_DIR}/autocorrelation/{fname}"
+    plot_autocorrelation(Q.loc[:, plot_site], 
+                        Q_syn[plot_site], 
+                        lag_range=np.arange(1,60, 5), timestep='daily',
+                        savefig=True,
+                        fname=fname)
 
 
-# ### Plotting
-# plot_correlation(Q, syn_ensemble[realization_ids[0]],
-#                  savefig=True,
-#                  fname=f"{FIG_DIR}gage_correlation_syn.png")
-
-# plot_correlation(Q_inflows, inflow_ensemble[realization_ids[0]].loc[:, Q_inflows.columns],
-#                     savefig=True,
-#                     fname=f"{FIG_DIR}inflow_correlation_syn.png")
-
-# for plot_site in ['delLordville', 'delMontague', 'delDRCanal']:
-
-#     plot_autocorrelation(Q.loc[:, plot_site], 
-#                         Q_syn[plot_site], 
-#                         lag_range=np.arange(1,60, 5), timestep='daily',
-#                         savefig=True,
-#                         fname=f"{FIG_DIR}gage_autocorr_{plot_site}_syn.png",)
-
-#     plot_flow_ranges(Q.loc[:,plot_site], 
-#                     Q_syn[plot_site], 
-#                     timestep='daily',
-#                     savefig=True,
-#                     fname=f"{FIG_DIR}gage_flow_ranges_{plot_site}_syn.png",)
-
-#     plot_fdc_ranges(Q_inflows.loc[:,plot_site], 
-#                     Qs_inflows[plot_site],
-#                     savefig=True,
-#                     fname=f"{FIG_DIR}inflow_fdc_{plot_site}.png",)
-
-#     plot_fdc_ranges(Q.loc[:,plot_site],
-#                     Q_syn[plot_site],
-#                     savefig=True,
-#                     fname=f"{FIG_DIR}gage_flow_fdc_{plot_site}_syn.png",)
+    plot_flow_ranges(Q.loc[:,plot_site], 
+                    Q_syn[plot_site], 
+                    timestep='monthly',
+                    y_scale='linear',
+                    savefig=True,
+                    fname=f"{FIG_DIR}/gage_flow_ranges_{plot_site}_syn.png",)
+    
+    plot_flow_ranges(np.log(Q.loc[:,plot_site]), 
+                    np.log(Q_syn[plot_site]), 
+                    timestep='monthly',
+                    y_scale='linear',
+                    savefig=True,
+                    fname=f"{FIG_DIR}/gage_log_flow_ranges_{plot_site}_syn.png",)

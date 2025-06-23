@@ -5,21 +5,22 @@ import matplotlib.pyplot as plt
 
 
 from sglib.utils.load import HDF5Manager
-from sglib.utils.load import load_drb_reconstruction
 from sglib.plotting.plot import plot_fdc_ranges
+from methods.load import load_drb_reconstruction
 from config import gage_flow_ensemble_fname, catchment_inflow_ensemble_fname
 from config import FIG_DIR
+from config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
 
 ### Loading data
 ## Historic reconstruction data
 # Total flow
 Q = load_drb_reconstruction()
-Q.replace(0, np.nan, inplace=True)
+# Q.replace(0, np.nan, inplace=True)
 Q.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
 
 # Catchment inflows
 Q_inflows = load_drb_reconstruction(gage_flow=False)
-Q_inflows.replace(0, np.nan, inplace=True)
+# Q_inflows.replace(0, np.nan, inplace=True)
 Q_inflows.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
 
 print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
@@ -63,7 +64,7 @@ for combination in plot_combinations:
         ax = axs[i // ncols, i % ncols]
         
         plot_fdc_ranges(Qh.loc[:, site],
-                        Qs[site].replace(0, np.nan),
+                        Qs[site],
                         legend=False,
                         ax=ax,
                         title=site,

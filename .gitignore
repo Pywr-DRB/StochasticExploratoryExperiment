@@ -201,3 +201,4 @@ borg.py
 /logs/
 logs/
 /outputs/
+/archive/
