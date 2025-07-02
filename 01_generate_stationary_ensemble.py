@@ -21,7 +21,6 @@ Q_inflow = load_drb_reconstruction(gage_flow=False)
 Q_all =  Q.copy()
 
 Q = Q.loc[:, pywrdrb_nodes_to_generate]
-Q.drop(columns=['delTrenton'], inplace=True) # delTrenton doesn't get inflow (it goes to delDRCanal)
 print(f"Loaded streamflow data.")
 
 #%% Generation  ##################################
@@ -36,58 +35,10 @@ print("Fitting the model...")
 kn_gen.fit()
 
 #%%
-# M=None
-# n_years = 50
-# n_realizations = 10
-
-# n_years_buffered = n_years + 1
-# if not kn_gen.fitted:
-#     raise RuntimeError("Call preprocessing() and fit() before generate().")
-
-# if M is None:
-#     M = kn_gen._get_bootstrap_indices(n_years_buffered, max_idx=kn_gen.Y.shape[0])
-# else:
-#     M = np.asarray(M)
-#     if M.shape != (n_years_buffered, kn_gen.n_months):
-#         raise ValueError(f"M must have shape ({n_years_buffered}, {kn_gen.n_months})")
-
-# M_prime = M[:kn_gen.Y_prime.shape[0], :]
-
-# X = kn_gen._create_bootstrap_tensor(M, use_Y_prime=False)
-# X_prime = kn_gen._create_bootstrap_tensor(M_prime, use_Y_prime=True)
-
-# Z = np.zeros_like(X)
-# Z_prime = np.zeros_like(X_prime)
-
-# for s in range(kn_gen.n_sites):
-#     Z[:, :, s] = X[:, :, s] @ kn_gen.U_site[s]
-#     Z_prime[:, :, s] = X_prime[:, :, s] @ kn_gen.U_prime_site[s]
-
-
-# ZC = kn_gen._combine_Z_and_Z_prime(Z, Z_prime)
-# Q_syn = kn_gen._destandardize_flows(ZC)
-
-
-# Q_syn = np.exp(Q_syn)
-
-# Q_flat = kn_gen._reshape_output(Q_syn)
-
-# synthetic_index = kn_gen._get_synthetic_index(n_years)
-# Qs = pd.DataFrame(Q_flat, columns=kn_gen.site_names, index=synthetic_index)
-
-
-# Qs_monthly = Qs.groupby([Qs.index.year, Qs.index.month]).sum()
-# Qs_monthly.index = pd.MultiIndex.from_tuples(Qs_monthly.index, names=['year', 'month'])
-# Qsm = Qs_monthly
-# Qsm = np.log(Qsm.clip(lower=1e-6))  # Avoid log(0) issues
-
-
-# s_mean_month = Qsm.groupby(level='month').mean()
-#%%
-# Generate 10 years
+# Generate
 print("Generating synthetic ensemble...")
-n_years = 50
-n_realizations = 10
+n_years = 70
+n_realizations = 800
 syn_ensemble = kn_gen.generate(n_realizations=n_realizations,
                                 n_years=n_years, 
                                 as_array=False)

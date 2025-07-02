@@ -16,12 +16,12 @@ pn_config["flows/stationary_ensemble"] = os.path.abspath(ensemble_folder)
 pywrdrb.load_pn_config(pn_config)
 
 
-realization_ids = get_hdf5_realization_numbers(ensemble_fname)
+realization_ids = get_hdf5_realization_numbers(catchment_inflow_ensemble_fname)
 
 # Initialize the preprocessor
 preprocessor = PredictedInflowEnsemblePreprocessor(
     flow_type="stationary_ensemble",
-    ensemble_hdf5_file=ensemble_fname,
+    ensemble_hdf5_file=catchment_inflow_ensemble_fname,
     realization_ids=realization_ids,  
     start_date=None,  # Use full range
     end_date=None,

@@ -37,6 +37,9 @@ pywrdrb_nodes_to_generate = [
     n for n in pywrdrb_nodes if n[0] != '0'
 ]
 
+pywrdrb_nodes_to_generate.remove('delTrenton')
+
+
 pywrdrb_nodes_to_regress = [
     n for n in pywrdrb_nodes if n[0] == '0'
 ]

@@ -163,6 +163,56 @@ def add_trenton_equiv_flow(data):
     return data
 
 
+def get_flow_and_target_values(data, 
+                               node, 
+                               model, 
+                               realization,
+                               start_date,
+                               end_date):
+    
+    m = model
+    r = realization
+    
+    # Shortage at flow target locations
+    if node in ['delTrenton', 'delMontague']:        
+        if node == 'delTrenton':
+            # For delTrenton, we use the delTrenton_equiv flow
+            flows = data.major_flow[m][r]['delTrenton_equiv']
+        elif node == 'delMontague':
+            # For Montague, we use the major flow directly
+            flows = data.major_flow[m][r][node]
+            
+        # for observational data, we don't have the mrf_target
+        # in this case, we want to use targets from the reconstruction period
+        # this should be the best match for the change in flow targets requirements
+        if m == 'obs':
+            use_model = 'reconstruction'
+            thresholds = data.mrf_target[use_model][r][node]
+            
+        # otherwise, use the simulated mrf_target
+        else:
+            thresholds = data.mrf_target[m][r][node]
+        
+        # subset the timeseries to the specified date range
+        flows = subset_timeseries(flows, start_date, end_date)
+        thresholds = subset_timeseries(thresholds, start_date, end_date)        
+        
+    # Shortage of diversions for NYC and NJ diversions
+    elif node in ['nyc', 'nj']:
+        ibt_diversions = data.ibt_diversions[m][r]
+        ibt_demands = data.ibt_demands[m][r]
+        flows = subset_timeseries(ibt_diversions[f'delivery_{node}'], start_date, end_date)
+        thresholds = subset_timeseries(ibt_demands[f'demand_{node}'], start_date, end_date)
+
+    # Not currently supported for any other nodes
+    else:
+        raise ValueError(f"Not setup to handle node {node} in get_flow_and_target_values().")
+    
+    return flows, thresholds
+    
+
+
+
 def get_shortfall_metrics(data, 
                           nodes,
                           models = None, 
@@ -174,7 +224,7 @@ def get_shortfall_metrics(data,
     """
 
     """
-    
+
     ### Check inputs
     # List of results_sets which are used in the calculation.
     # each of these should be an attribute of the data object.    
@@ -257,42 +307,15 @@ def get_shortfall_metrics(data,
                     start_date = '1960-01-01'
                     end_date = '2023-12-31'
                 
-                # Shortage at flow target locations
-                if node in ['delTrenton', 'delMontague']:        
-                    if node == 'delTrenton':
-                        # For delTrenton, we use the delTrenton_equiv flow
-                        flows = data.major_flow[m][r]['delTrenton_equiv']
-                    elif node == 'delMontague':
-                        # For Montague, we use the major flow directly
-                        flows = data.major_flow[m][r][node]
-                        
-                    # for observational data, we don't have the mrf_target
-                    # in this case, we want to use targets from the reconstruction period
-                    # this should be the best match for the change in flow targets requirements
-                    if m == 'obs':
-                        use_model = 'reconstruction'
-                        thresholds = data.mrf_target[use_model][r][node] * shortfall_threshold - eps
-                        
-                    # otherwise, use the simulated mrf_target
-                    else:
-                        thresholds = data.mrf_target[m][r][node] * shortfall_threshold - eps
-                    
-                    # subset the timeseries to the specified date range
-                    flows = subset_timeseries(flows, start_date, end_date)
-                    thresholds = subset_timeseries(thresholds, start_date, end_date)        
-                 
-                # Shortage of diversions for NYC and NJ diversions
-                elif node in ['nyc', 'nj']:
-                    ibt_diversions = data.ibt_diversions[m][r]
-                    ibt_demands = data.ibt_demands[m][r]
-                    flows = subset_timeseries(ibt_diversions[f'delivery_{node}'], start_date, end_date)
-                    thresholds = subset_timeseries(ibt_demands[f'demand_{node}'], start_date, end_date) * \
-                                shortfall_threshold - eps
 
-                # Not currently supported for any other nodes
-                else:
-                    raise ValueError(f"Not setup to handle node {node} in get_shortfall_metrics().")
-                    
+                # Get the flow and target values for this node, model, and realization
+                flows, thresholds = get_flow_and_target_values(data, node,
+                                                                m, r,
+                                                                start_date, end_date)
+                
+                # Apply the shortfall threshold
+                # This is only applied to the thresholds, not the flows.
+                thresholds = thresholds * shortfall_threshold - eps
 
                 ### Calculate Hashimoto metrics for specific flow and threshold
                 # This function expects both flows and thresholds to be pandas 
@@ -341,3 +364,39 @@ def get_shortfall_metrics(data,
 
     return shortage_event_dict, reliability_dict, resiliency_dict
 
+
+def calculate_shortage_magnitude_and_percentile_matrix(data, node, model):
+    """
+    Based on simulated flows and targets for a given node and model, 
+    this function calculates shortage across different metrics. 
+    
+    The output matrix contains dimensions:
+    - Magnitude of shortage [0, ..., max_shortage]
+    - Percentile of shortage [0, ..., 100]
+    - Frequency of shortage [0, ..., 1] across magnitude and percentiles
+    
+    """
+    
+    # Start by making a matrix of flows and target values across all realizations
+    realizations = list(data.major_flow[model].keys())
+    
+    flows = []
+    targets = []
+    for r in realizations:
+        # Get the flow and target values for this node, model, and realization
+        flow_series, target_series = get_flow_and_target_values(data, node,
+                                                                model, r,
+                                                                start_date=None, 
+                                                                end_date=None)
+        flows.append(flow_series.values)
+        targets.append(target_series.values)
+    
+    # Convert to numpy arrays
+    flows = np.array(flows)
+    targets = np.array(targets)
+    shortage = targets - flows
+
+    percentiles = np.arange(0, 101, 1) / 100.0
+    max_shortage = np.max(shortage)
+    
+    

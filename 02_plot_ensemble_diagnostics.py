@@ -10,27 +10,26 @@ from sglib.plotting.drought import drought_metric_scatter_plot
 from sglib.droughts.ssi import SSIDroughtMetrics, SSI
 from sglib.utils.load import HDF5Manager
 
+from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.load import load_drb_reconstruction
 from config import gage_flow_ensemble_fname, catchment_inflow_ensemble_fname
 from config import FIG_DIR, pywrdrb_nodes, pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
 
 
-#%%
 ### Loading data
 ## Historic reconstruction data
 # Total flow
 Q = load_drb_reconstruction()
 Q.replace(0, np.nan, inplace=True)
 Q.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
+Q_monthly = Q.resample('MS').sum()
 
 # Catchment inflows
 Q_inflows = load_drb_reconstruction(gage_flow=False)
 Q_inflows.replace(0, np.nan, inplace=True)
 Q_inflows.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
-Q_monthly = Q.resample('MS').sum()
 
 print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
-
 
 
 ## Synthetic ensemble
@@ -39,8 +38,55 @@ Qs_gageflow = hdf_manager.load_ensemble(gage_flow_ensemble_fname)
 Q_syn = Qs_gageflow.data_by_site
 syn_ensemble = Qs_gageflow.data_by_realization
 
+Q_syn_monthly = {k: v.resample('MS').sum() for k, v in Q_syn.items()}
+
 realization_ids = Qs_gageflow.realization_ids
 n_realizations = len(realization_ids)
+
+
+#%% Gridded FDCs
+
+# For the gridded FDCs and autocorrelation plots, 
+# create 4 versions of each plot:
+# - daily gage flows for major nodes
+# - daily gage flows for minor nodes
+# - monthly gage flows for major nodes
+# - monthly gage flows for minor nodes
+
+# Loop through these, and each filename is:
+#   {daily|monthly}_gage_flow_{major|minor}_nodes.png
+
+for freq in ['daily', 'monthly']:
+
+    # Use daily or monthly flows
+    if freq == 'daily':
+        Qs = Q_syn
+        Qh = Q
+    else:
+        Qs = Q_syn_monthly
+        Qh = Q_monthly
+        
+
+    # Subsets of nodes based on generation methods
+    for node_type in ['major', 'minor']:
+        if node_type == 'major':
+            nodes = pywrdrb_nodes_to_generate
+        else:
+            nodes = pywrdrb_nodes_to_regress
+        
+        # Gridded FDC plot
+        fn = f"{freq}_gage_flow_{node_type}_nodes.png"
+        fname = f"{FIG_DIR}/fdc/{fn}"
+        plot_fdc_gridded(Qh.loc[:, nodes], 
+                         Qs=Qs,
+                         fname=fname)
+        
+        # Gridded autocorrelation plot
+        fname = f"{FIG_DIR}/autocorrelation/{fn}"
+        plot_autocorrelation_gridded(Qh.loc[:, nodes],
+                                     Qs=Qs,
+                                     fname=fname)        
+
 
 
 
@@ -61,8 +107,6 @@ for site in pywrdrb_nodes:
                     logspace=logscale,
                     fname=fname,
                     sitename=site)
-                            
-
 
 #%%
 
@@ -137,36 +181,39 @@ drought_metric_scatter_plot(obs_droughts,
 Qs_df = syn_ensemble[realization_ids[0]].drop(columns=['delTrenton', 'datetime'])
 Qs_df = Qs_df.loc[:, Q.columns]
 
-fname = f"gage_flow_ensemble_syn.png"
+
+fname = f"daily_gage_flow_major_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-plot_correlation(Q, Qs_df,
+plot_correlation(Q.loc[:, pywrdrb_nodes_to_generate], 
+                 Qs_df.loc[:, pywrdrb_nodes_to_generate],
+                 savefig=True,
+                 fname=fname)
+
+# Repeat for monthly flows
+Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
+Qs_monthly_df = Qs_df.resample('MS').sum()
+fname = f"monthly_gage_flow_major_nodes.png"
+fname = f"{FIG_DIR}/spatial_correlation/{fname}"
+plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate], 
+                 Qs_monthly_df.loc[:, pywrdrb_nodes_to_generate],
+                 savefig=True,
+                 fname=fname)
+
+
+# repeat for minor nodes
+fname = f"daily_gage_flow_minor_nodes.png"
+fname = f"{FIG_DIR}/spatial_correlation/{fname}"
+plot_correlation(Q.loc[:, pywrdrb_nodes_to_regress], 
+                 Qs_df.loc[:, pywrdrb_nodes_to_regress],
+                 savefig=True,
+                 fname=fname)
+
+fname = f"monthly_gage_flow_minor_nodes.png"
+fname = f"{FIG_DIR}/spatial_correlation/{fname}"
+plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_regress], 
+                 Qs_monthly_df.loc[:, pywrdrb_nodes_to_regress],
                  savefig=True,
                  fname=fname)
 
 
 
-#%%
-for plot_site in ['cannonsville', '01425000', 'delLordville', 'delMontague', 'delDRCanal']:
-
-    fname = f"{site}_gage_flow.png"
-    fname = f"{FIG_DIR}/autocorrelation/{fname}"
-    plot_autocorrelation(Q.loc[:, plot_site], 
-                        Q_syn[plot_site], 
-                        lag_range=np.arange(1,60, 5), timestep='daily',
-                        savefig=True,
-                        fname=fname)
-
-
-    plot_flow_ranges(Q.loc[:,plot_site], 
-                    Q_syn[plot_site], 
-                    timestep='monthly',
-                    y_scale='linear',
-                    savefig=True,
-                    fname=f"{FIG_DIR}/gage_flow_ranges_{plot_site}_syn.png",)
-    
-    plot_flow_ranges(np.log(Q.loc[:,plot_site]), 
-                    np.log(Q_syn[plot_site]), 
-                    timestep='monthly',
-                    y_scale='linear',
-                    savefig=True,
-                    fname=f"{FIG_DIR}/gage_log_flow_ranges_{plot_site}_syn.png",)
