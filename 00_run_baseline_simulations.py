@@ -1,16 +1,27 @@
 import pywrdrb
+from mpi4py import MPI
 
 # Set warning level to error
 import warnings
 warnings.filterwarnings("ignore")
 
+# MPI initialization
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
 # Flow scenarios
 model_date_ranges = pywrdrb.utils.dates.model_date_ranges
 flowtypes = list(model_date_ranges.keys())
 
-if __name__ == "__main__":
+# Split flowtypes among MPI ranks
+# size >> len(flowtypes), so many ranks will not have any flowtypes
+rank_flowtypes = flowtypes[rank::size] if rank < len(flowtypes) else []
 
-    for  flow in flowtypes:
+if __name__ == "__main__":
+    
+    for flow in rank_flowtypes:
+        print(f"Rank {rank} running pywrdrb with flow type: {flow}")
 
         # Get simulation period
         start_date, end_date = model_date_ranges[flow]
@@ -38,8 +49,5 @@ if __name__ == "__main__":
             output_filename=output_filename,
         )
 
-        # Execute the simulation
-        print(f"Running simulation with {flow} inflows...")
+        # Run the simulation
         stats = model.run()
-        
-    print('Done running pywrdrb simulations.')

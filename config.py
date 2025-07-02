@@ -21,6 +21,18 @@ gage_flow_ensemble_fname = os.path.abspath(f"{ensemble_folder}/gage_flow_mgd.hdf
 RECONSTRUCTION_OUTPUT_FNAME = os.path.abspath(f"{OUTPUT_DIR}/reconstruction.hdf5")
 STATIONARY_ENSEMBLE_OUTPUT_FNAME = os.path.abspath(f"{OUTPUT_DIR}/stationary_ensemble.hdf5")
 
+# Dictionary with hierarchy of folders and files
+FILES = {
+    "pywrdrb" : {
+        "inputs": {
+            "stationary_ensemble": {
+                "catchment_inflow_mgd": catchment_inflow_ensemble_fname,
+                "gage_flow_mgd": gage_flow_ensemble_fname,
+            },
+        },
+    }
+}
+
 
 # Setup pathnavigator
 pn_config = pywrdrb.get_pn_config()

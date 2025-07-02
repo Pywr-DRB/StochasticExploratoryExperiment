@@ -13,7 +13,7 @@ from sglib.utils.load import HDF5Manager
 
 from methods.load import load_drb_reconstruction
 from config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
-
+from config import N_REALIZATIONS, N_YEARS
 
 #%% Loading data ##################################
 Q = load_drb_reconstruction(gage_flow=True)
@@ -37,8 +37,8 @@ kn_gen.fit()
 #%%
 # Generate
 print("Generating synthetic ensemble...")
-n_years = 70
-n_realizations = 800
+n_years = N_YEARS
+n_realizations = N_REALIZATIONS
 syn_ensemble = kn_gen.generate(n_realizations=n_realizations,
                                 n_years=n_years, 
                                 as_array=False)
