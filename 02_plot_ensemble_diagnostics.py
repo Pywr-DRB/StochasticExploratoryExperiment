@@ -1,7 +1,8 @@
 #%%
 import numpy as np
 import pandas as pd
-
+import warnings
+warnings.filterwarnings("ignore")
 
 from sglib.plotting.monthly_flow_statistics import plot_validation
 from sglib.plotting.plot import plot_autocorrelation, plot_fdc_ranges, plot_flow_ranges
@@ -178,9 +179,7 @@ drought_metric_scatter_plot(obs_droughts,
 
 ## Spatial correlation of flows
 
-Qs_df = syn_ensemble[realization_ids[0]].drop(columns=['delTrenton', 'datetime'])
-Qs_df = Qs_df.loc[:, Q.columns]
-
+Qs_df = syn_ensemble[realization_ids[0]].loc[:, Q.columns]
 
 fname = f"daily_gage_flow_major_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"

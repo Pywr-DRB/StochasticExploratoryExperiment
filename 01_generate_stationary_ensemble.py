@@ -15,6 +15,7 @@ from methods.load import load_drb_reconstruction
 from config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
 from config import N_REALIZATIONS, N_YEARS
 
+
 #%% Loading data ##################################
 Q = load_drb_reconstruction(gage_flow=True)
 Q_inflow = load_drb_reconstruction(gage_flow=False)

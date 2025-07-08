@@ -2,12 +2,11 @@ import os
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 
-N_YEARS = 50
-N_REALIZATIONS = 10
+N_YEARS = 70
+N_REALIZATIONS = 100
 
-START_DATE = '1970-01-01'
+START_DATE = '1950-01-01'
 END_DATE = '2019-12-31'
-SITE_SUBSET = ['cannonsville', 'pepacton', 'neversink']
 
 # get directory of this file
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))

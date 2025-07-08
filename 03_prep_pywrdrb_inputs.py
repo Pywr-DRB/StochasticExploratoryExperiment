@@ -1,6 +1,4 @@
 import os
-from pprint import pprint
-
 import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 from pywrdrb.pre import PredictedInflowEnsemblePreprocessor
@@ -16,22 +14,23 @@ pn_config["flows/stationary_ensemble"] = os.path.abspath(ensemble_folder)
 pywrdrb.load_pn_config(pn_config)
 
 
-realization_ids = get_hdf5_realization_numbers(catchment_inflow_ensemble_fname)
+if __name__ == "__main__":
+    realization_ids = get_hdf5_realization_numbers(catchment_inflow_ensemble_fname)
 
-# Initialize the preprocessor
-preprocessor = PredictedInflowEnsemblePreprocessor(
-    flow_type="stationary_ensemble",
-    ensemble_hdf5_file=catchment_inflow_ensemble_fname,
-    realization_ids=realization_ids,  
-    start_date=None,  # Use full range
-    end_date=None,
-    modes=('regression_disagg',),
-    use_log=True,
-    remove_zeros=False,
-    use_const=False,
-    use_mpi=False
-)
+    # Initialize the preprocessor
+    preprocessor = PredictedInflowEnsemblePreprocessor(
+        flow_type="stationary_ensemble",
+        ensemble_hdf5_file=catchment_inflow_ensemble_fname,
+        realization_ids=realization_ids,  
+        start_date=None,  # Use full range
+        end_date=None,
+        modes=('regression_disagg',),
+        use_log=True,
+        remove_zeros=False,
+        use_const=False,
+        use_mpi=True
+    )
 
-preprocessor.load()
-preprocessor.process()
-preprocessor.save()
+    preprocessor.load()
+    preprocessor.process()
+    preprocessor.save()

@@ -197,6 +197,7 @@ pywrdrb/figures/
 pywrdrb/outputs/
 pywrdrb/inputs/
 pywrdrb/models/
+pywrdrb/*
 borg.py
 /logs/
 logs/
