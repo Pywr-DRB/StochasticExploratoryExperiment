@@ -1,6 +1,11 @@
 import pywrdrb
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from datetime import datetime, timedelta
 
 inflow_type = 'stationary_ensemble'
 output_fname = f"./pywrdrb/outputs/{inflow_type}.hdf5"
@@ -14,51 +19,25 @@ realization_ids = list(data.major_flow[inflow_type].keys())
 
 nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
 
-# Plot the aggregate NYC reservoir storage 
-# for each realization and for each year
-fig, ax = plt.subplots(figsize=(10, 6))
-for realization_id in realization_ids:
-    df_storage = data.res_storage[inflow_type][realization_id]
-    
-    # calculate nyc total storge
-    df_storage['nyc_agg'] = df_storage[nyc_reservoirs].sum(axis=1)
+# Make a df with nyc_agg storage for all realizations
+df_nyc_storage = data.res_storage[inflow_type][realization_ids[0]][nyc_reservoirs].sum(axis=1)
 
-    years = df_storage.index.year.unique()
-    
-    # For each year, plot the annual storage series
-    # make x axis from 1-365
-    for y in years:
-        df_year = df_storage[df_storage.index.year == y]
-        xs = np.arange(1, len(df_year) + 1)
-        ax.plot(xs, df_year['nyc_agg'], 
-                color='darkorange', 
-                alpha=0.2)
-
-# save
-plt.savefig('nyc_reservoir_storage_ensemble.png', dpi=300, bbox_inches='tight')
+df_nyc_storage = pd.DataFrame(df_nyc_storage, columns=[realization_ids[0]])
+for realization_id in realization_ids[1:]:
+    df_storage = data.res_storage[inflow_type][realization_id][nyc_reservoirs].copy()
+    df_nyc_storage[realization_id] = df_storage.sum(axis=1)
 
 
 
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from datetime import datetime, timedelta
 
 # Assuming df is your DataFrame with N columns (realizations) and M rows (days)
 # Convert index to day of year if not already done
 
-df = data.res_storage[inflow_type][0]  # Use the first realization for demonstration
-# add all realizations as columns
-for realization_id in realization_ids[1:]:
-    df_realization = data.res_storage[inflow_type][realization_id]
-    df = pd.concat([df, df_realization], axis=1)
-
+df = df_nyc_storage.copy()
 df['day_of_year'] = pd.to_datetime(df.index).dayofyear
 
 # Create storage bins for frequency calculation
-n_bins = 50  # Adjust based on your data range
+n_bins = 10  # Adjust based on your data range
 storage_min, storage_max = df.iloc[:, :-1].min().min(), df.iloc[:, :-1].max().max()
 storage_bins = np.linspace(storage_min, storage_max, n_bins)
 
@@ -69,7 +48,7 @@ freq_matrix = np.zeros((len(storage_bins)-1, len(days)))
 for i, day in enumerate(days):
    day_data = df[df['day_of_year'] == day].iloc[:, :-1].values.flatten()
    if len(day_data) > 0:
-       hist, _ = np.histogram(day_data, bins=storage_bins)
+       hist, _ = np.histogram(day_data, bins=storage_bins, density=True)
        freq_matrix[:, i] = hist
 
 # Create meshgrid for plotting
