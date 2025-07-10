@@ -29,6 +29,10 @@ assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \
 assert N_REALIZATIONS_PER_ENSEMBLE_SET % N_REALIZATIONS_PER_PYWRDRB_BATCH == 0, \
     "N_REALIZATIONS_PER_ENSEMBLE_SET must be divisible by N_REALIZATIONS_PER_PYWRDRB_BATCH"
 
+ensemble_type_opts = [
+    'stationary',
+    'climate_adjusted'
+]
 
 # =============================================================================
 # PARALLEL PROCESSING
@@ -101,11 +105,19 @@ def get_ensemble_set_output_fname(set_id):
 class EnsembleSetSpec:
     """Specification for a single ensemble set"""
     
-    def __init__(self, set_id):
+    def __init__(self, set_id, type='stationary'):
+        
+
+        assert type in ensemble_type_opts, \
+            f"Invalid ensemble type passed to Ensemble Set Spec: {type}. Must be one of {ensemble_type_opts}"
+        
+        self.type = type
         self.set_id = set_id
         self.start_realization = set_id * N_REALIZATIONS_PER_ENSEMBLE_SET
         self.end_realization = (set_id + 1) * N_REALIZATIONS_PER_ENSEMBLE_SET
         self.n_realizations = N_REALIZATIONS_PER_ENSEMBLE_SET
+        self.realizations = self.get_realization_ids()
+        
         
         # File paths
         self.directory = get_ensemble_set_dir(set_id)
@@ -131,6 +143,7 @@ class EnsembleSetSpec:
             
             batches.append({
                 'batch_id': batch_id,
+                'type': self.type,
                 'set_id': self.set_id,
                 'local_start': batch_start,
                 'local_end': batch_end,
@@ -151,8 +164,13 @@ class EnsembleSetSpec:
         return list(range(self.n_realizations))
 
 # Create all ensemble set specifications
-ENSEMBLE_SETS = [EnsembleSetSpec(i) for i in range(N_ENSEMBLE_SETS)]
+STATIONARY_ENSEMBLE_SETS = [
+    EnsembleSetSpec(i, type='stationary') for i in range(N_ENSEMBLE_SETS)
+    ]
 
+CLIMATE_ADJUSTED_ENSEMBLE_SETS = [
+    EnsembleSetSpec(i, type='climate_adjusted') for i in range(N_ENSEMBLE_SETS)
+    ]
 
 # =============================================================================
 # PYWR-DRB CONFIGURATION
@@ -185,11 +203,19 @@ SAVE_RESULTS_SETS = [
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def get_ensemble_set_spec(set_id):
+def get_ensemble_set_spec(set_id, type='stationary'):
     """Get ensemble set specification by ID"""
     if set_id < 0 or set_id >= N_ENSEMBLE_SETS:
         raise ValueError(f"set_id must be between 0 and {N_ENSEMBLE_SETS-1}")
-    return ENSEMBLE_SETS[set_id]
+    
+    if type == 'stationary':
+        return STATIONARY_ENSEMBLE_SETS[set_id]
+    
+    elif type == 'climate_adjusted':
+        return CLIMATE_ADJUSTED_ENSEMBLE_SETS[set_id]
+    
+    else:
+        raise ValueError(f"Invalid ensemble type: {type}")
 
 def get_target_ensemble_sets():
     """Get list of ensemble set IDs to process"""
@@ -204,28 +230,43 @@ def ensure_ensemble_set_dirs():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
     
-    for ensemble_set in ENSEMBLE_SETS:
+    for ensemble_set in STATIONARY_ENSEMBLE_SETS:
         os.makedirs(ensemble_set.directory, exist_ok=True)
 
-def get_all_ensemble_output_files():
-    """Get list of all ensemble set output files"""
-    return [spec.output_file for spec in ENSEMBLE_SETS]
+    for ensemble_set in CLIMATE_ADJUSTED_ENSEMBLE_SETS:
+        os.makedirs(ensemble_set.directory, exist_ok=True)
 
-def get_existing_ensemble_sets():
+
+def get_all_ensemble_output_files(type='stationary'):
+    """Get list of all ensemble set output files"""
+
+    if type == 'stationary':
+        return [spec.output_file for spec in STATIONARY_ENSEMBLE_SETS]
+
+    elif type == 'climate_adjusted':
+        return [spec.output_file for spec in CLIMATE_ADJUSTED_ENSEMBLE_SETS]
+
+    else:
+        raise ValueError(f"Invalid ensemble type: {type}")
+
+def get_existing_ensemble_sets(type='stationary'):
     """Get list of ensemble set IDs that have been generated"""
     existing_sets = []
     for set_id in range(N_ENSEMBLE_SETS):
-        spec = get_ensemble_set_spec(set_id)
+        spec = get_ensemble_set_spec(set_id, type=type)
         # Check if both required files exist
         if (os.path.exists(spec.files['gage_flow']) and 
             os.path.exists(spec.files['catchment_inflow'])):
             existing_sets.append(set_id)
     return existing_sets
 
-def print_experiment_summary():
+def print_experiment_summary(type='stationary'):
     """Print comprehensive experiment configuration summary"""
+    
+    generated_sets = get_existing_ensemble_sets(type=type)
+    
     print("=" * 80)
-    print("HIERARCHICAL ENSEMBLE EXPERIMENT CONFIGURATION")
+    print("ENSEMBLE EXPERIMENT CONFIGURATION")
     print("=" * 80)
     print(f"Total Realizations: {TOTAL_REALIZATIONS:,}")
     print(f"Ensemble Sets: {N_ENSEMBLE_SETS}")
@@ -242,17 +283,17 @@ def print_experiment_summary():
     print(f"  Nodes to Regress: {len(pywrdrb_nodes_to_regress)}")
     print()
     print("File Structure:")
-    for i, spec in enumerate(ENSEMBLE_SETS):
+    for i, spec in enumerate(generated_sets):
         print(f"  Set {i+1}: {spec.directory}")
         if i >= 2:  # Limit output for large experiments
             print(f"  ... (and {N_ENSEMBLE_SETS-3} more sets)")
             break
     print("=" * 80)
 
-def print_ensemble_set_summary(set_id):
+def print_ensemble_set_summary(set_id, type='stationary'):
     """Print summary for a specific ensemble set"""
-    spec = get_ensemble_set_spec(set_id)
-    print(f"\nEnsemble Set {set_id + 1} Summary:")
+    spec = get_ensemble_set_spec(set_id, type=type)
+    print(f"\n{type} Ensemble Set {set_id + 1} Summary:")
     print(f"  Global Realizations: {spec.start_realization}-{spec.end_realization-1}")
     print(f"  Directory: {spec.directory}")
     print(f"  PyWR-DRB Batches: {len(spec.pywrdrb_batches)}")
@@ -284,20 +325,3 @@ def validate_configuration():
 
 # Validate configuration on import
 validate_configuration()
-
-# =============================================================================
-# BACKWARD COMPATIBILITY
-# =============================================================================
-
-# For scripts that expect the old interface
-def get_legacy_ensemble_files():
-    """Get ensemble files in legacy format (for backward compatibility)"""
-    # Return first ensemble set files as default
-    if N_ENSEMBLE_SETS > 0:
-        return ENSEMBLE_SETS[0].files
-    else:
-        return {}
-
-# Legacy variable names
-gage_flow_ensemble_fname = get_ensemble_set_files(0)['gage_flow'] if N_ENSEMBLE_SETS > 0 else ""
-catchment_inflow_ensemble_fname = get_ensemble_set_files(0)['catchment_inflow'] if N_ENSEMBLE_SETS > 0 else ""

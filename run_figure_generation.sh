@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=SE-DRB
-#SBATCH --output=./logs/exploratory.out
-#SBATCH --error=./logs/exploratory.err
-#SBATCH --nodes=5
-#SBATCH --ntasks-per-node=40
+#SBATCH --job-name=Figs
+#SBATCH --output=./logs/fig_generation.out
+#SBATCH --error=./logs/fig_generation.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
 
@@ -19,14 +19,12 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # Read configuration from Python config file
 eval $(python3 -c "from config import *")
 
-# Workflow control flags (can be overridden via environment variables)
-RUN_BASELINE=${RUN_BASELINE:-false}
-GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-true}
-PREP_PYWRDRB=${PREP_PYWRDRB:-true}
-RUN_PYWRDRB=${RUN_PYWRDRB:-true}
+# Workflow control flags 
+PLOT_DIAGNOSTICS=${PLOT_DIAGNOSTICS:-false}
+PLOT_OUTCOMES=${PLOT_OUTCOMES:-true}
 
 # make directories
-mkdir -p logs pywrdrb/inputs pywrdrb/outputs pywrdrb/models figures
+mkdir -p logs figures
 
 # =============================================================================
 # WORKFLOW
@@ -42,25 +40,20 @@ echo "Total MPI ranks: $np"
 echo "Total realizations: $TOTAL_REALIZATIONS"
 echo "Ensemble sets: $N_ENSEMBLE_SETS"
 echo "Realizations per set: $N_REALIZATIONS_PER_ENSEMBLE_SET"
-echo "PyWR-DRB batch size: $N_REALIZATIONS_PER_PYWRDRB_BATCH"
 echo "========================================================================"
 
-# Print Python configuration summary
-python3 -c "from config import print_experiment_summary; print_experiment_summary()"
 
-echo "========================================================================"
-
-# Step 1: Run baseline simulations (if requested)
-if [ "$RUN_BASELINE" = true ]; then
-    echo "STEP 1: Running baseline simulations..."
+# Step 5: Generate ensemble diagnostics (single core)
+if [ "$PLOT_DIAGNOSTICS" = true ]; then
+    echo "STEP 5: Generating ensemble diagnostics..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 00_run_baseline_simulations.py
+    python3 02_plot_ensemble_diagnostics.py
     
     if [ $? -eq 0 ]; then
-        echo "✓ Baseline simulations completed successfully"
+        echo "✓ Ensemble diagnostics completed successfully"
     else
-        echo "✗ Baseline simulations failed"
+        echo "✗ Ensemble diagnostics failed"
         exit 1
     fi
     
@@ -68,60 +61,20 @@ if [ "$RUN_BASELINE" = true ]; then
     echo "----------------------------------------"
 fi
 
-# Step 2: Generate all ensemble sets in parallel
-if [ "$GENERATE_ENSEMBLE_SETS" = true ]; then
-    echo "STEP 2: Generating ensemble sets in parallel..."
+# Step 6: Analyze outcomes and generate plots (single core)
+if [ "$PLOT_OUTCOMES" = true ]; then
+    echo "STEP 6: Analyzing outcomes and generating plots..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 01_generate_stationary_ensemble_sets.py
+    echo "  Calculating Hashimoto metrics..."
+    # python3 999_calculate_hashimoto_metrics.py
     
-    if [ $? -eq 0 ]; then
-        echo "✓ Ensemble generation completed successfully"
-    else
-        echo "✗ Ensemble generation failed"
-        exit 1
-    fi
-    
+    echo "Plotting pywrdrb dynamics..."
+    python3 999_plot_pywrdrb_dynamics.py
+
     echo "Completed at: $(date)"
     echo "----------------------------------------"
 fi
-
-# Step 3: Prepare PyWR-DRB inputs for all sets in parallel
-if [ "$PREP_PYWRDRB" = true ]; then
-    echo "STEP 3: Preparing PyWR-DRB inputs for all ensemble sets..."
-    echo "Starting at: $(date)"
-    
-    time mpirun -np $np python3 03_prep_pywrdrb_inputs.py
-    
-    if [ $? -eq 0 ]; then
-        echo "✓ PyWR-DRB input preparation completed successfully"
-    else
-        echo "✗ PyWR-DRB input preparation failed"
-        exit 1
-    fi
-    
-    echo "Completed at: $(date)"
-    echo "----------------------------------------"
-fi
-
-# Step 4: Run PyWR-DRB simulations for all sets in parallel
-if [ "$RUN_PYWRDRB" = true ]; then
-    echo "STEP 4: Running PyWR-DRB simulations for all ensemble sets..."
-    echo "Starting at: $(date)"
-    
-    time mpirun -np $np python3 03_run_pywrdrb_simulations.py
-    
-    if [ $? -eq 0 ]; then
-        echo "✓ PyWR-DRB simulations completed successfully"
-    else
-        echo "✗ PyWR-DRB simulations failed"
-        exit 1
-    fi
-    
-    echo "Completed at: $(date)"
-    echo "----------------------------------------"
-fi
-
 
 # =============================================================================
 # WORKFLOW COMPLETION

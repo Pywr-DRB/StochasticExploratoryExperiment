@@ -22,7 +22,7 @@ from sglib.utils.load import HDF5Manager
 from methods.load import load_drb_reconstruction
 from config import *
 
-def generate_ensemble_set(set_id):
+def generate_ensemble_set(set_id, type='stationary'):
     """
     Generate a single ensemble set with proper MPI distribution
     
@@ -32,13 +32,17 @@ def generate_ensemble_set(set_id):
         Ensemble set identifier (0-indexed)
     """
     
+    assert type in ensemble_type_opts, \
+        f"Invalid ensemble type: {type}. Must be one of {ensemble_type_opts}"
+        
     # Get MPI info for this function call (now using sub-communicator)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     
     # Get ensemble set specification
-    set_spec = get_ensemble_set_spec(set_id)
+    set_spec = get_ensemble_set_spec(set_id, type=type)
+    set_realization_ids = set_spec.realizations
     n_realizations = set_spec.n_realizations
     output_dir = set_spec.directory
     
@@ -225,8 +229,11 @@ def generate_ensemble_set(set_id):
                 Q_syn[site][:, i] = combined_syn_ensemble[i][site].values 
                 Qs_inflows[site][:, i] = combined_inflow_ensemble[i][site].values
             
-            # Convert to DataFrame with local realization IDs (0, 1, 2, ...)
-            real_cols = [str(i) for i in range(n_realizations)]
+            
+            # Convert to DataFrame with realization IDs
+            # IMPORTANT: Use set-specific realization IDs
+            real_cols = [str(i) for i in set_realization_ids]
+            
             Q_syn[site] = pd.DataFrame(Q_syn[site], 
                                        index=syn_datetime, 
                                        columns=real_cols)
@@ -252,15 +259,19 @@ def generate_ensemble_set(set_id):
     
     return True
 
-def parallel_generate_all_sets():
+def parallel_generate_all_sets(type='stationary'):
     """
     Distribute ensemble set generation across available MPI ranks
     """
-    
+        
     # MPI setup
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+    
+    # Make sure more ranks than sets (preferred for large nodes)
+    assert size > N_ENSEMBLE_SETS, \
+        f"Requires more MPI ranks than ensemble sets. Got {size} ranks, {N_ENSEMBLE_SETS} sets."
     
     if rank == 0:
         print("=" * 60)
@@ -285,54 +296,32 @@ def parallel_generate_all_sets():
     
     comm.Barrier()  # Wait for directories to be created
     
-    # Strategy 1: More ranks than sets (preferred for large nodes)
-    if size >= N_ENSEMBLE_SETS:
-        ranks_per_set = size // N_ENSEMBLE_SETS
-        set_id = rank // ranks_per_set
+    ranks_per_set = size // N_ENSEMBLE_SETS
+    set_id = rank // ranks_per_set
+    
+    # Only generate if we're within valid set range
+    if set_id < N_ENSEMBLE_SETS:
+        # Create sub-communicator for this ensemble set
+        color = set_id
+        local_comm = comm.Split(color, rank)
         
-        # Only generate if we're within valid set range
-        if set_id < N_ENSEMBLE_SETS:
-            # Create sub-communicator for this ensemble set
-            color = set_id
-            local_comm = comm.Split(color, rank)
-            
-            # Store original communicator
-            original_comm = MPI.COMM_WORLD
-            
-            # Temporarily replace global communicator for the generation function
-            # (This is a bit hacky but allows reuse of existing generation code)
-            MPI.COMM_WORLD = local_comm
-            
-            try:
-                true_if_success = generate_ensemble_set(set_id)
-                assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
+        # Store original communicator
+        original_comm = MPI.COMM_WORLD
+        
+        # Temporarily replace global communicator for the generation function
+        # (This is a bit hacky but allows reuse of existing generation code)
+        MPI.COMM_WORLD = local_comm
+        
+        try:
+            true_if_success = generate_ensemble_set(set_id)
+            assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
 
-            finally:
-                # Restore original communicator
-                MPI.COMM_WORLD = original_comm
-                local_comm.Free()
-    
-    # Strategy 2: More sets than ranks (fall back)
-    else:
-        # Distribute sets across ranks using round-robin
-        my_sets = [i for i in range(N_ENSEMBLE_SETS) if i % size == rank]
-        
-        for set_id in my_sets:
-            if rank == 0:
-                print(f"\nRank {rank} processing set {set_id + 1}")
-            
-            # For this case, each rank works alone on its assigned sets
-            # Create a self-communicator
-            local_comm = comm.Split(rank, 0)
-            original_comm = MPI.COMM_WORLD
-            MPI.COMM_WORLD = local_comm
-            
-            try:
-                generate_ensemble_set(set_id)
-            finally:
-                MPI.COMM_WORLD = original_comm
-                local_comm.Free()
-    
+        finally:
+            # Restore original communicator
+            MPI.COMM_WORLD = original_comm
+            local_comm.Free()
+
+
     # Synchronize all ranks
     comm.Barrier()
     

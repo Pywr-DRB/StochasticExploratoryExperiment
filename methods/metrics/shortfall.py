@@ -227,14 +227,17 @@ def get_shortfall_metrics(data,
 
     ### Check inputs
     # List of results_sets which are used in the calculation.
-    # each of these should be an attribute of the data object.    
-    necessary_results_sets = [
-        "major_flow",
-        "lower_basin_mrf_contributions",
-        "mrf_target",
-        "ibt_diversions",
-        "ibt_demands",
-    ]
+    # each of these should be an attribute of the data object. 
+    necessary_results_sets = []
+    if 'delMontague' or 'delTrenton' in nodes:
+        necessary_results_sets.append("major_flow")
+        necessary_results_sets.append("mrf_target")
+        if 'delTrenton' in nodes:
+            necessary_results_sets.append("lower_basin_mrf_contributions")            
+    if 'nyc' in nodes or 'nj' in nodes:
+        necessary_results_sets.append("ibt_diversions")
+        necessary_results_sets.append("ibt_demands")
+
     for result_set in necessary_results_sets:
         if not hasattr(data, result_set):
             raise ValueError(
@@ -365,38 +368,6 @@ def get_shortfall_metrics(data,
     return shortage_event_dict, reliability_dict, resiliency_dict
 
 
-def calculate_shortage_magnitude_and_percentile_matrix(data, node, model):
-    """
-    Based on simulated flows and targets for a given node and model, 
-    this function calculates shortage across different metrics. 
-    
-    The output matrix contains dimensions:
-    - Magnitude of shortage [0, ..., max_shortage]
-    - Percentile of shortage [0, ..., 100]
-    - Frequency of shortage [0, ..., 1] across magnitude and percentiles
-    
-    """
-    
-    # Start by making a matrix of flows and target values across all realizations
-    realizations = list(data.major_flow[model].keys())
-    
-    flows = []
-    targets = []
-    for r in realizations:
-        # Get the flow and target values for this node, model, and realization
-        flow_series, target_series = get_flow_and_target_values(data, node,
-                                                                model, r,
-                                                                start_date=None, 
-                                                                end_date=None)
-        flows.append(flow_series.values)
-        targets.append(target_series.values)
-    
-    # Convert to numpy arrays
-    flows = np.array(flows)
-    targets = np.array(targets)
-    shortage = targets - flows
 
-    percentiles = np.arange(0, 101, 1) / 100.0
-    max_shortage = np.max(shortage)
     
     

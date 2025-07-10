@@ -196,11 +196,11 @@ def parallel_prep_all_sets():
         print("=" * 60)
         print(f"Successfully processed: {total_success}/{total_attempts} sets")
         
-        if total_success == N_ENSEMBLE_SETS:
+        if total_success == total_attempts:
             print("✓ All ensemble sets prepared successfully!")
         else:
-            failed_count = N_ENSEMBLE_SETS - total_success
-            print(f"⚠ Warning: {failed_count} sets failed or were skipped")
+            failed_count = total_attempts - total_success
+            print(f"⚠ Warning: {failed_count} ranks failed or were skipped")
             
             # Try to identify which sets might have failed
             # by checking for expected output files
@@ -208,10 +208,10 @@ def parallel_prep_all_sets():
             for set_id in range(N_ENSEMBLE_SETS):
                 set_spec = get_ensemble_set_spec(set_id)
                 # Check if preprocessed files exist (this is a rough check)
-                preprocessed_dir = f"{set_spec.directory}/preprocessed"
-                if not os.path.exists(preprocessed_dir):
+                f = set_spec.files['predicted_inflow']
+                if not os.path.exists(f):
                     failed_sets.append(set_id + 1)
-            
+                
             if failed_sets:
                 print(f"  Potentially failed sets: {failed_sets}")
         
@@ -230,28 +230,12 @@ def verify_prep_outputs():
     for set_id in range(N_ENSEMBLE_SETS):
         set_spec = get_ensemble_set_spec(set_id)
         
-        # Check if the ensemble set directory exists
-        if not os.path.exists(set_spec.directory):
-            print(f"✗ Set {set_id + 1}: Directory not found")
+        fname = set_spec.files['predicted_inflow']
+        if not os.path.exists():
+            print(f"✗ Set {set_id + 1}: Predicted inflow file {fname} not found")
             all_prepared = False
             continue
         
-        # Check if preprocessed directory exists
-        preprocessed_dir = f"{set_spec.directory}/preprocessed"
-        if not os.path.exists(preprocessed_dir):
-            print(f"✗ Set {set_id + 1}: Preprocessed directory not found")
-            all_prepared = False
-            continue
-        
-        # Check if there are files in the preprocessed directory
-        preprocessed_files = os.listdir(preprocessed_dir)
-        if not preprocessed_files:
-            print(f"✗ Set {set_id + 1}: No preprocessed files found")
-            all_prepared = False
-            continue
-        
-        print(f"✓ Set {set_id + 1}: Prepared ({len(preprocessed_files)} files)")
-    
     if all_prepared:
         print("✓ All ensemble sets properly prepared!")
     else:

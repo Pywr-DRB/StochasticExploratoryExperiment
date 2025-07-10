@@ -6,31 +6,39 @@ import seaborn as sns
 
 import pywrdrb
 
-from methods.metrics.shortfall import get_shortfall_metrics, calculate_hashimoto_metrics
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
-from config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
+from config import RECONSTRUCTION_OUTPUT_FNAME, FIG_DIR
+from config import ENSEMBLE_SETS
 
 #%% Load pywrdrb output
 
-output_filenames = [
-    RECONSTRUCTION_OUTPUT_FNAME,
-    STATIONARY_ENSEMBLE_OUTPUT_FNAME    
-]
+output_filenames = [ENSEMBLE_SETS[i].output_file for i in range(len(ENSEMBLE_SETS))]
+output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
 
 results_sets = [
     "major_flow", "inflow", "res_storage",
     "lower_basin_mrf_contributions", "mrf_target", 
     "ibt_diversions", "ibt_demands",
-    ]
+]
 
 # Load the data
 data = pywrdrb.Data(results_sets=results_sets)
 data.load_output(output_filenames=output_filenames)
 data.load_observations()
 
-flowtypes = list(data.major_flow.keys())
-
 data = add_trenton_equiv_flow(data)
+
+# Make a single copy of stationary_ensemble which combines stationary_ensemble_set{i,,,10}
+for results_set in results_sets:
+    all_set_results_data = {}
+    full_results_set_dict = getattr(data, results_set)
+    for i in range(1, 11):
+        set_name = f'stationary_ensemble_set{i}'
+        set_data = full_results_set_dict[set_name]
+        set_data_with_reals = {100*(i-1) + k: v for k, v in set_data.items()}
+        all_set_results_data.update(set_data_with_reals)
+    full_results_set_dict['stationary_ensemble'] = all_set_results_data
+    setattr(data, results_set, full_results_set_dict)
 
 #%%
 def annual_max_positive_streak(series):
@@ -171,20 +179,5 @@ for node in ['delMontague', 'delTrenton']:
         plt.title(f'{node} Flow Target')
         plt.xlim(0, 100)
         plt.legend()
-        plt.savefig(f'{node}_shortage_{metric}_cdf.png', dpi=300, bbox_inches='tight')
+        plt.savefig(f'{FIG_DIR}/shortages/{node}_shortage_{metric}_cdf.png', dpi=300, bbox_inches='tight')
         plt.clf()
-
-#%%
-# nodes = ['delMontague']
-
-# shortage_event_dict, reliability_dict, resiliency_dict = get_shortfall_metrics(data=data,
-#                                                                                nodes=nodes)
-# realizations = list(data.major_flow['stationary_ensemble'].keys())
-
-# # Store dictionaries in the data object
-# data.shortage = shortage_event_dict
-# data.reliability = reliability_dict
-# data.resilience = resiliency_dict
-# #%% Export data object for later
-# fname = './pywrdrb/outputs/stationary_ensemble_with_postprocessing.hdf5'
-# data.export(file=fname)
