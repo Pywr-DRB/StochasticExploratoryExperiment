@@ -7,11 +7,11 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from datetime import datetime, timedelta
 
-from config import ENSEMBLE_SETS, RECONSTRUCTION_OUTPUT_FNAME
+from config import STATIONARY_ENSEMBLE_SETS, RECONSTRUCTION_OUTPUT_FNAME
 
 
 
-output_filenames = [ENSEMBLE_SETS[i].output_file for i in range(len(ENSEMBLE_SETS))]
+output_filenames = [STATIONARY_ENSEMBLE_SETS[i].output_file for i in range(len(STATIONARY_ENSEMBLE_SETS))]
 output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
 
 results_sets = ["major_flow", "res_storage"]
@@ -46,6 +46,9 @@ df_nyc_storage = pd.DataFrame(df_nyc_storage, columns=[realization_ids[0]])
 for realization_id in realization_ids[1:10]:
     df_storage = data.res_storage[inflow_type][realization_id][nyc_reservoirs].copy()
     df_nyc_storage = pd.concat([df_nyc_storage, df_storage.sum(axis=1)], axis=1)
+
+
+
 
 
 # Assuming df is your DataFrame with N columns (realizations) and M rows (days)
