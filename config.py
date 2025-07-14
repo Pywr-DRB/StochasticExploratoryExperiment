@@ -274,6 +274,7 @@ def get_all_ensemble_output_files(ensemble_type):
     else:
         raise ValueError(f"Invalid ensemble_type: {ensemble_type}")
 
+
 def get_existing_ensemble_sets(ensemble_type):
     """Get list of ensemble set IDs that have been generated"""
     existing_sets = []
@@ -282,8 +283,9 @@ def get_existing_ensemble_sets(ensemble_type):
         # Check if both required files exist
         if (os.path.exists(spec.files['gage_flow']) and 
             os.path.exists(spec.files['catchment_inflow'])):
-            existing_sets.append(set_id)
+            existing_sets.append(spec)
     return existing_sets
+
 
 def print_experiment_summary(ensemble_type):
     """Print comprehensive experiment configuration summary"""

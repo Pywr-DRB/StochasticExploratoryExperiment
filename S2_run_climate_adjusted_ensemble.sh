@@ -20,7 +20,6 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 eval $(python3 -c "from config import *")
 
 # Workflow control flags (can be overridden via environment variables)
-RUN_BASELINE=${RUN_BASELINE:-false}
 GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-true}
 PREP_PYWRDRB=${PREP_PYWRDRB:-true}
 RUN_PYWRDRB=${RUN_PYWRDRB:-true}
@@ -57,54 +56,32 @@ if [ "$GENERATE_ENSEMBLE_SETS" = true ]; then
     
     time mpirun -np $np python3 01_generate_stationary_ensemble_sets.py "climate_adjusted"
     
-    if [ $? -eq 0 ]; then
-        echo "✓ Ensemble generation completed successfully"
-    else
-        echo "✗ Ensemble generation failed"
-        exit 1
-    fi
+    echo "Completed at: $(date)"
+    echo "----------------------------------------"
+fi
+
+
+### Prepare Pywr-DRB inputs for all sets in parallel
+if [ "$PREP_PYWRDRB" = true ]; then
+    echo "STEP 3: Preparing Pywr-DRB inputs for all ensemble sets..."
+    echo "Starting at: $(date)"
+    
+    time mpirun -np $np python3 03_prep_pywrdrb_inputs.py "climate_adjusted"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"
 fi
 
-## TODO: NEED TO EDIT FOLLOWING SCRIPTS TO SUPPORT CLIMATE ADJUSTED ENSEMBLE SETS
+# Step 4: Run Pywr-DRB simulations for all sets in parallel
+if [ "$RUN_PYWRDRB" = true ]; then
+    echo "STEP 4: Running Pywr-DRB simulations for all ensemble sets..."
+    echo "Starting at: $(date)"
+    
+    time mpirun -np $np python3 03_run_pywrdrb_simulations.py "climate_adjusted"
 
-# # Step 3: Prepare Pywr-DRB inputs for all sets in parallel
-# if [ "$PREP_PYWRDRB" = true ]; then
-#     echo "STEP 3: Preparing Pywr-DRB inputs for all ensemble sets..."
-#     echo "Starting at: $(date)"
-    
-#     time mpirun -np $np python3 03_prep_pywrdrb_inputs.py
-    
-#     if [ $? -eq 0 ]; then
-#         echo "✓ Pywr-DRB input preparation completed successfully"
-#     else
-#         echo "✗ Pywr-DRB input preparation failed"
-#         exit 1
-#     fi
-    
-#     echo "Completed at: $(date)"
-#     echo "----------------------------------------"
-# fi
-
-# # Step 4: Run Pywr-DRB simulations for all sets in parallel
-# if [ "$RUN_PYWRDRB" = true ]; then
-#     echo "STEP 4: Running Pywr-DRB simulations for all ensemble sets..."
-#     echo "Starting at: $(date)"
-    
-#     time mpirun -np $np python3 03_run_pywrdrb_simulations.py
-    
-#     if [ $? -eq 0 ]; then
-#         echo "✓ Pywr-DRB simulations completed successfully"
-#     else
-#         echo "✗ Pywr-DRB simulations failed"
-#         exit 1
-#     fi
-    
-#     echo "Completed at: $(date)"
-#     echo "----------------------------------------"
-# fi
+    echo "Completed at: $(date)"
+    echo "----------------------------------------"
+fi
 
 
 # =============================================================================
@@ -132,13 +109,11 @@ import os
 print('Ensemble set files:')
 for i in range(N_ENSEMBLE_SETS):
     spec = get_ensemble_set_spec(i, 'climate_adjusted')
-    gage_exists = '✓' if os.path.exists(spec.files['gage_flow']) else '✗'
-    inflow_exists = '✓' if os.path.exists(spec.files['catchment_inflow']) else '✗'
-    output_exists = '✓' if os.path.exists(spec.output_file) else '✗'
+    gage_exists = 'SUCCESS' if os.path.exists(spec.files['gage_flow']) else 'FAIL'
+    inflow_exists = 'SUCCESS' if os.path.exists(spec.files['catchment_inflow']) else 'FAIL'
+    output_exists = 'SUCCESS' if os.path.exists(spec.output_file) else 'FAIL'
     print(f'  Set {i+1}: Gage {gage_exists} | Inflow {inflow_exists} | Output {output_exists}')
-
 "
-
 
 echo "========================================================================"
 echo "WORKFLOW COMPLETE - CHECK LOGS FOR DETAILED RESULTS"

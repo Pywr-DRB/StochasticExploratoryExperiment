@@ -350,9 +350,9 @@ def parallel_generate_all_sets(ensemble_type):
         # Verify all sets were created
         existing_sets = get_existing_ensemble_sets(ensemble_type=ensemble_type)
         if len(existing_sets) == N_ENSEMBLE_SETS:
-            print(f"✓ All {N_ENSEMBLE_SETS} ensemble sets verified")
+            print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets verified")
         else:
-            print(f"⚠ Warning: Only {len(existing_sets)}/{N_ENSEMBLE_SETS} sets found")
+            print(f"WARNING: Only {len(existing_sets)}/{N_ENSEMBLE_SETS} sets found")
             missing = set(range(N_ENSEMBLE_SETS)) - set(existing_sets)
             print(f"  Missing sets: {sorted(missing)}")
 

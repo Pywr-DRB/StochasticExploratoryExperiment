@@ -178,10 +178,10 @@ def parallel_prep_all_sets(ensemble_type):
         print(f"Successfully processed: {total_success}/{total_attempts} sets")
         
         if total_success == total_attempts:
-            print("✓ All ensemble sets prepared successfully!")
+            print("SUCCESS: All ensemble sets prepared successfully!")
         else:
             failed_count = total_attempts - total_success
-            print(f"⚠ Warning: {failed_count} ranks failed or were skipped")
+            print(f"WARNING: Warning: {failed_count} ranks failed or were skipped")
             
             # Try to identify which sets might have failed
             # by checking for expected output files
@@ -212,15 +212,15 @@ def verify_prep_outputs(ensemble_type):
         set_spec = get_ensemble_set_spec(set_id, ensemble_type)
         
         fname = set_spec.files['predicted_inflow']
-        if not os.path.exists():
-            print(f"✗ Set {set_id + 1}: Predicted inflow file {fname} not found")
+        if not os.path.exists(fname):
+            print(f"FAIL:  Set {set_id + 1}: Predicted inflow file {fname} not found")
             all_prepared = False
             continue
         
     if all_prepared:
-        print("✓ All ensemble sets properly prepared!")
+        print("SUCCESS: All ensemble sets properly prepared!")
     else:
-        print("⚠ Some ensemble sets may not be properly prepared")
+        print("WARNING: Some ensemble sets may not be properly prepared")
     
     return all_prepared
 

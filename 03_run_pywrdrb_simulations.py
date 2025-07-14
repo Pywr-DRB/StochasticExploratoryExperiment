@@ -288,10 +288,10 @@ def parallel_run_all_sets(ensemble_type):
         print(f"Successfully processed: {total_success}/{total_attempts} sets")
         
         if total_success == N_ENSEMBLE_SETS:
-            print("✓ All ensemble sets simulated successfully!")
+            print("SUCCESS: All ensemble sets simulated successfully!")
         else:
             failed_count = N_ENSEMBLE_SETS - total_success
-            print(f"⚠ Warning: {failed_count} sets failed or were skipped")
+            print(f"WARNING: Warning: {failed_count} sets failed or were skipped")
             
             # Try to identify which sets might have failed
             failed_sets = []
@@ -320,14 +320,14 @@ def verify_simulation_outputs(ensemble_type):
         set_spec = get_ensemble_set_spec(set_id, ensemble_type)
         
         if not os.path.exists(set_spec.output_file):
-            print(f"✗ Set {set_id + 1}: Output file not found")
+            print(f"FAIL:  Set {set_id + 1}: Output file not found")
             all_completed = False
             continue
         
         # Check file size (basic validation)
         file_size = os.path.getsize(set_spec.output_file)
         if file_size < 1024:  # Less than 1KB is suspicious
-            print(f"✗ Set {set_id + 1}: Output file too small ({file_size} bytes)")
+            print(f"FAIL:  Set {set_id + 1}: Output file too small ({file_size} bytes)")
             all_completed = False
             continue
         
@@ -338,18 +338,18 @@ def verify_simulation_outputs(ensemble_type):
             n_realizations = len(list(test_data.major_flow.values())[0])
             
             if n_realizations != N_REALIZATIONS_PER_ENSEMBLE_SET:
-                print(f"⚠ Set {set_id + 1}: Expected {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations, found {n_realizations}")
+                print(f"WARNING: Set {set_id + 1}: Expected {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations, found {n_realizations}")
             else:
-                print(f"✓ Set {set_id + 1}: Valid output ({n_realizations} realizations, {file_size//1024//1024} MB)")
+                print(f"SUCCESS: Set {set_id + 1}: Valid output ({n_realizations} realizations, {file_size//1024//1024} MB)")
                 
         except Exception as e:
-            print(f"✗ Set {set_id + 1}: Error loading output file - {str(e)}")
+            print(f"FAIL:  Set {set_id + 1}: Error loading output file - {str(e)}")
             all_completed = False
     
     if all_completed:
-        print("✓ All ensemble sets have valid simulation outputs!")
+        print("SUCCESS: All ensemble sets have valid simulation outputs!")
     else:
-        print("⚠ Some ensemble sets may have invalid outputs")
+        print("WARNING: Some ensemble sets may have invalid outputs")
     
     return all_completed
 
