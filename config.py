@@ -14,7 +14,7 @@ TOTAL_REALIZATIONS = 1000
 N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
-# PyWR-DRB simulation batching (within each ensemble set)
+# Pywr-DRB simulation batching (within each ensemble set)
 N_REALIZATIONS_PER_PYWRDRB_BATCH = 10  # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
@@ -65,7 +65,7 @@ monthly_mean_flow_prc_change = [
 
 # MPI settings
 MAX_MPI_RANKS_PER_ENSEMBLE_SET = 20  # For ensemble generation
-MAX_MPI_RANKS_PER_PYWRDRB_BATCH = 1  # PyWR-DRB runs on single core
+MAX_MPI_RANKS_PER_PYWRDRB_BATCH = 1  # Pywr-DRB runs on single core
 MAX_PARALLEL_ENSEMBLE_SETS = 2  # Generate sets in parallel
 MAX_PARALLEL_PYWRDRB_BATCHES = 10  # Run batches in parallel within set
 
@@ -100,12 +100,12 @@ OUTPUT_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/outputs/")
 FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
 
 # Base ensemble directory
-ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/stationary_ensemble/")
+ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
 
 # Ensemble set directories and files
 def get_ensemble_set_dir(set_id, type):
     """Get directory path for a specific ensemble set"""
-    return f"{ENSEMBLE_BASE_DIR}/{type}_ensemble_set{set_id + 1}"
+    return f"{ENSEMBLE_BASE_DIR}/{type}_ensemble/{type}_ensemble_set{set_id + 1}"
 
 def get_ensemble_set_files(set_id, type):
     """Get file paths for a specific ensemble set"""
@@ -149,11 +149,11 @@ class EnsembleSetSpec:
         self.files = get_ensemble_set_files(set_id, type)
         self.output_file = get_ensemble_set_output_fname(set_id, type)
 
-        # PyWR-DRB batching within this set
+        # Pywr-DRB batching within this set
         self.pywrdrb_batches = self._create_pywrdrb_batch_specs()
     
     def _create_pywrdrb_batch_specs(self):
-        """Create PyWR-DRB batch specifications within this ensemble set"""
+        """Create Pywr-DRB batch specifications within this ensemble set"""
         batches = []
         for batch_id in range(N_PYWRDRB_BATCHES_PER_SET):
             batch_start = batch_id * N_REALIZATIONS_PER_PYWRDRB_BATCH
@@ -201,9 +201,10 @@ CLIMATE_ADJUSTED_ENSEMBLE_SETS = [
 # PYWR-DRB CONFIGURATION
 # =============================================================================
 
-# Setup pathnavigator for PyWR-DRB
+# Setup pathnavigator for Pywr-DRB
 pn_config = pywrdrb.get_pn_config()
-pn_config["flows/stationary_ensemble"] = os.path.abspath(ENSEMBLE_BASE_DIR)
+pn_config["flows/stationary_ensemble"] = os.path.abspath(f"{ENSEMBLE_BASE_DIR}/stationary_ensemble/")
+pn_config["flows/climate_adjusted_ensemble"] = os.path.abspath(f"{ENSEMBLE_BASE_DIR}/climate_adjusted_ensemble/")
 
 # Node information
 pywrdrb_nodes = list(immediate_downstream_nodes_dict.keys())
@@ -255,6 +256,11 @@ def ensure_ensemble_set_dirs():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
     
+    # Add directories for each ensemble set type
+    # These will contain directories for each set also
+    os.makedirs(f"{ENSEMBLE_BASE_DIR}/stationary_ensemble", exist_ok=True)
+    os.makedirs(f"{ENSEMBLE_BASE_DIR}/climate_adjusted_ensemble", exist_ok=True)
+    
     for ensemble_set in STATIONARY_ENSEMBLE_SETS:
         os.makedirs(ensemble_set.directory, exist_ok=True)
 
@@ -299,7 +305,7 @@ def print_experiment_summary(type):
     print(f"Years per Realization: {N_YEARS}")
     print(f"Simulation Period: {START_DATE} to {END_DATE}")
     print()
-    print("PyWR-DRB Batching:")
+    print("Pywr-DRB Batching:")
     print(f"  Batches per Set: {N_PYWRDRB_BATCHES_PER_SET}")
     print(f"  Realizations per Batch: {N_REALIZATIONS_PER_PYWRDRB_BATCH}")
     print()
@@ -321,7 +327,7 @@ def print_ensemble_set_summary(set_id, type):
     print(f"\n{type} Ensemble Set {set_id + 1} Summary:")
     print(f"  Global Realizations: {spec.start_realization}-{spec.end_realization-1}")
     print(f"  Directory: {spec.directory}")
-    print(f"  PyWR-DRB Batches: {len(spec.pywrdrb_batches)}")
+    print(f"  Pywr-DRB Batches: {len(spec.pywrdrb_batches)}")
     print(f"  Output File: {spec.output_file}")
 
 def validate_configuration():

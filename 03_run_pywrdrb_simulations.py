@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run PyWR-DRB simulations for all ensemble sets in parallel using MPI rank distribution.
+Run Pywr-DRB simulations for all ensemble sets in parallel using MPI rank distribution.
 Automatically distributes ensemble sets across available MPI ranks.
 """
 
@@ -22,7 +22,7 @@ from config import *
 
 def run_ensemble_set_simulations(set_id):
     """
-    Run PyWR-DRB simulations for a single ensemble set
+    Run Pywr-DRB simulations for a single ensemble set
     
     Parameters:
     -----------
@@ -41,7 +41,7 @@ def run_ensemble_set_simulations(set_id):
     ensemble_dir = set_spec.directory
     output_file = set_spec.output_file
     
-    print(f"Rank {rank}: Running PyWR-DRB simulations for ensemble set {set_id + 1}")
+    print(f"Rank {rank}: Running Pywr-DRB simulations for ensemble set {set_id + 1}")
     print(f"  Input file: {catchment_inflow_file}")
     print(f"  Output file: {output_file}")
     
@@ -195,7 +195,7 @@ def run_ensemble_set_simulations(set_id):
 
 def parallel_run_all_sets():
     """
-    Distribute PyWR-DRB simulations across available MPI ranks
+    Distribute Pywr-DRB simulations across available MPI ranks
     """
     
     # MPI setup
@@ -209,7 +209,7 @@ def parallel_run_all_sets():
         print("=" * 60)
         print(f"Total ensemble sets: {N_ENSEMBLE_SETS}")
         print(f"Realizations per set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
-        print(f"PyWR-DRB batch size: {N_REALIZATIONS_PER_PYWRDRB_BATCH}")
+        print(f"Pywr-DRB batch size: {N_REALIZATIONS_PER_PYWRDRB_BATCH}")
         print(f"Available MPI ranks: {size}")
         print(f"Simulation period: {START_DATE} to {END_DATE}")
         
@@ -326,7 +326,7 @@ def parallel_run_all_sets():
                 print(f"  Failed sets: {failed_sets}")
         
         print("=" * 60)
-        print("Done with PyWR-DRB simulations!")
+        print("Done with Pywr-DRB simulations!")
 
 
 def verify_simulation_outputs():
@@ -334,7 +334,7 @@ def verify_simulation_outputs():
     Verify that all ensemble sets have been properly simulated
     """
     
-    print("\nVerifying PyWR-DRB simulation outputs...")
+    print("\nVerifying Pywr-DRB simulation outputs...")
     
     all_completed = True
     
@@ -353,7 +353,7 @@ def verify_simulation_outputs():
             all_completed = False
             continue
         
-        # Try to load with PyWR-DRB to verify format
+        # Try to load with Pywr-DRB to verify format
         try:
             test_data = pywrdrb.Data(results_sets=["major_flow"])
             test_data.load_output(output_filenames=[set_spec.output_file])
@@ -384,7 +384,7 @@ def main():
     rank = comm.Get_rank()
     
     if rank == 0:
-        print("Starting PyWR-DRB simulations for all ensemble sets...")
+        print("Starting Pywr-DRB simulations for all ensemble sets...")
         print_experiment_summary()
     
     # Run all ensemble set simulations in parallel
@@ -393,7 +393,7 @@ def main():
     # Verify outputs (only on rank 0)
     if rank == 0:
         verify_simulation_outputs()
-        print("\nPyWR-DRB simulation workflow completed!")
+        print("\nPywr-DRB simulation workflow completed!")
 
 
 if __name__ == "__main__":

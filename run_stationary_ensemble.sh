@@ -42,7 +42,7 @@ echo "Total MPI ranks: $np"
 echo "Total realizations: $TOTAL_REALIZATIONS"
 echo "Ensemble sets: $N_ENSEMBLE_SETS"
 echo "Realizations per set: $N_REALIZATIONS_PER_ENSEMBLE_SET"
-echo "PyWR-DRB batch size: $N_REALIZATIONS_PER_PYWRDRB_BATCH"
+echo "Pywr-DRB batch size: $N_REALIZATIONS_PER_PYWRDRB_BATCH"
 echo "========================================================================"
 
 # Print Python configuration summary
@@ -86,17 +86,17 @@ if [ "$GENERATE_ENSEMBLE_SETS" = true ]; then
     echo "----------------------------------------"
 fi
 
-# Step 3: Prepare PyWR-DRB inputs for all sets in parallel
+# Step 3: Prepare Pywr-DRB inputs for all sets in parallel
 if [ "$PREP_PYWRDRB" = true ]; then
-    echo "STEP 3: Preparing PyWR-DRB inputs for all ensemble sets..."
+    echo "STEP 3: Preparing Pywr-DRB inputs for all ensemble sets..."
     echo "Starting at: $(date)"
     
     time mpirun -np $np python3 03_prep_pywrdrb_inputs.py
     
     if [ $? -eq 0 ]; then
-        echo "✓ PyWR-DRB input preparation completed successfully"
+        echo "✓ Pywr-DRB input preparation completed successfully"
     else
-        echo "✗ PyWR-DRB input preparation failed"
+        echo "✗ Pywr-DRB input preparation failed"
         exit 1
     fi
     
@@ -104,17 +104,17 @@ if [ "$PREP_PYWRDRB" = true ]; then
     echo "----------------------------------------"
 fi
 
-# Step 4: Run PyWR-DRB simulations for all sets in parallel
+# Step 4: Run Pywr-DRB simulations for all sets in parallel
 if [ "$RUN_PYWRDRB" = true ]; then
-    echo "STEP 4: Running PyWR-DRB simulations for all ensemble sets..."
+    echo "STEP 4: Running Pywr-DRB simulations for all ensemble sets..."
     echo "Starting at: $(date)"
     
     time mpirun -np $np python3 03_run_pywrdrb_simulations.py
     
     if [ $? -eq 0 ]; then
-        echo "✓ PyWR-DRB simulations completed successfully"
+        echo "✓ Pywr-DRB simulations completed successfully"
     else
-        echo "✗ PyWR-DRB simulations failed"
+        echo "✗ Pywr-DRB simulations failed"
         exit 1
     fi
     

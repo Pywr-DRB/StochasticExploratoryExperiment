@@ -1,5 +1,5 @@
 """
-Prepare PyWR-DRB inputs for all ensemble sets in parallel using MPI rank distribution.
+Prepare Pywr-DRB inputs for all ensemble sets in parallel using MPI rank distribution.
 Automatically distributes ensemble sets across available MPI ranks.
 """
 
@@ -17,7 +17,7 @@ from config import *
 
 def prep_ensemble_set(set_id):
     """
-    Prepare PyWR-DRB inputs for a single ensemble set
+    Prepare Pywr-DRB inputs for a single ensemble set
     
     Parameters:
     -----------
@@ -84,7 +84,7 @@ def prep_ensemble_set(set_id):
         preprocessor.save()
         
         if rank == 0:
-            print(f"Set {set_id + 1}: PyWR-DRB inputs prepared successfully.")
+            print(f"Set {set_id + 1}: Pywr-DRB inputs prepared successfully.")
         
         return True
         
@@ -95,7 +95,7 @@ def prep_ensemble_set(set_id):
 
 def parallel_prep_all_sets():
     """
-    Distribute PyWR-DRB input preparation across available MPI ranks
+    Distribute Pywr-DRB input preparation across available MPI ranks
     """
     
     # MPI setup
@@ -223,7 +223,7 @@ def verify_prep_outputs():
     Verify that all ensemble sets have been properly prepared
     """
     
-    print("\nVerifying PyWR-DRB input preparation...")
+    print("\nVerifying Pywr-DRB input preparation...")
     
     all_prepared = True
     
@@ -252,7 +252,7 @@ def main():
     rank = comm.Get_rank()
     
     if rank == 0:
-        print("Starting PyWR-DRB input preparation for all ensemble sets...")
+        print("Starting Pywr-DRB input preparation for all ensemble sets...")
         print_experiment_summary()
     
     # Prepare all ensemble sets in parallel
@@ -261,7 +261,7 @@ def main():
     # Verify outputs (only on rank 0)
     if rank == 0:
         verify_prep_outputs()
-        print("\nPyWR-DRB input preparation workflow completed!")
+        print("\nPywr-DRB input preparation workflow completed!")
 
 
 if __name__ == "__main__":
