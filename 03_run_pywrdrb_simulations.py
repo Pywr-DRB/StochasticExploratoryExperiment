@@ -20,7 +20,7 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers, combine_batched_hdf
 from methods.utils import get_parameter_subset_to_export
 from config import *
 
-def run_ensemble_set_simulations(set_id):
+def run_ensemble_set_simulations(set_id, ensemble_type):
     """
     Run Pywr-DRB simulations for a single ensemble set
     
@@ -28,6 +28,8 @@ def run_ensemble_set_simulations(set_id):
     -----------
     set_id : int
         Ensemble set identifier (0-indexed)
+    ensemble_type : str
+        Type of ensemble ('stationary' or 'climate_adjusted')
     """
     
     # Get MPI info for this function call
@@ -36,12 +38,12 @@ def run_ensemble_set_simulations(set_id):
     size = comm.Get_size()
     
     # Get ensemble set specification
-    set_spec = get_ensemble_set_spec(set_id)
+    set_spec = get_ensemble_set_spec(set_id, ensemble_type)
     catchment_inflow_file = set_spec.files['catchment_inflow']
     ensemble_dir = set_spec.directory
     output_file = set_spec.output_file
     
-    print(f"Rank {rank}: Running Pywr-DRB simulations for ensemble set {set_id + 1}")
+    print(f"Rank {rank}: Running Pywr-DRB simulations for {ensemble_type} ensemble set {set_id + 1}")
     print(f"  Input file: {catchment_inflow_file}")
     print(f"  Output file: {output_file}")
     
@@ -52,14 +54,14 @@ def run_ensemble_set_simulations(set_id):
     
     # Setup pathnavigator for this specific ensemble set
     pn_config = pywrdrb.get_pn_config()
-    pn_config[f"flows/stationary_ensemble_set{set_id + 1}"] = os.path.abspath(ensemble_dir)
+    pn_config[f"flows/{ensemble_type}_ensemble_set{set_id + 1}"] = os.path.abspath(ensemble_dir)
     pywrdrb.load_pn_config(pn_config)
     
     try:
         # Clear old batched output files if they exist
         if rank == 0:
-            batch_pattern = f"{os.path.dirname(output_file)}/stationary_ensemble_set{set_id + 1}_rank*_batch*.hdf5"
-            model_pattern = f"{os.path.dirname(output_file)}/../models/stationary_ensemble_set{set_id + 1}_rank*_batch*.json"
+            batch_pattern = f"{os.path.dirname(output_file)}/{ensemble_type}_ensemble_set{set_id + 1}_rank*_batch*.hdf5"
+            model_pattern = f"{os.path.dirname(output_file)}/../models/{ensemble_type}_ensemble_set{set_id + 1}_rank*_batch*.json"
             
             for pattern in [batch_pattern, model_pattern]:
                 old_files = glob.glob(pattern)
@@ -113,14 +115,14 @@ def run_ensemble_set_simulations(set_id):
             
             # Build model
             mb = pywrdrb.ModelBuilder(
-                inflow_type=f'stationary_ensemble_set{set_id + 1}',
+                inflow_type=f'{ensemble_type}_ensemble_set{set_id + 1}',
                 start_date=START_DATE,
                 end_date=END_DATE,
                 options=model_options,
             )
             
             # Save model
-            model_fname = f"{os.path.dirname(output_file)}/../models/stationary_ensemble_set{set_id + 1}_rank{rank}_batch{batch}.json"
+            model_fname = f"{os.path.dirname(output_file)}/../models/{ensemble_type}_ensemble_set{set_id + 1}_rank{rank}_batch{batch}.json"
             mb.make_model()
             mb.write_model(model_fname)
             
@@ -136,7 +138,7 @@ def run_ensemble_set_simulations(set_id):
             export_parameters = [p for p in model.parameters if p.name in subset_parameter_names]
             
             # Setup output recorder
-            batch_output_filename = f"{os.path.dirname(output_file)}/stationary_ensemble_set{set_id + 1}_rank{rank}_batch{batch}.hdf5"
+            batch_output_filename = f"{os.path.dirname(output_file)}/{ensemble_type}_ensemble_set{set_id + 1}_rank{rank}_batch{batch}.hdf5"
             recorder = pywrdrb.OutputRecorder(
                 model=model,
                 output_filename=batch_output_filename,
@@ -156,7 +158,7 @@ def run_ensemble_set_simulations(set_id):
             print(f'Set {set_id + 1}: Combining batched outputs...')
             
             # Find all batch files for this set
-            batch_pattern = f"{os.path.dirname(output_file)}/stationary_ensemble_set{set_id + 1}_rank*_batch*.hdf5"
+            batch_pattern = f"{os.path.dirname(output_file)}/{ensemble_type}_ensemble_set{set_id + 1}_rank*_batch*.hdf5"
             all_batch_files = glob.glob(batch_pattern)
             
             if not all_batch_files:
@@ -175,7 +177,7 @@ def run_ensemble_set_simulations(set_id):
                         os.remove(file)
                 
                 # Also cleanup model files
-                model_pattern = f"{os.path.dirname(output_file)}/../models/stationary_ensemble_set{set_id + 1}_rank*_batch*.json"
+                model_pattern = f"{os.path.dirname(output_file)}/../models/{ensemble_type}_ensemble_set{set_id + 1}_rank*_batch*.json"
                 model_files = glob.glob(model_pattern)
                 for file in model_files:
                     if os.path.exists(file):
@@ -193,7 +195,7 @@ def run_ensemble_set_simulations(set_id):
         return False
 
 
-def parallel_run_all_sets():
+def parallel_run_all_sets(ensemble_type):
     """
     Distribute Pywr-DRB simulations across available MPI ranks
     """
@@ -203,10 +205,15 @@ def parallel_run_all_sets():
     rank = comm.Get_rank()
     size = comm.Get_size()
     
+    assert(size >= N_ENSEMBLE_SETS), \
+        f"Error: More ensemble sets ({N_ENSEMBLE_SETS}) than available MPI ranks ({size}). " \
+        f"Please increase the number of ranks or reduce the number of ensemble sets."
+    
     if rank == 0:
         print("=" * 60)
         print("PARALLEL PYWRDRB SIMULATIONS")
         print("=" * 60)
+        print(f"Ensemble type: {ensemble_type}")
         print(f"Total ensemble sets: {N_ENSEMBLE_SETS}")
         print(f"Realizations per set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
         print(f"Pywr-DRB batch size: {N_REALIZATIONS_PER_PYWRDRB_BATCH}")
@@ -216,7 +223,7 @@ def parallel_run_all_sets():
         # Check which sets are ready for processing
         ready_sets = []
         for set_id in range(N_ENSEMBLE_SETS):
-            set_spec = get_ensemble_set_spec(set_id)
+            set_spec = get_ensemble_set_spec(set_id, ensemble_type)
             if os.path.exists(set_spec.files['catchment_inflow']):
                 ready_sets.append(set_id)
         
@@ -241,60 +248,31 @@ def parallel_run_all_sets():
     success_count = 0
     total_processed = 0
     
-    # Strategy 1: More ranks than sets (preferred for large nodes)
-    if size >= N_ENSEMBLE_SETS:
-        ranks_per_set = size // N_ENSEMBLE_SETS
-        set_id = rank // ranks_per_set
-        
-        # Only process if we're within valid set range
-        if set_id < N_ENSEMBLE_SETS:
-            # Create sub-communicator for this ensemble set
-            color = set_id
-            local_comm = comm.Split(color, rank)
-            
-            # Store original communicator
-            original_comm = MPI.COMM_WORLD
-            
-            # Temporarily replace global communicator for the simulation function
-            MPI.COMM_WORLD = local_comm
-            
-            try:
-                success = run_ensemble_set_simulations(set_id)
-                total_processed = 1
-                success_count = 1 if success else 0
-            finally:
-                # Restore original communicator
-                MPI.COMM_WORLD = original_comm
-                local_comm.Free()
+
+    ranks_per_set = size // N_ENSEMBLE_SETS
+    set_id = rank // ranks_per_set
     
-    # Strategy 2: More sets than ranks (fall back)
-    else:
-        # Distribute sets across ranks using round-robin
-        my_sets = [i for i in range(N_ENSEMBLE_SETS) if i % size == rank]
+    # Only process if we're within valid set range
+    if set_id < N_ENSEMBLE_SETS:
+        # Create sub-communicator for this ensemble set
+        color = set_id
+        local_comm = comm.Split(color, rank)
         
-        for set_id in my_sets:
-            print(f"Rank {rank} processing set {set_id + 1}")
-            
-            # For this case, each rank works alone on its assigned sets
-            # Create a self-communicator
-            local_comm = comm.Split(rank, 0)
-            original_comm = MPI.COMM_WORLD
-            MPI.COMM_WORLD = local_comm
-            
-            try:
-                success = run_ensemble_set_simulations(set_id)
-                total_processed += 1
-                if success:
-                    success_count += 1
-            except Exception as e:
-                print(f"Rank {rank} encountered an error processing set {set_id + 1}: {str(e)}")
-                # Log the error or handle it as needed
-                success_count += 0
-                total_processed += 1
-                
-            finally:
-                MPI.COMM_WORLD = original_comm
-                local_comm.Free()
+        # Store original communicator
+        original_comm = MPI.COMM_WORLD
+        
+        # Temporarily replace global communicator for the simulation function
+        MPI.COMM_WORLD = local_comm
+        
+        try:
+            success = run_ensemble_set_simulations(set_id, ensemble_type)
+            total_processed = 1
+            success_count = 1 if success else 0
+        finally:
+            # Restore original communicator
+            MPI.COMM_WORLD = original_comm
+            local_comm.Free()
+
     
     # Collect results from all ranks
     comm.Barrier()
@@ -318,7 +296,7 @@ def parallel_run_all_sets():
             # Try to identify which sets might have failed
             failed_sets = []
             for set_id in range(N_ENSEMBLE_SETS):
-                set_spec = get_ensemble_set_spec(set_id)
+                set_spec = get_ensemble_set_spec(set_id, ensemble_type)
                 if not os.path.exists(set_spec.output_file):
                     failed_sets.append(set_id + 1)
             
@@ -329,7 +307,7 @@ def parallel_run_all_sets():
         print("Done with Pywr-DRB simulations!")
 
 
-def verify_simulation_outputs():
+def verify_simulation_outputs(ensemble_type):
     """
     Verify that all ensemble sets have been properly simulated
     """
@@ -339,7 +317,7 @@ def verify_simulation_outputs():
     all_completed = True
     
     for set_id in range(N_ENSEMBLE_SETS):
-        set_spec = get_ensemble_set_spec(set_id)
+        set_spec = get_ensemble_set_spec(set_id, ensemble_type)
         
         if not os.path.exists(set_spec.output_file):
             print(f"✗ Set {set_id + 1}: Output file not found")
@@ -376,7 +354,7 @@ def verify_simulation_outputs():
     return all_completed
 
 
-def main():
+def main(ensemble_type):
     """Main function"""
     
     # Initialize MPI
@@ -385,16 +363,21 @@ def main():
     
     if rank == 0:
         print("Starting Pywr-DRB simulations for all ensemble sets...")
-        print_experiment_summary()
+        print_experiment_summary(ensemble_type=ensemble_type)
     
     # Run all ensemble set simulations in parallel
-    parallel_run_all_sets()
+    parallel_run_all_sets(ensemble_type=ensemble_type)
     
     # Verify outputs (only on rank 0)
     if rank == 0:
-        verify_simulation_outputs()
+        verify_simulation_outputs(ensemble_type=ensemble_type)
         print("\nPywr-DRB simulation workflow completed!")
 
 
 if __name__ == "__main__":
-    main()
+    
+    # Get the ensemble_type from command line arguments
+    ensemble_type = sys.argv[1]
+    verify_ensemble_type(ensemble_type)
+    
+    main(ensemble_type=ensemble_type)

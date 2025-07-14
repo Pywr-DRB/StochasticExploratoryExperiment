@@ -1,5 +1,4 @@
 import os
-import math
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 
@@ -58,18 +57,6 @@ monthly_mean_flow_prc_change = [
 ]
 
 
-
-# =============================================================================
-# PARALLEL PROCESSING
-# =============================================================================
-
-# MPI settings
-MAX_MPI_RANKS_PER_ENSEMBLE_SET = 20  # For ensemble generation
-MAX_MPI_RANKS_PER_PYWRDRB_BATCH = 1  # Pywr-DRB runs on single core
-MAX_PARALLEL_ENSEMBLE_SETS = 2  # Generate sets in parallel
-MAX_PARALLEL_PYWRDRB_BATCHES = 10  # Run batches in parallel within set
-
-
 # =============================================================================
 # WORKFLOW CONTROL
 # =============================================================================
@@ -78,9 +65,9 @@ class WorkflowFlags:
     """Control which steps of the workflow to run"""
     RUN_BASELINE = False
     GENERATE_ENSEMBLE_SETS = True
-    PLOT_DIAGNOSTICS = False
     PREP_PYWRDRB = True
     RUN_PYWRDRB = True
+    PLOT_DIAGNOSTICS = False
     PLOT_OUTCOMES = False
     
     # Processing options
@@ -103,13 +90,13 @@ FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
 ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
 
 # Ensemble set directories and files
-def get_ensemble_set_dir(set_id, type):
+def get_ensemble_set_dir(set_id, ensemble_type):
     """Get directory path for a specific ensemble set"""
-    return f"{ENSEMBLE_BASE_DIR}/{type}_ensemble/{type}_ensemble_set{set_id + 1}"
+    return f"{ENSEMBLE_BASE_DIR}/{ensemble_type}_ensemble/{ensemble_type}_ensemble_set{set_id + 1}"
 
-def get_ensemble_set_files(set_id, type):
+def get_ensemble_set_files(set_id, ensemble_type):
     """Get file paths for a specific ensemble set"""
-    set_dir = get_ensemble_set_dir(set_id, type)
+    set_dir = get_ensemble_set_dir(set_id, ensemble_type)
     return {
         'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
         'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5", 
@@ -119,9 +106,9 @@ def get_ensemble_set_files(set_id, type):
 # Output files
 RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
 
-def get_ensemble_set_output_fname(set_id, type):
+def get_ensemble_set_output_fname(set_id, ensemble_type):
     """Get output filename for a specific ensemble set"""
-    return f"{OUTPUT_DIR}/{type}_ensemble_set{set_id + 1}.hdf5"
+    return f"{OUTPUT_DIR}/{ensemble_type}_ensemble_set{set_id + 1}.hdf5"
 
 # =============================================================================
 # ENSEMBLE SET SPECIFICATIONS
@@ -130,13 +117,13 @@ def get_ensemble_set_output_fname(set_id, type):
 class EnsembleSetSpec:
     """Specification for a single ensemble set"""
     
-    def __init__(self, set_id, type):
+    def __init__(self, set_id, ensemble_type):
         
 
-        assert type in ensemble_type_opts, \
-            f"Invalid ensemble type passed to Ensemble Set Spec: {type}. Must be one of {ensemble_type_opts}"
+        assert ensemble_type in ensemble_type_opts, \
+            f"Invalid ensemble_type passed to Ensemble Set Spec: {ensemble_type}. Must be one of {ensemble_type_opts}"
         
-        self.type = type
+        self.ensemble_type = ensemble_type
         self.set_id = set_id
         self.start_realization = set_id * N_REALIZATIONS_PER_ENSEMBLE_SET
         self.end_realization = (set_id + 1) * N_REALIZATIONS_PER_ENSEMBLE_SET
@@ -145,9 +132,9 @@ class EnsembleSetSpec:
         
         
         # File paths
-        self.directory = get_ensemble_set_dir(set_id, type)
-        self.files = get_ensemble_set_files(set_id, type)
-        self.output_file = get_ensemble_set_output_fname(set_id, type)
+        self.directory = get_ensemble_set_dir(set_id, ensemble_type)
+        self.files = get_ensemble_set_files(set_id, ensemble_type)
+        self.output_file = get_ensemble_set_output_fname(set_id, ensemble_type)
 
         # Pywr-DRB batching within this set
         self.pywrdrb_batches = self._create_pywrdrb_batch_specs()
@@ -168,7 +155,7 @@ class EnsembleSetSpec:
             
             batches.append({
                 'batch_id': batch_id,
-                'type': self.type,
+                'ensemble_type': self.ensemble_type,
                 'set_id': self.set_id,
                 'local_start': batch_start,
                 'local_end': batch_end,
@@ -190,11 +177,11 @@ class EnsembleSetSpec:
 
 # Create all ensemble set specifications
 STATIONARY_ENSEMBLE_SETS = [
-    EnsembleSetSpec(i, type='stationary') for i in range(N_ENSEMBLE_SETS)
+    EnsembleSetSpec(i, ensemble_type='stationary') for i in range(N_ENSEMBLE_SETS)
     ]
 
 CLIMATE_ADJUSTED_ENSEMBLE_SETS = [
-    EnsembleSetSpec(i, type='climate_adjusted') for i in range(N_ENSEMBLE_SETS)
+    EnsembleSetSpec(i, ensemble_type='climate_adjusted') for i in range(N_ENSEMBLE_SETS)
     ]
 
 # =============================================================================
@@ -229,19 +216,26 @@ SAVE_RESULTS_SETS = [
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def get_ensemble_set_spec(set_id, type):
+def verify_ensemble_type(ensemble_type):
+    """Verify that the ensemble type is valid"""
+    if ensemble_type not in ensemble_type_opts:
+        raise ValueError(f"Invalid ensemble type: {ensemble_type}. Must be one of {ensemble_type_opts}.")
+    return True
+
+
+def get_ensemble_set_spec(set_id, ensemble_type):
     """Get ensemble set specification by ID"""
     if set_id < 0 or set_id >= N_ENSEMBLE_SETS:
         raise ValueError(f"set_id must be between 0 and {N_ENSEMBLE_SETS-1}")
     
-    if type == 'stationary':
+    if ensemble_type == 'stationary':
         return STATIONARY_ENSEMBLE_SETS[set_id]
     
-    elif type == 'climate_adjusted':
+    elif ensemble_type == 'climate_adjusted':
         return CLIMATE_ADJUSTED_ENSEMBLE_SETS[set_id]
     
     else:
-        raise ValueError(f"Invalid ensemble type: {type}")
+        raise ValueError(f"Invalid ensemble_type: {ensemble_type}")
 
 def get_target_ensemble_sets():
     """Get list of ensemble set IDs to process"""
@@ -256,7 +250,7 @@ def ensure_ensemble_set_dirs():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
     
-    # Add directories for each ensemble set type
+    # Add directories for each ensemble set ensemble_type
     # These will contain directories for each set also
     os.makedirs(f"{ENSEMBLE_BASE_DIR}/stationary_ensemble", exist_ok=True)
     os.makedirs(f"{ENSEMBLE_BASE_DIR}/climate_adjusted_ensemble", exist_ok=True)
@@ -268,33 +262,33 @@ def ensure_ensemble_set_dirs():
         os.makedirs(ensemble_set.directory, exist_ok=True)
 
 
-def get_all_ensemble_output_files(type):
+def get_all_ensemble_output_files(ensemble_type):
     """Get list of all ensemble set output files"""
 
-    if type == 'stationary':
+    if ensemble_type == 'stationary':
         return [spec.output_file for spec in STATIONARY_ENSEMBLE_SETS]
 
-    elif type == 'climate_adjusted':
+    elif ensemble_type == 'climate_adjusted':
         return [spec.output_file for spec in CLIMATE_ADJUSTED_ENSEMBLE_SETS]
 
     else:
-        raise ValueError(f"Invalid ensemble type: {type}")
+        raise ValueError(f"Invalid ensemble_type: {ensemble_type}")
 
-def get_existing_ensemble_sets(type):
+def get_existing_ensemble_sets(ensemble_type):
     """Get list of ensemble set IDs that have been generated"""
     existing_sets = []
     for set_id in range(N_ENSEMBLE_SETS):
-        spec = get_ensemble_set_spec(set_id, type=type)
+        spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
         # Check if both required files exist
         if (os.path.exists(spec.files['gage_flow']) and 
             os.path.exists(spec.files['catchment_inflow'])):
             existing_sets.append(set_id)
     return existing_sets
 
-def print_experiment_summary(type):
+def print_experiment_summary(ensemble_type):
     """Print comprehensive experiment configuration summary"""
     
-    generated_sets = get_existing_ensemble_sets(type=type)
+    generated_sets = get_existing_ensemble_sets(ensemble_type=ensemble_type)
     
     print("=" * 80)
     print("ENSEMBLE EXPERIMENT CONFIGURATION")
@@ -321,10 +315,10 @@ def print_experiment_summary(type):
             break
     print("=" * 80)
 
-def print_ensemble_set_summary(set_id, type):
+def print_ensemble_set_summary(set_id, ensemble_type):
     """Print summary for a specific ensemble set"""
-    spec = get_ensemble_set_spec(set_id, type=type)
-    print(f"\n{type} Ensemble Set {set_id + 1} Summary:")
+    spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
+    print(f"\n{ensemble_type} Ensemble Set {set_id + 1} Summary:")
     print(f"  Global Realizations: {spec.start_realization}-{spec.end_realization-1}")
     print(f"  Directory: {spec.directory}")
     print(f"  Pywr-DRB Batches: {len(spec.pywrdrb_batches)}")

@@ -1,4 +1,5 @@
 #%%
+import sys
 import numpy as np
 import pandas as pd
 import warnings
@@ -13,9 +14,22 @@ from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_grid
 from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
 
 from config import FIG_DIR, pywrdrb_nodes, pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
-from config import STATIONARY_ENSEMBLE_SETS
+from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
+from config import verify_ensemble_type
 
+# Get ensemble type from command line arguments
+ensemble_type = sys.argv[1]
+verify_ensemble_type(ensemble_type)
 
+# Use appropriate list of ensemble set specs
+if ensemble_type == 'stationary':
+    ensemble_set_specs = STATIONARY_ENSEMBLE_SETS
+elif ensemble_type == 'climate_adjusted':
+    ensemble_set_specs = CLIMATE_ADJUSTED_ENSEMBLE_SETS
+else:
+    raise ValueError(f"Invalid ensemble type: {ensemble_type}. Must be 'stationary' or 'climate_adjusted'.")
+    
+    
 ### Loading data
 ## Historic reconstruction data
 # Total flow
@@ -34,8 +48,8 @@ print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data f
 
 
 ## Synthetic ensemble
-Q_syn = load_and_combine_ensemble_sets(STATIONARY_ENSEMBLE_SETS, by_site=True)
-syn_ensemble = load_and_combine_ensemble_sets(STATIONARY_ENSEMBLE_SETS, by_site=False)
+Q_syn = load_and_combine_ensemble_sets(CLIMATE_ADJUSTED_ENSEMBLE_SETS, by_site=True)
+syn_ensemble = load_and_combine_ensemble_sets(CLIMATE_ADJUSTED_ENSEMBLE_SETS, by_site=False)
 
 
 Q_syn_monthly = {k: v.resample('MS').sum() for k, v in Q_syn.items()}
@@ -44,6 +58,22 @@ realization_ids = list(syn_ensemble.keys())
 n_realizations = len(realization_ids)
 
 print(f"Loaded synthetic ensemble with {n_realizations} realizations for {len(Q_syn)} sites.")
+
+#%% Drought metric scatter plot
+
+obs_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/observed_drought_events.csv")
+syn_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/{ensemble_type}_ensemble_drought_events.csv")
+
+## Plot scatter of drought metrics
+fname = f"{ensemble_type}_delMontague_drought_metrics_scatter.png"
+fname = f"{FIG_DIR}/drought_metrics/{fname}"
+
+drought_metric_scatter_plot(obs_droughts, 
+                            syn_drought_metrics=syn_droughts, 
+                            x_char='severity', 
+                            y_char='magnitude', 
+                            color_char='duration',
+                            fname=fname)
 
 
 #%% Gridded FDCs
@@ -79,7 +109,7 @@ for freq in ['daily', 'monthly']:
         print(f"Plotting {freq} gridded FDCs for {node_type} nodes.")
         
         # Gridded FDC plot
-        fn = f"{freq}_gage_flow_{node_type}_nodes.png"
+        fn = f"{ensemble_type}_{freq}_gage_flow_{node_type}_nodes.png"
         fname = f"{FIG_DIR}/fdc/{fn}"
         plot_fdc_gridded(Qh.loc[:, nodes], 
                          Qs=Qs,
@@ -109,7 +139,7 @@ for site in validate_nodes:
     
     logscale = False
     
-    fname = f"{site}_log.png" if logscale else f"{site}.png"
+    fname = f"{ensemble_type}_{site}_log.png" if logscale else f"{ensemble_type}_{site}.png"
     fname = f"{FIG_DIR}/statistical_validation/{fname}"
     
 
@@ -120,21 +150,6 @@ for site in validate_nodes:
                     fname=fname,
                     sitename=site)
 
-#%%
-
-obs_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/observed_drought_events.csv")
-syn_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/synthetic_drought_events.csv")
-
-## Plot scatter of drought metrics
-fname = f"delMontague_stationary_drought_metrics_scatter.png"
-fname = f"{FIG_DIR}/drought_metrics/{fname}"
-
-drought_metric_scatter_plot(obs_droughts, 
-                            syn_drought_metrics=syn_droughts, 
-                            x_char='severity', 
-                            y_char='magnitude', 
-                            color_char='duration',
-                            fname=fname)
 
 
 #%% Plotting
@@ -143,7 +158,7 @@ drought_metric_scatter_plot(obs_droughts,
 
 Qs_df = syn_ensemble[realization_ids[0]].loc[:, Q.columns]
 
-fname = f"daily_gage_flow_major_nodes.png"
+fname = f"{ensemble_type}_daily_gage_flow_major_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"
 plot_correlation(Q.loc[:, pywrdrb_nodes_to_generate], 
                  Qs_df.loc[:, pywrdrb_nodes_to_generate],
@@ -153,7 +168,7 @@ plot_correlation(Q.loc[:, pywrdrb_nodes_to_generate],
 # Repeat for monthly flows
 Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
 Qs_monthly_df = Qs_df.resample('MS').sum()
-fname = f"monthly_gage_flow_major_nodes.png"
+fname = f"{ensemble_type}_monthly_gage_flow_major_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"
 plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate], 
                  Qs_monthly_df.loc[:, pywrdrb_nodes_to_generate],
@@ -162,14 +177,14 @@ plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate],
 
 
 # repeat for minor nodes
-fname = f"daily_gage_flow_minor_nodes.png"
+fname = f"{ensemble_type}_daily_gage_flow_minor_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"
 plot_correlation(Q.loc[:, pywrdrb_nodes_to_regress], 
                  Qs_df.loc[:, pywrdrb_nodes_to_regress],
                  savefig=True,
                  fname=fname)
 
-fname = f"monthly_gage_flow_minor_nodes.png"
+fname = f"{ensemble_type}_monthly_gage_flow_minor_nodes.png"
 fname = f"{FIG_DIR}/spatial_correlation/{fname}"
 plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_regress], 
                  Qs_monthly_df.loc[:, pywrdrb_nodes_to_regress],

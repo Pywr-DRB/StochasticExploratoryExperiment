@@ -22,7 +22,7 @@ from sglib.utils.load import HDF5Manager
 from methods.load import load_drb_reconstruction
 from config import *
 
-def generate_ensemble_set(set_id, type):
+def generate_ensemble_set(set_id, ensemble_type):
     """
     Generate a single ensemble set with proper MPI distribution
     
@@ -32,8 +32,8 @@ def generate_ensemble_set(set_id, type):
         Ensemble set identifier (0-indexed)
     """
     
-    assert type in ensemble_type_opts, \
-        f"Invalid ensemble type: {type}. Must be one of {ensemble_type_opts}"
+    assert ensemble_type in ensemble_type_opts, \
+        f"Invalid ensemble_type: {ensemble_type}. Must be one of {ensemble_type_opts}"
         
     # Get MPI info for this function call (now using sub-communicator)
     comm = MPI.COMM_WORLD
@@ -41,7 +41,7 @@ def generate_ensemble_set(set_id, type):
     size = comm.Get_size()
     
     # Get ensemble set specification
-    set_spec = get_ensemble_set_spec(set_id, type=type)
+    set_spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
     set_realization_ids = set_spec.realizations
     n_realizations = set_spec.n_realizations
     output_dir = set_spec.directory
@@ -80,8 +80,8 @@ def generate_ensemble_set(set_id, type):
     kn_gen.preprocessing()
     kn_gen.fit()
     
-    # If ensemble type is 'climate_adjusted', we need to adjust the monthly mean 
-    if type == 'climate_adjusted':
+    # If ensemble_type is 'climate_adjusted', we need to adjust the monthly mean 
+    if ensemble_type == 'climate_adjusted':
     
         if rank == 0:
             print(f'Set {set_id + 1}: Adjusting monthly means for climate change...')
@@ -276,7 +276,7 @@ def generate_ensemble_set(set_id, type):
     
     return True
 
-def parallel_generate_all_sets(type):
+def parallel_generate_all_sets(ensemble_type):
     """
     Distribute ensemble set generation across available MPI ranks
     """
@@ -330,7 +330,7 @@ def parallel_generate_all_sets(type):
         MPI.COMM_WORLD = local_comm
         
         try:
-            true_if_success = generate_ensemble_set(set_id, type=type)
+            true_if_success = generate_ensemble_set(set_id, ensemble_type=ensemble_type)
             assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
 
         finally:
@@ -348,7 +348,7 @@ def parallel_generate_all_sets(type):
         print("=" * 60)
         
         # Verify all sets were created
-        existing_sets = get_existing_ensemble_sets(type=type)
+        existing_sets = get_existing_ensemble_sets(ensemble_type=ensemble_type)
         if len(existing_sets) == N_ENSEMBLE_SETS:
             print(f"✓ All {N_ENSEMBLE_SETS} ensemble sets verified")
         else:
@@ -357,7 +357,7 @@ def parallel_generate_all_sets(type):
             print(f"  Missing sets: {sorted(missing)}")
 
 
-def main(type):
+def main(ensemble_type):
     """Main function"""
     
     # Initialize MPI
@@ -366,10 +366,10 @@ def main(type):
     
     if rank == 0:
         # Print configuration summary
-        print_experiment_summary(type=type)
+        print_experiment_summary(ensemble_type=ensemble_type)
     
     # Generate all ensemble sets in parallel
-    parallel_generate_all_sets(type=type)
+    parallel_generate_all_sets(ensemble_type=ensemble_type)
 
     if rank == 0:
         print("\nEnsemble generation workflow completed!")
@@ -377,14 +377,9 @@ def main(type):
 
 if __name__ == "__main__":
     
-    # Get the ensemble type from command line arguments
-    if len(sys.argv) > 1:
-        ensemble_type = sys.argv[1]
-        if ensemble_type not in ensemble_type_opts:
-            print(f"Invalid ensemble type: {ensemble_type}. Must be one of {ensemble_type_opts}")
-            sys.exit(1)
-    else:
-        ensemble_type = 'stationary'
+    # Get the ensemble_type from command line arguments
+    ensemble_type = sys.argv[1]
+    verify_ensemble_type(ensemble_type)
     
     
-    main(type=ensemble_type)
+    main(ensemble_type=ensemble_type)
