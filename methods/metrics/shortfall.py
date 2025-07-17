@@ -2,10 +2,35 @@ import numpy as np
 import pandas as pd
 
 import pywrdrb
-from pywrdrb.utils.lists import majorflow_list
 from pywrdrb.pywr_drb_node_data import downstream_node_lags, immediate_downstream_nodes_dict
 from pywrdrb.utils.timeseries import subset_timeseries
 
+
+def annual_max_positive_streak(series):
+   """
+   Calculate annual maximum length of consecutive positive values.
+   
+   Args:
+       series: pd.Series with datetime index, daily frequency
+   
+   Returns:
+       pd.Series with annual max streak lengths, indexed by year
+   """
+   # Create boolean mask for positive values (> 0, not >= 0)
+   is_positive = series > 0
+   
+   # Find streak lengths using groupby on cumulative sum of negations
+   # When is_positive changes from True to False, cumsum increments
+   streak_groups = (~is_positive).cumsum()
+   
+   # For each group of consecutive positive values, calculate cumulative count
+   # Non-positive values will have streak_length = 0
+   streak_lengths = is_positive.groupby(streak_groups).cumsum()
+   
+   # Get annual maximum streak length for each year
+   annual_max = streak_lengths.groupby(series.index.year).max()
+   
+   return annual_max
 
 def calculate_hashimoto_metrics(flows, 
                                 thresholds,

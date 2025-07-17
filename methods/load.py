@@ -35,7 +35,7 @@ def load_drb_reconstruction(gage_flow=True):
     return Q
 
 
-def load_and_combine_ensemble_sets(ENSEMBLE_SETS, 
+def load_and_combine_ensemble_sets(ensemble_sets, 
                                    by_site = True):
     """
     Load and combine all ensemble set data into a single dictionary.
@@ -46,14 +46,14 @@ def load_and_combine_ensemble_sets(ENSEMBLE_SETS,
     without regard to their original set IDs.
     
     Parameters:
-    - ENSEMBLE_SETS: List of ensemble set specifications.
+    - ensemble_sets: List of ensemble set specifications.
     
     Returns:
     - Combined dict.
     """
     all_data = {}
     realization_id = 0
-    for set_spec in ENSEMBLE_SETS:
+    for i, set_spec in enumerate(ensemble_sets):
         gageflow_set_file = set_spec.files['gage_flow']
         
         hdf_manager = HDF5Manager()
@@ -73,7 +73,6 @@ def load_and_combine_ensemble_sets(ENSEMBLE_SETS,
                     
                 # reset columns to be realization integers 0, ... N
                 all_data[site].columns = np.arange(0, all_data[site].shape[1])
-                    
         
         else:
             # extract just the data by realization

@@ -74,12 +74,12 @@ if __name__ == "__main__":
         
         if syn_droughts is None:
             drought_chars = drought_calculator.calculate_drought_metrics(syn_ssi.loc[:,int(i)])
-            print(f"First realization {i} drought characteristics: {drought_chars.columns.tolist()}")
-                    
+            print(f"First realization {i} drought characteristics: {drought_chars.columns.tolist()}")            
+            drought_chars['realization_id'] = i
             syn_droughts = drought_chars.copy()
         else:
             drought_chars = drought_calculator.calculate_drought_metrics(syn_ssi.loc[:,int(i)])
-            
+            drought_chars['realization_id'] = i
             syn_droughts = pd.concat([syn_droughts, 
                                     drought_chars], axis=0)
 

@@ -48,8 +48,8 @@ print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data f
 
 
 ## Synthetic ensemble
-Q_syn = load_and_combine_ensemble_sets(CLIMATE_ADJUSTED_ENSEMBLE_SETS, by_site=True)
-syn_ensemble = load_and_combine_ensemble_sets(CLIMATE_ADJUSTED_ENSEMBLE_SETS, by_site=False)
+Q_syn = load_and_combine_ensemble_sets(ensemble_set_specs, by_site=True)
+syn_ensemble = load_and_combine_ensemble_sets(ensemble_set_specs, by_site=False)
 
 
 Q_syn_monthly = {k: v.resample('MS').sum() for k, v in Q_syn.items()}

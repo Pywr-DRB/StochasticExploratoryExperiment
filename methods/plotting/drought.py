@@ -5,39 +5,66 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def drought_metric_scatter_plot(obs_drought_metrics, 
+def drought_metric_scatter_plot(obs_drought_metrics=None, 
                                 syn_drought_metrics=None, 
                                 x_char = 'magnitude',
                                 y_char = 'duration',
                                 color_char = 'severity',
+                                size_char=None,
                                 fname=None):
+    
     fig, ax = plt.subplots(figsize = (7,6))
     
-    max_color_val = obs_drought_metrics[color_char].max()
+    if obs_drought_metrics is None and syn_drought_metrics is None:
+        raise ValueError("At least one of obs_drought_metrics or syn_drought_metrics must be provided.")
+    
+    max_color_val = 0
+    if obs_drought_metrics is not None:
+        max_color_val = obs_drought_metrics[color_char].max()
+    
     if syn_drought_metrics is not None:
         max_color_val = max(max_color_val, syn_drought_metrics[color_char].max())
     
-    p = ax.scatter(obs_drought_metrics[x_char], 
-                   -obs_drought_metrics[y_char],
-                   c= obs_drought_metrics[color_char], 
-                   cmap = 'viridis_r', s=100, 
-                   vmin = 0, vmax = max_color_val,
-                   edgecolor='k', lw=1.5, label='Observed', 
-                   zorder=5, alpha=1)
+    if obs_drought_metrics is not None:
+        
+        s = 100 if size_char is None else obs_drought_metrics[size_char]
+        
+        # If using size_char, scale so max size is 100 and min is 5
+        if len(s) > 1:
+            s = np.array(s)
+            s = 100 * (s - s.min()) / (s.max() - s.min())
+        
+        p = ax.scatter(obs_drought_metrics[x_char], 
+                    -obs_drought_metrics[y_char],
+                    c= obs_drought_metrics[color_char], 
+                    cmap = 'viridis_r', s=s, 
+                    vmin = 0, vmax = max_color_val,
+                    edgecolor='k', lw=1.5, label='Observed', 
+                    zorder=5, alpha=1)
     
     if syn_drought_metrics is not None:
-        ax.scatter(syn_drought_metrics[x_char], 
+    
+        s = 100 if size_char is None else syn_drought_metrics[size_char]
+        # If using size_char, scale so max size is 100 and min is 5
+        if len(s) > 1:
+            s = np.array(s)
+            s = 100 * (s - s.min()) / (s.max() - s.min())
+        
+        p = ax.scatter(syn_drought_metrics[x_char], 
                    -syn_drought_metrics[y_char],
                    c= syn_drought_metrics[color_char], 
-                   cmap = 'viridis_r', s=100,
+                   cmap = 'viridis_r', s=s,
                    vmin = 0, vmax = max_color_val, 
                    edgecolor='none', 
                    label='Synthetic',
                    zorder=1, alpha=0.5)
+
+    if size_char is not None:
+        handles, labels = p.legend_elements(prop="sizes", num=3)
+        plt.legend(handles, labels, loc="upper right", title="Sizes")
     
     plt.colorbar(p).set_label(label = 'Drought Duration (days)',size=15)
     plt.title(f'Drought Characteristics', fontsize = 16)
-    plt.legend(fontsize=14)
     if x_char == 'severity':
         plt.xlim(-3.5, -1.0)
     plt.tight_layout()

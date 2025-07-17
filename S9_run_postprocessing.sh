@@ -46,16 +46,19 @@ echo "========================================================================"
 
 # Step 6: Analyze outcomes and generate plots (single core)
 if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
-    echo "STEP X: Calculating SSI based drought metrics..."
-    echo "Starting at: $(date)"
+    
+    # Calculate drought metrics for stationary ensemble
+    echo "Calculating SSI based drought metrics for stationary ensemble..."
+    python3 04_calculate_ssi_drought_metrics.py "stationary"
 
-    python3 04_calculate_ssi_drought_metrics.py
+    # Repeat for climate adjusted ensemble
+    echo "Calculating SSI based drought metrics for climate adjusted ensemble..."
+    python3 04_calculate_ssi_drought_metrics.py "climate_adjusted"
 
-    echo "Completed at: $(date)"
     echo "----------------------------------------"
 fi
 
 
 echo "========================================================================"
-echo "WORKFLOW COMPLETE - CHECK LOGS FOR DETAILED RESULTS"
+echo "POST-PROCESSING COMPLETE - CHECK LOGS FOR DETAILED RESULTS"
 echo "========================================================================"

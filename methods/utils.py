@@ -1,7 +1,7 @@
-from pywrdrb.load import Output
+import pywrdrb
 
 def get_parameter_subset_to_export(all_parameter_names, results_set_subset):
-    output_loader = Output(output_filenames=[]) # empty dataloader to use methods
+    output_loader = pywrdrb.load.Output(output_filenames=[]) # empty dataloader to use methods
     keep_keys = []
     for results_set in results_set_subset:
         if results_set == "all":
@@ -28,4 +28,5 @@ def combine_multiple_ensemble_sets_in_data(data,
 
         full_results_set_dict[f'{ensemble_type}_ensemble'] = all_set_results_data
         setattr(data, results_set, full_results_set_dict)
+        
     return data
