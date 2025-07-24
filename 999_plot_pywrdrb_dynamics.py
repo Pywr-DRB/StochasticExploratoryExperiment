@@ -7,7 +7,7 @@ import seaborn as sns
 from methods.utils import combine_multiple_ensemble_sets_in_data
 from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS, RECONSTRUCTION_OUTPUT_FNAME
 
-ensemble_type = 'climate_adjusted'  # or 'stationary'
+ensemble_type = 'stationary'  # or 'stationary'
 inflow_type = f'{ensemble_type}_ensemble'
 
 if ensemble_type == 'stationary':
@@ -73,7 +73,6 @@ elif period == 'weekly':
     df['period_of_year'] = pd.to_datetime(df.index).isocalendar().week
 
 
-
 ### Plotting
 # Series of zero-storage conditions
 print('Plotting...')
@@ -83,7 +82,10 @@ fig, axs = plt.subplots(2, 1, figsize=(6, 6),
 zero_storage_period_of_year = []
 
 # First ax: Timeseries of each years storage
+threshold = 10.0 # Percent storage of interest
+threshold_year_count = 0
 all_years = df.index.year.unique()
+n_realizations = df.shape[1]-1
 for year in all_years:
     # Create date range from June 1 of current year to July 31 of next year
     start_date = pd.Timestamp(year, 6, 1)
@@ -96,19 +98,23 @@ for year in all_years:
     year_data = df[(df.index >= start_date) & (df.index <= end_date)]
     
     # keep only columns with at least one zero-storage condition
-    if (year_data == 0).any().any():
+    if (year_data <= threshold).any().any():
         has_zero = True
         period_of_year = year_data['period_of_year']
         
-        year_data = year_data.loc[:, (year_data == 0).any(axis=0)]
+        # drop the 'period_of_year' column for plotting
+        year_data = year_data.drop(columns=['period_of_year'])
+        
+        year_data = year_data.loc[:, (year_data <= threshold).any(axis=0)]
         
         # store the period_of_year for zero-storage values
         for col in year_data.columns:
-            zero_storage_period_of_year.extend(period_of_year[year_data[col] == 0].dropna().values.tolist())
+            zero_storage_period_of_year.extend(period_of_year[year_data[col] <= threshold].dropna().values.tolist())
+            threshold_year_count += 1
+
     else:
         has_zero = False
     if has_zero:
-        print(f"Year {year} has {year_data.shape[1]} simulations with zero-storage conditions.")
         axs[0].plot(period_of_year.values, year_data.values, alpha=0.5, color='orange')
 
 
@@ -129,9 +135,9 @@ axs[1].set_xticklabels(['Jun', 'Jul', 'Aug', 'Sep', 'Oct',
                         'Nov', 'Dec', 'Jan', 'Feb', 
                         'Mar', 'Apr', 'May', 'Jun'])
 
-
+axs[0].set_title(f'Simulated Years with NYC storage below {threshold}%\nCount: {threshold_year_count}/{int(len(all_years)*n_realizations)} total years')
 plt.tight_layout()
-plt.savefig(f'{ensemble_type}_nyc_storage_timeseries_and_zero_days.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{ensemble_type}_nyc_storage_timeseries_below_{threshold}.png', dpi=300, bbox_inches='tight')
 
 
 

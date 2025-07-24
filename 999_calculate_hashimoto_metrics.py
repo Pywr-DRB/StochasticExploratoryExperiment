@@ -13,7 +13,7 @@ from config import RECONSTRUCTION_OUTPUT_FNAME, FIG_DIR
 from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
 
 #%% Load pywrdrb output
-ensemble_type =  'stationary' # 'climate_adjusted'  # or 'stationary'
+ensemble_type =  'climate_adjusted'  # or 'stationary'
 inflow_type = f'{ensemble_type}_ensemble'
 
 if ensemble_type == 'stationary':
@@ -54,7 +54,7 @@ for model in ['reconstruction', inflow_type]:
     daily_shortage_matrix_dict[model] = {}
     duration_matrix_dict[model] = {}
     
-    for node in ['delMontague', 'delTrenton']:
+    for node in ['delMontague', 'delTrenton', 'nyc']:
         
         if model == 'obs':        
             start_date = '2000-01-01'
@@ -122,9 +122,9 @@ for model in ['reconstruction', inflow_type]:
 
 #%% Plotting
 
-# plot CDF of shortage magnitudes
+# plot CDF of shortage magnitudes with percentile bands
 for timescale in ['annual', 'daily']:
-    for node in ['delMontague', 'delTrenton']:
+    for node in ['delMontague', 'delTrenton', 'nyc']:
         for metric in ['magnitude', 'duration']:
             
             print(f'Plotting {node} {timescale} {metric} shortage CDF...')
@@ -146,19 +146,36 @@ for timescale in ['annual', 'daily']:
 
             xs = percentile_range * 100
 
-            # Loop through each model's shortage matrix and plot the CDF
+            # Define percentile bands
+            percentile_bands = [
+                (0, 10, 0.15),    # 0-10%, alpha=0.15
+                (10, 25, 0.25),   # 10-25%, alpha=0.25
+                (25, 50, 0.4),    # 25-50%, alpha=0.4
+                (50, 75, 0.25),   # 50-75%, alpha=0.25  
+                (75, 90, 0.25),   # 75-90%, alpha=0.25
+                (90, 100, 0.15)   # 90-100%, alpha=0.15
+            ]
+
+            # Plot percentile bands for each model
             for model, matrix_node in matrix_dict.items():
-
                 matrix = matrix_node[node]
-
-                n_realizations = matrix.shape[0]
                 
                 c = 'black' if model == 'obs' else 'blue' if model == 'reconstruction' else 'orange'
                 
-                for i in range(n_realizations):
-                    ys = matrix[i, :]
-                    ax.plot(xs, ys, linestyle='-', 
-                            color=c, alpha=0.2)
+                # Calculate percentiles across realizations for each percentile point
+                for lower_pct, upper_pct, alpha in percentile_bands:
+                    # For each x-value (shortage percentile), calculate the percentile bounds across realizations
+                    lower_bound = np.percentile(matrix, lower_pct, axis=0)
+                    upper_bound = np.percentile(matrix, upper_pct, axis=0)
+                    
+                    ax.fill_between(xs, lower_bound, upper_bound, 
+                                   color=c, alpha=alpha, 
+                                   label=f'{model} {lower_pct}-{upper_pct}%' if lower_pct == 25 and upper_pct == 50 else None)
+
+                # Add median line for emphasis
+                median = np.percentile(matrix, 50, axis=0)
+                ax.plot(xs, median, color=c, linewidth=2, 
+                       label=f'{model} median')
 
             ax.set_xlabel('Shortage Percentile')
             ax.set_ylabel(ylabel)

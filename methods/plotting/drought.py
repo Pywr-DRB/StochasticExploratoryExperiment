@@ -1,4 +1,5 @@
 import sys
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -29,9 +30,11 @@ def drought_metric_scatter_plot(obs_drought_metrics=None,
         
         s = 100 if size_char is None else obs_drought_metrics[size_char]
         
-        # If using size_char, scale so max size is 100 and min is 5
-        if len(s) > 1:
+        # If using size_char, scale so max size is 100
+        if (size_char is not None) and (len(s) > 1):
             s = np.array(s)
+            s_max = s.max()
+            s_min = s.min()
             s = 100 * (s - s.min()) / (s.max() - s.min())
         
         p = ax.scatter(obs_drought_metrics[x_char], 
@@ -46,9 +49,13 @@ def drought_metric_scatter_plot(obs_drought_metrics=None,
     
         s = 100 if size_char is None else syn_drought_metrics[size_char]
         # If using size_char, scale so max size is 100 and min is 5
-        if len(s) > 1:
+        if (size_char is not None) and (len(s) > 1):
             s = np.array(s)
+            s_max = s.max()
+            s_min = s.min()
+            print(f"size_char: {size_char} | Max val: {s.max()}, Min val: {s.min()}")
             s = 100 * (s - s.min()) / (s.max() - s.min())
+
         
         p = ax.scatter(syn_drought_metrics[x_char], 
                    -syn_drought_metrics[y_char],
@@ -60,8 +67,18 @@ def drought_metric_scatter_plot(obs_drought_metrics=None,
                    zorder=1, alpha=0.5)
 
     if size_char is not None:
-        handles, labels = p.legend_elements(prop="sizes", num=3)
-        plt.legend(handles, labels, loc="upper right", title="Sizes")
+        handles, labels = p.legend_elements(prop="sizes", num=5)
+        
+        # Need to re-apply s_max and s_min to display the actual values not size
+        new_labels = []
+        for l in labels:
+            # find the numeric part
+            num = re.search(r'\d+', l).group()
+            
+            # Rescale num
+            num = float(num) * (s_max - s_min) / 100 + s_min
+            new_labels.append(f"{int(num)}")            
+        plt.legend(handles, new_labels, loc="upper right", title="Sizes")
     
     plt.colorbar(p).set_label(label = 'Drought Duration (days)',size=15)
     plt.title(f'Drought Characteristics', fontsize = 16)

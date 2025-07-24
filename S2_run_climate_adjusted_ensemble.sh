@@ -20,8 +20,8 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 eval $(python3 -c "from config import *")
 
 # Workflow control flags (can be overridden via environment variables)
-GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-true}
-PREP_PYWRDRB=${PREP_PYWRDRB:-true}
+GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-false}
+PREP_PYWRDRB=${PREP_PYWRDRB:-false}
 RUN_PYWRDRB=${RUN_PYWRDRB:-true}
 
 # make directories
@@ -54,7 +54,7 @@ if [ "$GENERATE_ENSEMBLE_SETS" = true ]; then
     echo "STEP 2: Generating ensemble sets in parallel..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 01_generate_stationary_ensemble_sets.py "climate_adjusted"
+    time mpirun -np $np python3 01_generate_ensemble_sets.py "climate_adjusted"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"
@@ -66,7 +66,7 @@ if [ "$PREP_PYWRDRB" = true ]; then
     echo "STEP 3: Preparing Pywr-DRB inputs for all ensemble sets..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 03_prep_pywrdrb_inputs.py "climate_adjusted"
+    time mpirun -np $np python3 02_prep_pywrdrb_inputs.py "climate_adjusted"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"
@@ -106,9 +106,12 @@ echo "OUTPUT FILES:"
 python3 -c "
 from config import *
 import os
+
+verify_realization_id_consistency(ensemble_type='climate_adjusted')
+
 print('Ensemble set files:')
 for i in range(N_ENSEMBLE_SETS):
-    spec = get_ensemble_set_spec(i, 'climate_adjusted')
+    spec = get_ensemble_set_spec(i, ensemble_type='climate_adjusted')
     gage_exists = 'SUCCESS' if os.path.exists(spec.files['gage_flow']) else 'FAIL'
     inflow_exists = 'SUCCESS' if os.path.exists(spec.files['catchment_inflow']) else 'FAIL'
     output_exists = 'SUCCESS' if os.path.exists(spec.output_file) else 'FAIL'

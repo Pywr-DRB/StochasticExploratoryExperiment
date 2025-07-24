@@ -55,6 +55,7 @@ def load_and_combine_ensemble_sets(ensemble_sets,
     realization_id = 0
     for i, set_spec in enumerate(ensemble_sets):
         gageflow_set_file = set_spec.files['gage_flow']
+        set_realization_ids = set_spec.realization_ids
         
         hdf_manager = HDF5Manager()
         ensemble_set_data = hdf_manager.load_ensemble(gageflow_set_file)

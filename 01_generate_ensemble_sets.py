@@ -214,14 +214,14 @@ def generate_ensemble_set(set_id, ensemble_type):
         combined_syn_ensemble = {}
         combined_inflow_ensemble = {}
         
-        realization_counter = 0
+        global_realization_counter = 0
         for rank_syn, rank_inflow in zip(all_syn_ensembles, all_inflow_ensembles):
             for local_real_id in rank_syn:
-                # Assign global realization ID
-                global_real_id = realization_counter
+                # Use the actual global realization ID from set_realization_ids
+                global_real_id = set_realization_ids[global_realization_counter]
                 combined_syn_ensemble[global_real_id] = rank_syn[local_real_id]
                 combined_inflow_ensemble[global_real_id] = rank_inflow[local_real_id]
-                realization_counter += 1
+                global_realization_counter += 1
         
         # Verify we have the correct number of realizations
         if len(combined_syn_ensemble) != n_realizations:
@@ -229,23 +229,22 @@ def generate_ensemble_set(set_id, ensemble_type):
             return False
         
         # Get datetime index from first realization
-        syn_datetime = combined_inflow_ensemble[0].index
-        
+        combined_inflow_ensemble_real_ids = list(combined_inflow_ensemble.keys())
+        syn_datetime = combined_inflow_ensemble[combined_inflow_ensemble_real_ids[0]].index
+        sites = combined_inflow_ensemble[combined_inflow_ensemble_real_ids[0]].columns
+
         # Reorganize data structure
         Q_syn = {}
         Qs_inflows = {}
-        
-        # Get sites from first realization
-        sites = combined_inflow_ensemble[0].columns
         
         for site in sites:
             Q_syn[site] = np.zeros((len(syn_datetime), n_realizations), dtype=float)
             Qs_inflows[site] = np.zeros((len(syn_datetime), n_realizations), dtype=float)
             
-            for i in range(n_realizations):
-                Q_syn[site][:, i] = combined_syn_ensemble[i][site].values 
-                Qs_inflows[site][:, i] = combined_inflow_ensemble[i][site].values
-            
+            for i, global_real_id in enumerate(set_realization_ids):
+                Q_syn[site][:, i] = combined_syn_ensemble[global_real_id][site].values 
+                Qs_inflows[site][:, i] = combined_inflow_ensemble[global_real_id][site].values
+
             
             # Convert to DataFrame with realization IDs
             # IMPORTANT: Use set-specific realization IDs

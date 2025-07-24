@@ -1,7 +1,7 @@
 import os
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
-
+from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 # =============================================================================
 # ENSEMBLE CONFIGURATION
 # =============================================================================
@@ -41,20 +41,22 @@ ensemble_type_opts = [
 # Starting in January
 # Currently, using the same shift for all nodes
 # This should be applied during the Kirsch-Nowak generation
-monthly_mean_flow_prc_change = [
-    15.0,  # January
+import numpy as np
+
+monthly_mean_flow_prc_change = np.array([
+    20.0,  # January
     35.0,  # February
     -10.0,  # March
     -20.0,  # April
     -10.0,  # May
-    0.0,  # June
-    30.0,  # July
+    10.0,  # June
+    25.0,  # July
     -10.0,  # August
-    -30.0,  # September
+    -25.0,  # September
     -20.0,  # October
     -10.0,  # November
     5.0   # December
-]
+])
 
 
 # =============================================================================
@@ -100,7 +102,7 @@ def get_ensemble_set_files(set_id, ensemble_type):
     return {
         'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
         'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5", 
-        'predicted_inflow': f"{set_dir}/predicted_inflow_mgd.hdf5"
+        'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5"
     }
 
 # Output files
@@ -129,6 +131,7 @@ class EnsembleSetSpec:
         self.end_realization = (set_id + 1) * N_REALIZATIONS_PER_ENSEMBLE_SET
         self.n_realizations = N_REALIZATIONS_PER_ENSEMBLE_SET
         self.realizations = self.get_realization_ids()
+        self.realization_ids = self.realizations
         
         
         # File paths
@@ -206,9 +209,14 @@ pywrdrb_nodes_to_regress = [n for n in pywrdrb_nodes if n[0] == '0']
 
 # Results sets to save (memory optimization)
 SAVE_RESULTS_SETS = [
-    "major_flow", "inflow", "res_storage",
-    "lower_basin_mrf_contributions", "mrf_target", 
-    "ibt_diversions", "ibt_demands",
+    "major_flow", 
+    "inflow", 
+    "res_storage",
+    "lower_basin_mrf_contributions", 
+    "mrf_target", 
+    "ibt_diversions", 
+    "ibt_demands",
+    "nyc_release_components"
 ]
 
 
@@ -352,3 +360,30 @@ def validate_configuration():
 
 # Validate configuration on import
 validate_configuration()
+
+
+def verify_realization_id_consistency(ensemble_type='stationary'):
+    """
+    Verify that realization IDs are consistent across generation and simulation.
+    """
+
+    print(f"Verifying {ensemble_type} ensemble realization ID consistency...")
+    
+    for set_id in range(N_ENSEMBLE_SETS):
+        set_spec = get_ensemble_set_spec(set_id, ensemble_type)
+        
+        # Check expected vs actual realization IDs
+        expected_ids = set_spec.realizations
+        
+        if os.path.exists(set_spec.files['gage_flow']):
+            actual_ids = get_hdf5_realization_numbers(set_spec.files['gage_flow'])
+            actual_ids = [int(x) for x in actual_ids]
+            
+            if set(expected_ids) != set(actual_ids):
+                print(f"MISMATCH in Set {set_id + 1}:")
+                print(f"  Expected: {expected_ids}")
+                print(f"  Actual:   {actual_ids}")
+            else:
+                print(f"Set {set_id + 1}: OK")
+        else:
+            print(f"Set {set_id + 1}: File not found")

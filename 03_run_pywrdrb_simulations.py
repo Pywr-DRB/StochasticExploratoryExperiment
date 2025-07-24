@@ -6,11 +6,13 @@ Automatically distributes ensemble sets across available MPI ranks.
 
 import os
 import sys
+import re
 import glob
 import math
 import numpy as np
 import pandas as pd
 from mpi4py import MPI
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -77,6 +79,17 @@ def run_ensemble_set_simulations(set_id, ensemble_type):
             print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
         else:
             realization_ids = None
+
+        # VALIDATION: Check if realization_ids match expected global IDs
+        expected_realization_ids = set_spec.realizations
+        if rank == 0:
+            if type(realization_ids[0]) is str:
+                expected_realization_ids = [str(r) for r in expected_realization_ids]
+
+            if set(realization_ids) != set(expected_realization_ids):
+                print(f"WARNING: Set {set_id + 1} - HDF5 realization IDs don't match expected global IDs")
+                print(f"  Expected: {expected_realization_ids}")
+                print(f"  Found in HDF5: {realization_ids}")
         
         # Broadcast realization IDs
         realization_ids = comm.bcast(realization_ids, root=0)
@@ -106,7 +119,7 @@ def run_ensemble_set_simulations(set_id, ensemble_type):
         # Run individual batches
         batch_filenames = []
         for batch, indices in batched_indices.items():
-            print(f"Set {set_id + 1}, Rank {rank}: Running sim batch {batch} with {len(indices)} realizations")
+            print(f"Set {set_id + 1}, Rank {rank}: Running sim batch {batch} with {len(indices)} realizations: {indices}")
             
             # Model options for this batch
             model_options = {
@@ -165,7 +178,28 @@ def run_ensemble_set_simulations(set_id, ensemble_type):
                 print(f"Set {set_id + 1}: No batch files found!")
                 return False
             
+            # IMPORTANT! 
+            # Must sort batch files by (rank, batch) to preserve realization order
+            # with the original input order
+            def sort_batch_files(filename):
+                
+                match = re.search(r'rank(\d+)_batch(\d+)', filename)
+                if match:
+                    rank_num = int(match.group(1))
+                    batch_num = int(match.group(2))
+                    return (rank_num, batch_num)
+                return (0, 0)
+            
+            all_batch_files.sort(key=sort_batch_files)
+            
+            # If output file already exists, remove it
+            if os.path.exists(output_file):
+                print(f"Set {set_id + 1}: Removing existing output file: {output_file}")
+                os.remove(output_file)
+            
             print(f"Set {set_id + 1}: Found {len(all_batch_files)} batch files to combine")
+            print(f"Set {set_id + 1}: Batch file order: {[os.path.basename(f) for f in all_batch_files]}")
+            
             
             # Combine batch files
             combine_batched_hdf5_outputs(all_batch_files, output_file)
