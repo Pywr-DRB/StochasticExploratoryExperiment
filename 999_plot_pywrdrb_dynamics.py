@@ -1,37 +1,38 @@
 import pywrdrb
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from methods.utils import combine_multiple_ensemble_sets_in_data
-from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS, RECONSTRUCTION_OUTPUT_FNAME
 
-ensemble_type = 'stationary'  # or 'stationary'
+from config import RECONSTRUCTION_OUTPUT_FNAME
+from config import verify_ensemble_type
+
+# Get ensemble type from command line arguments
+ensemble_type = sys.argv[1]
 inflow_type = f'{ensemble_type}_ensemble'
+verify_ensemble_type(ensemble_type)
 
-if ensemble_type == 'stationary':
-    ensemble_set_spec_list = STATIONARY_ENSEMBLE_SETS
-elif ensemble_type == 'climate_adjusted':
-    ensemble_set_spec_list = CLIMATE_ADJUSTED_ENSEMBLE_SETS
-
-output_filenames = [ensemble_set_spec_list[i].output_file for i in range(len(ensemble_set_spec_list))]
-output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
-
-results_sets = ["res_storage"]
-
-
-# Load the data
-data = pywrdrb.Data(results_sets=results_sets,
-                    print_status=True)
-data.load_output(output_filenames=output_filenames)
-data.load_observations()
-
-data = combine_multiple_ensemble_sets_in_data(data, results_sets, ensemble_type=ensemble_type)
+# Load ensemble data from processed HDF5 - should have everything we need inside
+fname = f'./pywrdrb/outputs/{ensemble_type}_ensemble_with_postprocessing.hdf5'
+data = pywrdrb.Data()
+data.load_from_export(fname)
 
 realization_ids = list(data.res_storage[inflow_type].keys())
 
 nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+
+ffmp_level_data = pywrdrb.Data(results_sets=["ffmp_level_boundaries"])
+ffmp_level_data.load_output(output_filenames = [RECONSTRUCTION_OUTPUT_FNAME])
+
+# The FFMP level boundaries indicate different storage zones
+# These are the same for all years and simulations
+# Here, I want to keep just one copy of the pd.DataFrame
+# This will be a daily timeseries data
+ffmp_level_boundaries = ffmp_level_data.ffmp_level_boundaries['reconstruction'][0]
+
 
 # Make a df with nyc_agg storage for all realizations
 period = 'daily'

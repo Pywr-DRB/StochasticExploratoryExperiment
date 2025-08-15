@@ -28,8 +28,8 @@ elif ensemble_type == 'climate_adjusted':
     ensemble_set_specs = CLIMATE_ADJUSTED_ENSEMBLE_SETS
 else:
     raise ValueError(f"Invalid ensemble type: {ensemble_type}. Must be 'stationary' or 'climate_adjusted'.")
-    
-    
+
+
 ### Loading data
 ## Historic reconstruction data
 # Total flow

@@ -1,4 +1,6 @@
 import pywrdrb
+import pandas as pd
+import sys
 
 def get_parameter_subset_to_export(all_parameter_names, results_set_subset):
     output_loader = pywrdrb.load.Output(output_filenames=[]) # empty dataloader to use methods
@@ -40,3 +42,34 @@ def combine_multiple_ensemble_sets_in_data(data,
         full_results_set_dict[f'{ensemble_type}_ensemble'] = all_set_results_data
         setattr(data, results_set, full_results_set_dict)
     return data
+
+
+def calculate_annual_metrics(df, 
+                             agg_func='sum',
+                             start_month=6, 
+                             end_month=12):
+    """
+    Applies aggregation function to a pd.DataFrame, for a specific period.
+    
+    Assumes that the index is a daily datetime index.
+    Assumes columns are realizations.
+    """
+    
+    realizations = df.columns
+    years = df.index.year.unique()
+    annual_metrics = pd.DataFrame(index=years, columns=realizations)
+    for year in years:
+        # Filter for the specific year and period
+        mask = (df.index.year == year) & (df.index.month >= start_month) & (df.index.month <= end_month)
+        filtered_df = df[mask]
+        
+        # Apply aggregation function
+        if agg_func == 'sum':
+            annual_metrics.loc[year] = filtered_df.sum()
+        elif agg_func == 'min':
+            annual_metrics.loc[year] = filtered_df.min()
+        elif agg_func == 'max':
+            annual_metrics.loc[year] = filtered_df.max()
+        else:
+            raise ValueError("Unsupported aggregation function. Use 'sum', 'min', or 'max'.")
+    return annual_metrics

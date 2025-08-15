@@ -2,7 +2,7 @@
 #SBATCH --job-name=SE
 #SBATCH --output=./logs/stationary.out
 #SBATCH --error=./logs/stationary.err
-#SBATCH --nodes=5
+#SBATCH --nodes=10
 #SBATCH --ntasks-per-node=40
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
@@ -21,8 +21,8 @@ eval $(python3 -c "from config import *")
 
 # Workflow control flags (can be overridden via environment variables)
 RUN_BASELINE=${RUN_BASELINE:-false}
-GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-false}
-PREP_PYWRDRB=${PREP_PYWRDRB:-false}
+GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-true}
+PREP_PYWRDRB=${PREP_PYWRDRB:-true}
 RUN_PYWRDRB=${RUN_PYWRDRB:-true}
 
 # make directories
@@ -66,7 +66,7 @@ if [ "$GENERATE_ENSEMBLE_SETS" = true ]; then
     echo "STEP 2: Generating ensemble sets in parallel..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 01_generate_ensemble_sets.py "stationary"
+    time mpirun -np $np python3 -u 01_generate_ensemble_sets.py "stationary"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"
@@ -77,7 +77,7 @@ if [ "$PREP_PYWRDRB" = true ]; then
     echo "STEP 3: Preparing Pywr-DRB inputs for all ensemble sets..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 02_prep_pywrdrb_inputs.py "stationary"
+    time mpirun -np $np python3 -u 02_prep_pywrdrb_inputs.py "stationary"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"
@@ -88,7 +88,7 @@ if [ "$RUN_PYWRDRB" = true ]; then
     echo "STEP 4: Running Pywr-DRB simulations for all ensemble sets..."
     echo "Starting at: $(date)"
     
-    time mpirun -np $np python3 03_run_pywrdrb_simulations.py "stationary"
+    time mpirun -np $np python3 -u 03_run_pywrdrb_simulations.py "stationary"
     
     echo "Completed at: $(date)"
     echo "----------------------------------------"

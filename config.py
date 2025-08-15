@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
@@ -7,7 +8,7 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 1000
+TOTAL_REALIZATIONS = 3000
 
 # Ensemble set configuration (for generation and storage)
 N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
@@ -33,6 +34,30 @@ ensemble_type_opts = [
     'climate_adjusted'
 ]
 
+
+
+# =============================================================================
+# Salinity LSTM model settings
+# =============================================================================
+
+pywrdrb_ml_plugin_path = os.path.abspath(f"{os.path.dirname(__file__)}/../PywrDRB-ML/")
+pywrdrb_salinity_model_path = os.path.abspath(f"{pywrdrb_ml_plugin_path}/models/SalinityLSTM/SalinityLSTM.yml")
+
+SALINITY_LSTM_OPTIONS = {
+    "ml_model_type": "lstm",
+    "PywrDRB_ML_plugin_path": pywrdrb_ml_plugin_path,
+    "model_salinity": pywrdrb_salinity_model_path,
+    "start_date": START_DATE,
+    "end_date": END_DATE,
+    "Q_Trenton_lstm_var_name": "Q_Trenton_bc",
+    "Q_Schuylkill_lstm_var_name": "Q_Schuylkill_bc",
+    "asycronized_update": False,
+    "debug": True
+}
+
+SALINITY_LSTM_PREDICTIONS = False
+
+
 # =============================================================================
 # CLIMATE ADJUSTED ENSEMBLE SETTINGS
 # =============================================================================
@@ -41,7 +66,7 @@ ensemble_type_opts = [
 # Starting in January
 # Currently, using the same shift for all nodes
 # This should be applied during the Kirsch-Nowak generation
-import numpy as np
+
 
 monthly_mean_flow_prc_change = np.array([
     20.0,  # January

@@ -45,35 +45,26 @@ echo "========================================================================"
 
 # Step 6: Analyze outcomes and generate plots (single core)
 if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
-    
-    # echo "Calculating SSI based drought metrics for stationary ensemble..."
-    # python3 05_calculate_ssi_drought_metrics.py "stationary"
 
-    # echo "Calculating shortages for stationary ensemble..."
-    # python3 06_calculate_shortages.py "stationary"
+    echo "Calculating post-processed data..."
+    python3 04_postprocess_data.py "stationary"
+    python3 04_postprocess_data.py "climate_adjusted"
+
+    # echo "Calculating SSI based drought metrics..."
+    # python3 05_calculate_ssi_drought_metrics.py "stationary"
+    # python3 05_calculate_ssi_drought_metrics.py "climate_adjusted"
 
     # echo "Calculating Hashimoto metrics during droughts for stationary ensemble..."
-    # python3 07_calculate_hashimoto_metrics_during_droughts.py "stationary"
+    # python3 06_calculate_hashimoto_metrics_during_droughts.py "stationary"
+    # python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted"
+
+    echo "----------------------------------------"
+
 
     # echo "Plotting stationary drought scatters..."
     # python3 999_plot_drought_montague_violations.py "stationary"
 
-    echo "----------------------------------------"
 
-    # # # Repeat for climate adjusted ensemble
-    # echo "Calculating SSI based drought metrics for climate adjusted ensemble..."
-    # python3 05_calculate_ssi_drought_metrics.py "climate_adjusted"
-
-    # echo "Calculating shortages for climate adjusted ensemble..."
-    # python3 06_calculate_shortages.py "climate_adjusted"
-
-    echo "Calculating Hashimoto metrics during droughts for climate adjusted ensemble..."
-    python3 07_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted"
-
-    echo "Plotting..."
-    python3 999_plot_drought_montague_violations.py "climate_adjusted"
-
-    echo "----------------------------------------"
 fi
 
 

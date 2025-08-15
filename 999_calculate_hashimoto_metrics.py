@@ -1,4 +1,5 @@
 #%% 
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,39 +7,24 @@ import seaborn as sns
 
 import pywrdrb
 
-from methods.utils import combine_multiple_ensemble_sets_in_data
-from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
+
+
+from config import verify_ensemble_type
 from methods.metrics.shortfall import annual_max_positive_streak
-from config import RECONSTRUCTION_OUTPUT_FNAME, FIG_DIR
-from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
+from config import FIG_DIR
 
 #%% Load pywrdrb output
-ensemble_type =  'climate_adjusted'  # or 'stationary'
+# Get ensemble type from command line arguments
+ensemble_type = sys.argv[1]
 inflow_type = f'{ensemble_type}_ensemble'
+verify_ensemble_type(ensemble_type)
 
-if ensemble_type == 'stationary':
-    ensemble_set_spec_list = STATIONARY_ENSEMBLE_SETS
-elif ensemble_type == 'climate_adjusted':
-    ensemble_set_spec_list = CLIMATE_ADJUSTED_ENSEMBLE_SETS
+# Load ensemble data from processed HDF5 - should have everything we need inside
+fname = f'./pywrdrb/outputs/{ensemble_type}_ensemble_with_postprocessing.hdf5'
+data = pywrdrb.Data()
+data.load_from_export(fname)
 
-output_filenames = [ensemble_set_spec_list[i].output_file for i in range(len(ensemble_set_spec_list))]
-output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
-
-results_sets = [
-    "major_flow", "inflow", "res_storage",
-    "lower_basin_mrf_contributions", "mrf_target", 
-    "ibt_diversions", "ibt_demands",
-]
-
-# Load the data
-data = pywrdrb.Data(results_sets=results_sets, print_status=True)
-data.load_output(output_filenames=output_filenames)
-data.load_observations()
-
-data = add_trenton_equiv_flow(data)
-
-data = combine_multiple_ensemble_sets_in_data(data, results_sets, ensemble_type=ensemble_type)
-
+    
 
 
 #%% Calculate shortage percentiles
@@ -70,17 +56,10 @@ for model in ['reconstruction', inflow_type]:
         daily_shortage = []
         duration = []
         for r in realizations:
-            # Get the flow and target values for this node, model, and realization
-            flow_series, target_series = get_flow_and_target_values(data, node,
-                                                                    model, r,
-                                                                    start_date=start_date, 
-                                                                    end_date=end_date)
-            # Calculate shortages
-            shortage_series = target_series - flow_series
-            shortage_series[shortage_series < 0] = 0  # Set negative shortages
-            
-            # Ignore shortage in first 2 days due to model warmup
-            shortage_series.iloc[:2] = 0.0
+                    
+            # Shortage timeseries was calculated in 05_postprocess_data.py
+            # and is available in the data object
+            shortage_series = data.shortage[model][r].loc[:, node]
             
             # Get the max duration of shortage
             max_shortage_duration = annual_max_positive_streak(shortage_series)
