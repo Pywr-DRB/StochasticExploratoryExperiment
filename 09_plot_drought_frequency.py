@@ -1,4 +1,5 @@
 import sys
+from scipy import stats
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -117,6 +118,119 @@ def calculate_drought_frequency(
         'x1_metric': x1_metric,
         'x2_metric': x2_metric,
         'total_years': denom
+    }
+
+
+
+def calculate_drought_frequency(
+    drought_df,
+    x1_metric='severity',
+    x2_metric='magnitude',
+    x1_range=None,
+    x2_range=None,
+    ngrid=50,
+    n_realizations=1000,
+    n_years=70,
+):
+    # Validate
+    required_cols = ['start', 'end', 'realization_id', x1_metric, x2_metric]
+    missing_cols = [c for c in required_cols if c not in drought_df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    if x1_range is None or x2_range is None:
+        raise ValueError("x1_range and x2_range must be provided.")
+
+    df = drought_df.copy()
+    df['start'] = pd.to_datetime(df['start'])
+    df['end']   = pd.to_datetime(df['end'])
+
+    # --- Fit marginals on original scale (positive support) ---
+    def fit_marginal(varname, data):
+        data = np.asarray(data, dtype=float)
+        data = data[np.isfinite(data) & (data > 0)]
+        if varname.lower() == 'severity':
+            dist = stats.genexpon
+            params = dist.fit(data)
+        elif varname.lower() == 'magnitude':
+            dist = stats.norm
+            params = dist.fit(data)
+        else:
+            raise ValueError("Unsupported metric for copula-based calculation "
+                             "(use 'severity' or 'magnitude').")
+        return dist, params
+
+    dist_x1, pars_x1 = fit_marginal(x1_metric, df[x1_metric])
+    dist_x2, pars_x2 = fit_marginal(x2_metric, df[x2_metric])
+
+    # --- Gaussian copula parameter via normal-scores correlation ---
+    eps = 1e-12
+    u1_data = np.clip(dist_x1.cdf(df[x1_metric].to_numpy(float), *pars_x1), eps, 1 - eps)
+    u2_data = np.clip(dist_x2.cdf(df[x2_metric].to_numpy(float), *pars_x2), eps, 1 - eps)
+    z1 = stats.norm.ppf(u1_data)
+    z2 = stats.norm.ppf(u2_data)
+    rho = float(np.corrcoef(z1, z2)[0, 1])
+    rho = float(np.clip(rho, -0.999, 0.999))
+    cov = np.array([[1.0, rho], [rho, 1.0]])
+
+    # --- Expected interarrival time (years), start-to-start by realization ---
+    df_sorted = df.sort_values(['realization_id', 'start'])
+    starts = (
+        df_sorted.groupby('realization_id')['start']
+        .apply(lambda s: s.sort_values().diff().dt.days.dropna())
+        .to_numpy()
+    )
+    if starts.size == 0:
+        # Fallback: average years per event using counts
+        counts = df_sorted.groupby('realization_id').size().to_numpy()
+        counts = counts[counts > 0]
+        if counts.size == 0:
+            raise ValueError("No events to estimate interarrival time.")
+        E_L_years = float(np.mean(n_years / counts))
+    else:
+        E_L_years = float(np.mean(starts) / 365.25)
+    print(f"Estimated mean interarrival time E[L]: {E_L_years:.2f} years")
+    lam_all = 1.0 / E_L_years  # events/year (all droughts)
+
+    # --- Grids (keep shapes consistent with plotting: rows=x1, cols=x2) ---
+    x1_grid = np.linspace(x1_range[0], x1_range[1], ngrid)
+    x2_grid = np.linspace(x2_range[0], x2_range[1], ngrid)
+
+    U1 = np.clip(dist_x1.cdf(x1_grid, *pars_x1), eps, 1 - eps)  # F_X1(x1)
+    U2 = np.clip(dist_x2.cdf(x2_grid, *pars_x2), eps, 1 - eps)  # F_X2(x2)
+
+    # Build full (ngrid x ngrid) grid of (z1,z2) pairs and evaluate C(u,v)
+    Z1v = stats.norm.ppf(U1)            # shape (ngrid,)
+    Z2v = stats.norm.ppf(U2)            # shape (ngrid,)
+    Z1g, Z2g = np.meshgrid(Z1v, Z2v, indexing='ij')
+    pts = np.column_stack([Z1g.ravel(), Z2g.ravel()])
+
+    mvn = stats.multivariate_normal(mean=[0.0, 0.0], cov=cov)
+    C_uv = np.array([mvn.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
+    
+    # Joint exceedance p = 1 - u - v + C(u,v)
+    U1m = U1[:, None]
+    U2m = U2[None, :]
+    p_joint = 1.0 - U1m - U2m + C_uv
+    p_joint = np.clip(p_joint, 1e-15, 1.0)
+
+    # Return period and annual probability (Poisson at-least-one in a year)
+    # T (years) = E[L]/p_joint ; P_year = 1 - exp(-lambda * p_joint)
+    return_period = E_L_years / p_joint
+    freq = 1.0 - np.exp(-lam_all * p_joint)
+
+    # small floor for plotting stability
+    denom_years = float(n_realizations * n_years)
+    eps_plot = 1.0 / denom_years
+    freq = np.maximum(freq, eps_plot)
+
+    return {
+        'frequency_matrix': freq,
+        'return_period_matrix': return_period,
+        'x1_grid': x1_grid,
+        'x2_grid': x2_grid,
+        'x1_metric': x1_metric,
+        'x2_metric': x2_metric,
+        'total_years': denom_years,
     }
 
 
@@ -246,8 +360,8 @@ if __name__ == "__main__":
     SSI_WINDOW = 12
 
     obs_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/observed_ssi{SSI_WINDOW}_drought_events.csv")
-    obs_droughts['severity'] = obs_droughts['severity'].abs()
-    obs_droughts['magnitude'] = obs_droughts['magnitude'].abs()
+    obs_droughts['severity'] = np.log(obs_droughts['severity'].abs())
+    obs_droughts['magnitude'] = np.log(obs_droughts['magnitude'].abs())
 
     all_results = {}
 
@@ -262,8 +376,8 @@ if __name__ == "__main__":
 
 
         # Convert severity and magnitude to positive values
-        syn_droughts['severity'] = syn_droughts['severity'].abs()
-        syn_droughts['magnitude'] = syn_droughts['magnitude'].abs()
+        syn_droughts['severity'] = np.log(syn_droughts['severity'].abs())
+        syn_droughts['magnitude'] = np.log(syn_droughts['magnitude'].abs())
 
         severity_min, severity_max = np.nanmin(syn_droughts['severity']), np.nanmax(syn_droughts['severity'])
         magnitude_min, magnitude_max = np.nanmin(syn_droughts['magnitude']), np.nanmax(syn_droughts['magnitude'])
@@ -275,8 +389,8 @@ if __name__ == "__main__":
             syn_droughts,
             x1_metric='magnitude',
             x2_metric='severity',
-            x1_range=[0, 120],
-            x2_range=[1, 4],
+            x1_range=[0, 5.0],
+            x2_range=[0, 2.0],
             ngrid=100,
             n_realizations=1000,
             n_years=70
@@ -308,16 +422,9 @@ if __name__ == "__main__":
 
     ## Now, calculate the difference in return period for stationary and climate adjusted
     # we can calculate this using the frequency values to avoid inf
-    eps = 1 / (70000)
-    p_s = all_results['stationary']['frequency_matrix']
-    p_s[p_s < eps] = eps
-    p_c = all_results['climate_adjusted']['frequency_matrix']
-    p_c[p_c < eps] = eps
-    
-    return_period_diff = (p_s/p_c) - 1.0
-    return_period_diff *= 100
-    
-    
+    T_s = all_results['stationary']['return_period_matrix']
+    T_c = all_results['climate_adjusted']['return_period_matrix']
+    return_period_diff = 100.0 * (T_c - T_s) / T_s    
 
     # Print the fraction of return_period_diff values that are real number values
     is_real = np.isfinite(return_period_diff)
@@ -333,12 +440,11 @@ if __name__ == "__main__":
         "x2_metric": all_results['stationary']['x2_metric'],
     }
     
-    plot_return_period = True
     fname = f"{FIG_DIR}/ssi{SSI_WINDOW}_drought_return_period_percentage_difference.png"
     vmin, vmax = -50, 50
     plot_drought_frequency_heatmap(diff_results,
                                    obs_droughts=obs_droughts,
-                                    return_period=plot_return_period,
+                                    return_period=True,
                                     log_cmap=False,
                                     vmin=vmin,
                                     vmax=vmax,

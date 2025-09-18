@@ -20,8 +20,8 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 eval $(python3 -c "from config import *")
 
 # Workflow control flags (can be overridden via environment variables)
-GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-false}
-PREP_PYWRDRB=${PREP_PYWRDRB:-false}
+GENERATE_ENSEMBLE_SETS=${GENERATE_ENSEMBLE_SETS:-true}
+PREP_PYWRDRB=${PREP_PYWRDRB:-true}
 RUN_PYWRDRB=${RUN_PYWRDRB:-true}
 
 # make directories

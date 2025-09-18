@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
@@ -68,20 +69,26 @@ SALINITY_LSTM_PREDICTIONS = False
 # This should be applied during the Kirsch-Nowak generation
 
 
-monthly_mean_flow_prc_change = np.array([
-    20.0,  # January
-    35.0,  # February
-    -10.0,  # March
-    -20.0,  # April
-    -10.0,  # May
-    10.0,  # June
-    25.0,  # July
-    -10.0,  # August
-    -25.0,  # September
-    -20.0,  # October
-    -10.0,  # November
-    5.0   # December
-])
+fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp245_2020_2059.csv"
+monthly_shift_range = pd.read_csv(fname, index_col=0)
+
+monthly_mean_flow_prc_change = monthly_shift_range.loc[:, 'min'].values
+
+
+# monthly_mean_flow_prc_change = np.array([
+#     20.0,  # January
+#     35.0,  # February
+#     -10.0,  # March
+#     -20.0,  # April
+#     -10.0,  # May
+#     10.0,  # June
+#     25.0,  # July
+#     -10.0,  # August
+#     -25.0,  # September
+#     -20.0,  # October
+#     -10.0,  # November
+#     5.0   # December
+# ])
 
 
 # =============================================================================
