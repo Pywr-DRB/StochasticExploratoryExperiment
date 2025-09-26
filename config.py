@@ -4,12 +4,13 @@ import pandas as pd
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
+
 # =============================================================================
 # ENSEMBLE CONFIGURATION
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 3000
+TOTAL_REALIZATIONS = 1000
 
 # Ensemble set configuration (for generation and storage)
 N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
@@ -30,12 +31,39 @@ assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \
 assert N_REALIZATIONS_PER_ENSEMBLE_SET % N_REALIZATIONS_PER_PYWRDRB_BATCH == 0, \
     "N_REALIZATIONS_PER_ENSEMBLE_SET must be divisible by N_REALIZATIONS_PER_PYWRDRB_BATCH"
 
-ensemble_type_opts = [
-    'stationary',
-    'climate_adjusted'
-]
+# =============================================================================
+# DATASET CONFIGURATIONS
+# =============================================================================
+
+# Load monthly shift data for climate adjustments
+fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp245_2020_2059.csv"
+monthly_shift_range = pd.read_csv(fname, index_col=0)
+
+# Define all dataset configurations
 
 
+DATASET_CONFIGS = {
+    'stationary_ensemble': {
+        'type': 'stationary',
+        'description': 'Stationary ensemble (no climate adjustment)',
+        'monthly_prc_change': None
+    },
+    'climate_adjusted_ssp245_min': {
+        'type': 'climate_adjusted',
+        'description': 'SSP2-4.5 2020-2059 minimum change',
+        'monthly_prc_change': monthly_shift_range.loc[:, 'min'].values
+    },
+    'climate_adjusted_ssp245_median': {
+        'type': 'climate_adjusted', 
+        'description': 'SSP2-4.5 2020-2059 median change',
+        'monthly_prc_change': monthly_shift_range.loc[:, 'median'].values
+    },
+    'climate_adjusted_ssp245_max': {
+        'type': 'climate_adjusted',
+        'description': 'SSP2-4.5 2020-2059 maximum change',
+        'monthly_prc_change': monthly_shift_range.loc[:, 'max'].values
+    }
+}
 
 # =============================================================================
 # Salinity LSTM model settings
@@ -57,39 +85,6 @@ SALINITY_LSTM_OPTIONS = {
 }
 
 SALINITY_LSTM_PREDICTIONS = False
-
-
-# =============================================================================
-# CLIMATE ADJUSTED ENSEMBLE SETTINGS
-# =============================================================================
-
-# Percentage change in monthly mean flow relative to reconstruction
-# Starting in January
-# Currently, using the same shift for all nodes
-# This should be applied during the Kirsch-Nowak generation
-
-
-fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp245_2020_2059.csv"
-monthly_shift_range = pd.read_csv(fname, index_col=0)
-
-monthly_mean_flow_prc_change = monthly_shift_range.loc[:, 'min'].values
-
-
-# monthly_mean_flow_prc_change = np.array([
-#     20.0,  # January
-#     35.0,  # February
-#     -10.0,  # March
-#     -20.0,  # April
-#     -10.0,  # May
-#     10.0,  # June
-#     25.0,  # July
-#     -10.0,  # August
-#     -25.0,  # September
-#     -20.0,  # October
-#     -10.0,  # November
-#     5.0   # December
-# ])
-
 
 # =============================================================================
 # WORKFLOW CONTROL
@@ -123,27 +118,6 @@ FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
 # Base ensemble directory
 ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
 
-# Ensemble set directories and files
-def get_ensemble_set_dir(set_id, ensemble_type):
-    """Get directory path for a specific ensemble set"""
-    return f"{ENSEMBLE_BASE_DIR}/{ensemble_type}_ensemble/{ensemble_type}_ensemble_set{set_id + 1}"
-
-def get_ensemble_set_files(set_id, ensemble_type):
-    """Get file paths for a specific ensemble set"""
-    set_dir = get_ensemble_set_dir(set_id, ensemble_type)
-    return {
-        'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
-        'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5", 
-        'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5"
-    }
-
-# Output files
-RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
-
-def get_ensemble_set_output_fname(set_id, ensemble_type):
-    """Get output filename for a specific ensemble set"""
-    return f"{OUTPUT_DIR}/{ensemble_type}_ensemble_set{set_id + 1}.hdf5"
-
 # =============================================================================
 # ENSEMBLE SET SPECIFICATIONS
 # =============================================================================
@@ -151,13 +125,14 @@ def get_ensemble_set_output_fname(set_id, ensemble_type):
 class EnsembleSetSpec:
     """Specification for a single ensemble set"""
     
-    def __init__(self, set_id, ensemble_type):
+    def __init__(self, set_id, dataset_id):
+        # Validate dataset_id
+        if dataset_id not in DATASET_CONFIGS:
+            raise ValueError(f"Invalid dataset_id: {dataset_id}. Must be one of {list(DATASET_CONFIGS.keys())}")
         
-
-        assert ensemble_type in ensemble_type_opts, \
-            f"Invalid ensemble_type passed to Ensemble Set Spec: {ensemble_type}. Must be one of {ensemble_type_opts}"
-        
-        self.ensemble_type = ensemble_type
+        self.dataset_id = dataset_id
+        self.dataset_config = DATASET_CONFIGS[dataset_id]
+        self.ensemble_type = self.dataset_config['type']  # 'stationary' or 'climate_adjusted'
         self.set_id = set_id
         self.start_realization = set_id * N_REALIZATIONS_PER_ENSEMBLE_SET
         self.end_realization = (set_id + 1) * N_REALIZATIONS_PER_ENSEMBLE_SET
@@ -165,14 +140,28 @@ class EnsembleSetSpec:
         self.realizations = self.get_realization_ids()
         self.realization_ids = self.realizations
         
-        
-        # File paths
-        self.directory = get_ensemble_set_dir(set_id, ensemble_type)
-        self.files = get_ensemble_set_files(set_id, ensemble_type)
-        self.output_file = get_ensemble_set_output_fname(set_id, ensemble_type)
-
         # Pywr-DRB batching within this set
         self.pywrdrb_batches = self._create_pywrdrb_batch_specs()
+    
+    @property
+    def directory(self):
+        """Get directory path for this ensemble set"""
+        return f"{ENSEMBLE_BASE_DIR}/{self.dataset_id}/{self.dataset_id}_set{self.set_id + 1}"
+    
+    @property
+    def files(self):
+        """Get file paths for this ensemble set"""
+        set_dir = self.directory
+        return {
+            'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
+            'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5",
+            'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5"
+        }
+    
+    @property
+    def output_file(self):
+        """Get output filename for this ensemble set"""
+        return f"{OUTPUT_DIR}/{self.dataset_id}_set{self.set_id + 1}.hdf5"
     
     def _create_pywrdrb_batch_specs(self):
         """Create Pywr-DRB batch specifications within this ensemble set"""
@@ -190,7 +179,7 @@ class EnsembleSetSpec:
             
             batches.append({
                 'batch_id': batch_id,
-                'ensemble_type': self.ensemble_type,
+                'dataset_id': self.dataset_id,
                 'set_id': self.set_id,
                 'local_start': batch_start,
                 'local_end': batch_end,
@@ -210,14 +199,11 @@ class EnsembleSetSpec:
         """Get list of local realization IDs for this set (0-based)"""
         return list(range(self.n_realizations))
 
-# Create all ensemble set specifications
-STATIONARY_ENSEMBLE_SETS = [
-    EnsembleSetSpec(i, ensemble_type='stationary') for i in range(N_ENSEMBLE_SETS)
-    ]
-
-CLIMATE_ADJUSTED_ENSEMBLE_SETS = [
-    EnsembleSetSpec(i, ensemble_type='climate_adjusted') for i in range(N_ENSEMBLE_SETS)
-    ]
+# Create ensemble set specifications for all datasets
+ENSEMBLE_SETS = {
+    dataset_id: [EnsembleSetSpec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
+    for dataset_id in DATASET_CONFIGS.keys()
+}
 
 # =============================================================================
 # PYWR-DRB CONFIGURATION
@@ -225,8 +211,8 @@ CLIMATE_ADJUSTED_ENSEMBLE_SETS = [
 
 # Setup pathnavigator for Pywr-DRB
 pn_config = pywrdrb.get_pn_config()
-pn_config["flows/stationary_ensemble"] = os.path.abspath(f"{ENSEMBLE_BASE_DIR}/stationary_ensemble/")
-pn_config["flows/climate_adjusted_ensemble"] = os.path.abspath(f"{ENSEMBLE_BASE_DIR}/climate_adjusted_ensemble/")
+for dataset_id in DATASET_CONFIGS.keys():
+    pn_config[f"flows/{dataset_id}"] = os.path.abspath(f"{ENSEMBLE_BASE_DIR}/{dataset_id}/")
 
 # Node information
 pywrdrb_nodes = list(immediate_downstream_nodes_dict.keys())
@@ -251,31 +237,38 @@ SAVE_RESULTS_SETS = [
     "nyc_release_components"
 ]
 
+# Output files
+RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
 
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def verify_ensemble_type(ensemble_type):
-    """Verify that the ensemble type is valid"""
-    if ensemble_type not in ensemble_type_opts:
-        raise ValueError(f"Invalid ensemble type: {ensemble_type}. Must be one of {ensemble_type_opts}.")
+def verify_dataset_id(dataset_id):
+    """Verify that the dataset_id is valid"""
+    if dataset_id not in DATASET_CONFIGS:
+        raise ValueError(f"Invalid dataset_id: {dataset_id}. Must be one of {list(DATASET_CONFIGS.keys())}")
     return True
 
+def get_dataset_type(dataset_id):
+    """Return 'stationary' or 'climate_adjusted' for a dataset"""
+    verify_dataset_id(dataset_id)
+    return DATASET_CONFIGS[dataset_id]['type']
 
-def get_ensemble_set_spec(set_id, ensemble_type):
-    """Get ensemble set specification by ID"""
+def get_all_datasets_of_type(dataset_type):
+    """Get all dataset_ids of a given type"""
+    if dataset_type not in ['stationary', 'climate_adjusted']:
+        raise ValueError(f"Invalid dataset_type: {dataset_type}. Must be 'stationary' or 'climate_adjusted'")
+    return [did for did, cfg in DATASET_CONFIGS.items() 
+            if cfg['type'] == dataset_type]
+
+def get_ensemble_set_spec(set_id, dataset_id):
+    """Get ensemble set specification by ID and dataset"""
+    if dataset_id not in ENSEMBLE_SETS:
+        raise ValueError(f"Invalid dataset_id: {dataset_id}")
     if set_id < 0 or set_id >= N_ENSEMBLE_SETS:
         raise ValueError(f"set_id must be between 0 and {N_ENSEMBLE_SETS-1}")
-    
-    if ensemble_type == 'stationary':
-        return STATIONARY_ENSEMBLE_SETS[set_id]
-    
-    elif ensemble_type == 'climate_adjusted':
-        return CLIMATE_ADJUSTED_ENSEMBLE_SETS[set_id]
-    
-    else:
-        raise ValueError(f"Invalid ensemble_type: {ensemble_type}")
+    return ENSEMBLE_SETS[dataset_id][set_id]
 
 def get_target_ensemble_sets():
     """Get list of ensemble set IDs to process"""
@@ -284,57 +277,57 @@ def get_target_ensemble_sets():
     else:
         return WorkflowFlags.TARGET_ENSEMBLE_SETS
 
-def ensure_ensemble_set_dirs():
+def ensure_ensemble_set_dirs(dataset_id=None):
     """Create all necessary ensemble set directories"""
     os.makedirs(ENSEMBLE_BASE_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(FIG_DIR, exist_ok=True)
     
-    # Add directories for each ensemble set ensemble_type
-    # These will contain directories for each set also
-    os.makedirs(f"{ENSEMBLE_BASE_DIR}/stationary_ensemble", exist_ok=True)
-    os.makedirs(f"{ENSEMBLE_BASE_DIR}/climate_adjusted_ensemble", exist_ok=True)
-    
-    for ensemble_set in STATIONARY_ENSEMBLE_SETS:
-        os.makedirs(ensemble_set.directory, exist_ok=True)
-
-    for ensemble_set in CLIMATE_ADJUSTED_ENSEMBLE_SETS:
-        os.makedirs(ensemble_set.directory, exist_ok=True)
-
-
-def get_all_ensemble_output_files(ensemble_type):
-    """Get list of all ensemble set output files"""
-
-    if ensemble_type == 'stationary':
-        return [spec.output_file for spec in STATIONARY_ENSEMBLE_SETS]
-
-    elif ensemble_type == 'climate_adjusted':
-        return [spec.output_file for spec in CLIMATE_ADJUSTED_ENSEMBLE_SETS]
-
+    # If dataset_id specified, only create dirs for that dataset
+    if dataset_id:
+        dataset_ids = [dataset_id]
     else:
-        raise ValueError(f"Invalid ensemble_type: {ensemble_type}")
+        dataset_ids = DATASET_CONFIGS.keys()
+    
+    for did in dataset_ids:
+        # Create dataset directory
+        os.makedirs(f"{ENSEMBLE_BASE_DIR}/{did}", exist_ok=True)
+        
+        # Create directories for each ensemble set
+        for ensemble_set in ENSEMBLE_SETS[did]:
+            os.makedirs(ensemble_set.directory, exist_ok=True)
 
+def get_all_ensemble_output_files(dataset_id):
+    """Get list of all ensemble set output files for a dataset"""
+    verify_dataset_id(dataset_id)
+    return [spec.output_file for spec in ENSEMBLE_SETS[dataset_id]]
 
-def get_existing_ensemble_sets(ensemble_type):
-    """Get list of ensemble set IDs that have been generated"""
+def get_existing_ensemble_sets(dataset_id):
+    """Get list of ensemble set specs that have been generated for a dataset"""
+    verify_dataset_id(dataset_id)
     existing_sets = []
-    for set_id in range(N_ENSEMBLE_SETS):
-        spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
+    for spec in ENSEMBLE_SETS[dataset_id]:
         # Check if both required files exist
         if (os.path.exists(spec.files['gage_flow']) and 
             os.path.exists(spec.files['catchment_inflow'])):
             existing_sets.append(spec)
     return existing_sets
 
-
-def print_experiment_summary(ensemble_type):
+def print_experiment_summary(dataset_id):
     """Print comprehensive experiment configuration summary"""
-    
-    generated_sets = get_existing_ensemble_sets(ensemble_type=ensemble_type)
+    verify_dataset_id(dataset_id)
+    dataset_config = DATASET_CONFIGS[dataset_id]
+    generated_sets = get_existing_ensemble_sets(dataset_id)
     
     print("=" * 80)
     print("ENSEMBLE EXPERIMENT CONFIGURATION")
     print("=" * 80)
+    print(f"Dataset ID: {dataset_id}")
+    print(f"Dataset Type: {dataset_config['type']}")
+    print(f"Description: {dataset_config['description']}")
+    if dataset_config['type'] == 'climate_adjusted':
+        print(f"Monthly % Changes: {dataset_config['monthly_prc_change']}")
+    print()
     print(f"Total Realizations: {TOTAL_REALIZATIONS:,}")
     print(f"Ensemble Sets: {N_ENSEMBLE_SETS}")
     print(f"Realizations per Set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
@@ -353,14 +346,15 @@ def print_experiment_summary(ensemble_type):
     for i, spec in enumerate(generated_sets):
         print(f"  Set {i+1}: {spec.directory}")
         if i >= 2:  # Limit output for large experiments
-            print(f"  ... (and {N_ENSEMBLE_SETS-3} more sets)")
+            print(f"  ... (and {len(generated_sets)-3} more sets)")
             break
     print("=" * 80)
 
-def print_ensemble_set_summary(set_id, ensemble_type):
+def print_ensemble_set_summary(set_id, dataset_id):
     """Print summary for a specific ensemble set"""
-    spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
-    print(f"\n{ensemble_type} Ensemble Set {set_id + 1} Summary:")
+    spec = get_ensemble_set_spec(set_id, dataset_id)
+    print(f"\n{dataset_id} Ensemble Set {set_id + 1} Summary:")
+    print(f"  Dataset Type: {spec.ensemble_type}")
     print(f"  Global Realizations: {spec.start_realization}-{spec.end_realization-1}")
     print(f"  Directory: {spec.directory}")
     print(f"  Pywr-DRB Batches: {len(spec.pywrdrb_batches)}")
@@ -385,24 +379,32 @@ def validate_configuration():
     if N_YEARS <= 0:
         errors.append("N_YEARS must be positive")
     
+    # Validate dataset configs
+    for dataset_id, config in DATASET_CONFIGS.items():
+        if 'type' not in config:
+            errors.append(f"Dataset {dataset_id} missing 'type' field")
+        elif config['type'] not in ['stationary', 'climate_adjusted']:
+            errors.append(f"Dataset {dataset_id} has invalid type: {config['type']}")
+        
+        if config['type'] == 'climate_adjusted' and config.get('monthly_prc_change') is not None:
+            prc_change = config['monthly_prc_change']
+            if not isinstance(prc_change, (list, np.ndarray)) or len(prc_change) != 12:
+                errors.append(f"Dataset {dataset_id} monthly_prc_change must be 12-element array")
+    
     if errors:
         raise ValueError("Configuration errors:\n" + "\n".join(f"  - {e}" for e in errors))
     
     return True
 
-# Validate configuration on import
-validate_configuration()
-
-
-def verify_realization_id_consistency(ensemble_type='stationary'):
+def verify_realization_id_consistency(dataset_id):
     """
-    Verify that realization IDs are consistent across generation and simulation.
+    Verify that realization IDs are consistent across generation and simulation for a dataset.
     """
-
-    print(f"Verifying {ensemble_type} ensemble realization ID consistency...")
+    verify_dataset_id(dataset_id)
+    print(f"Verifying {dataset_id} realization ID consistency...")
     
     for set_id in range(N_ENSEMBLE_SETS):
-        set_spec = get_ensemble_set_spec(set_id, ensemble_type)
+        set_spec = get_ensemble_set_spec(set_id, dataset_id)
         
         # Check expected vs actual realization IDs
         expected_ids = set_spec.realizations
@@ -419,3 +421,22 @@ def verify_realization_id_consistency(ensemble_type='stationary'):
                 print(f"Set {set_id + 1}: OK")
         else:
             print(f"Set {set_id + 1}: File not found")
+
+# Backward compatibility mappings (can be removed after migration)
+def get_dataset_id_from_legacy(ensemble_type, climate_scenario=None):
+    """Map old ensemble_type/scenario to new dataset_id for backward compatibility"""
+    if ensemble_type == 'stationary':
+        return 'stationary_ensemble'
+    elif ensemble_type == 'climate_adjusted':
+        if climate_scenario:
+            # Try to find matching dataset
+            for dataset_id in DATASET_CONFIGS:
+                if climate_scenario in dataset_id:
+                    return dataset_id
+        # Default climate adjusted
+        climate_datasets = get_all_datasets_of_type('climate_adjusted')
+        return climate_datasets[0] if climate_datasets else None
+    return None
+
+# Validate configuration on import
+validate_configuration()

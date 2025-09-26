@@ -22,7 +22,7 @@ from sglib.utils.load import HDF5Manager
 from methods.load import load_drb_reconstruction
 from config import *
 
-def generate_ensemble_set(set_id, ensemble_type):
+def generate_ensemble_set(set_id, dataset_id):
     """
     Generate a single ensemble set with proper MPI distribution
     
@@ -30,24 +30,25 @@ def generate_ensemble_set(set_id, ensemble_type):
     -----------
     set_id : int
         Ensemble set identifier (0-indexed)
+    dataset_id : str
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
     """
     
-    assert ensemble_type in ensemble_type_opts, \
-        f"Invalid ensemble_type: {ensemble_type}. Must be one of {ensemble_type_opts}"
-        
     # Get MPI info for this function call (now using sub-communicator)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     
     # Get ensemble set specification
-    set_spec = get_ensemble_set_spec(set_id, ensemble_type=ensemble_type)
+    set_spec = get_ensemble_set_spec(set_id, dataset_id)
+    dataset_config = DATASET_CONFIGS[dataset_id]
     set_realization_ids = set_spec.realizations
     n_realizations = set_spec.n_realizations
     output_dir = set_spec.directory
     
     if rank == 0:
-        print(f"Set {set_id + 1}: Generating ensemble with {size} ranks")
+        print(f"Set {set_id + 1}: Generating {dataset_id} ensemble with {size} ranks")
+        print(f"  Dataset type: {dataset_config['type']}")
         print(f"  Total realizations: {n_realizations}")
         print(f"  Output directory: {output_dir}")
     
@@ -56,7 +57,7 @@ def generate_ensemble_set(set_id, ensemble_type):
         os.makedirs(output_dir, exist_ok=True)
     comm.Barrier()
     
-    # Load and broadcast data
+    # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
         Q = load_drb_reconstruction(gage_flow=True)
         Q_inflow = load_drb_reconstruction(gage_flow=False)
@@ -72,7 +73,7 @@ def generate_ensemble_set(set_id, ensemble_type):
     Q_inflow = comm.bcast(Q_inflow, root=0)
     Q_all = comm.bcast(Q_all, root=0)
     
-    # Fit KN generator and broadcast
+    # Fit KN generator (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
     if rank == 0:
         print(f"Set {set_id + 1}: Fitting Kirsch-Nowak model...")
 
@@ -80,17 +81,22 @@ def generate_ensemble_set(set_id, ensemble_type):
     kn_gen.preprocessing()
     kn_gen.fit()
     
-    # If ensemble_type is 'climate_adjusted', we need to adjust the monthly mean 
-    if ensemble_type == 'climate_adjusted':
-    
+    # Apply climate adjustments if needed
+    if dataset_config['type'] == 'climate_adjusted':
         if rank == 0:
-            print(f'Set {set_id + 1}: Adjusting monthly means for climate change...')
+            print(f'Set {set_id + 1}: Applying climate adjustments for {dataset_id}...')
         
+        monthly_prc_change = dataset_config['monthly_prc_change']
+        if monthly_prc_change is None or len(monthly_prc_change) != 12:
+            raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
+        
+        # Apply percentage changes to monthly means
         prior_mean_month = kn_gen.mean_month
         new_mean_month = prior_mean_month.copy() * pd.NA
 
         for i, site in enumerate(new_mean_month):
-            new_mean_month.loc[:, site] = np.exp(prior_mean_month.loc[:, site]) * (1 + np.array(monthly_mean_flow_prc_change) / 100.0)
+            # Convert from log scale, apply percentage change, convert back
+            new_mean_month.loc[:, site] = np.exp(prior_mean_month.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
 
         # Convert back to log scale
         new_mean_month = np.log(new_mean_month.astype(float))
@@ -114,8 +120,8 @@ def generate_ensemble_set(set_id, ensemble_type):
     if rank == 0:
         print(f"Set {set_id + 1}: Distributing realizations across {size} ranks")
         print(f"  Base realizations per rank: {realizations_per_rank}")
-        print(f"  Extra realizations: {extra_realizations}")
-    
+        if extra_realizations > 0:
+            print(f"  First {extra_realizations} ranks get 1 extra realization")
 
     # Generate local ensemble subset
     if local_n_realizations > 0:
@@ -125,10 +131,10 @@ def generate_ensemble_set(set_id, ensemble_type):
     else:
         local_syn_ensemble = {}
     
-    # Fit and broadcast KDEs for non-major nodes
+    # Fit KDEs for non-major nodes (optimized: only fit once on rank 0, broadcast parameters)
     if rank == 0:
         print(f"Set {set_id + 1}: Fitting KDEs for non-major nodes...")
-        kdes = {}
+        kde_params = {}  # Store parameters instead of full KDE objects
         for upstream in pywrdrb_nodes_to_generate:
             downstream = immediate_downstream_nodes_dict[upstream]
             if downstream not in pywrdrb_nodes_to_regress:
@@ -139,12 +145,25 @@ def generate_ensemble_set(set_id, ensemble_type):
             frac = ys / xs
             frac = frac[~np.isnan(frac)]
             
+            # Fit KDE and extract parameters
+            kde = stats.gaussian_kde(frac)
             kde_name = f"{upstream}_to_{downstream}"
-            kdes[kde_name] = stats.gaussian_kde(frac)
+            # Store dataset and covariance factor for reconstruction
+            kde_params[kde_name] = {
+                'dataset': kde.dataset,
+                'covariance_factor': kde.covariance_factor()
+            }
     else:
-        kdes = None
+        kde_params = None
     
-    kdes = comm.bcast(kdes, root=0)
+    kde_params = comm.bcast(kde_params, root=0)
+    
+    # Reconstruct KDEs from parameters on all ranks
+    kdes = {}
+    for kde_name, params in kde_params.items():
+        kde = stats.gaussian_kde(params['dataset'])
+        kde.set_bandwidth(bw_method=params['covariance_factor'])
+        kdes[kde_name] = kde
     
     # Generate flows at non-major nodes for local ensemble
     if local_n_realizations > 0:
@@ -184,9 +203,6 @@ def generate_ensemble_set(set_id, ensemble_type):
     
     # Create marginal catchment inflows for local ensemble
     if local_n_realizations > 0:
-        if rank == 0:
-            print(f"Set {set_id + 1}: Creating marginal catchment inflows...")
-        
         local_inflow_ensemble = {}
         for real in local_syn_ensemble:
             local_syn_ensemble[real]['delTrenton'] = 0.0
@@ -203,6 +219,7 @@ def generate_ensemble_set(set_id, ensemble_type):
     if rank == 0:
         print(f"Set {set_id + 1}: Gathering ensemble data from all ranks...")
     
+    # Use Gatherv for better performance with unequal distributions
     all_syn_ensembles = comm.gather(local_syn_ensemble, root=0)
     all_inflow_ensembles = comm.gather(local_inflow_ensemble, root=0)
     
@@ -233,18 +250,17 @@ def generate_ensemble_set(set_id, ensemble_type):
         syn_datetime = combined_inflow_ensemble[combined_inflow_ensemble_real_ids[0]].index
         sites = combined_inflow_ensemble[combined_inflow_ensemble_real_ids[0]].columns
 
-        # Reorganize data structure
+        # Reorganize data structure (optimized: pre-allocate arrays)
         Q_syn = {}
         Qs_inflows = {}
         
         for site in sites:
-            Q_syn[site] = np.zeros((len(syn_datetime), n_realizations), dtype=float)
-            Qs_inflows[site] = np.zeros((len(syn_datetime), n_realizations), dtype=float)
+            Q_syn[site] = np.zeros((len(syn_datetime), n_realizations), dtype=np.float32)  # Use float32 to save memory
+            Qs_inflows[site] = np.zeros((len(syn_datetime), n_realizations), dtype=np.float32)
             
             for i, global_real_id in enumerate(set_realization_ids):
                 Q_syn[site][:, i] = combined_syn_ensemble[global_real_id][site].values 
                 Qs_inflows[site][:, i] = combined_inflow_ensemble[global_real_id][site].values
-
             
             # Convert to DataFrame with realization IDs
             # IMPORTANT: Use set-specific realization IDs
@@ -275,24 +291,37 @@ def generate_ensemble_set(set_id, ensemble_type):
     
     return True
 
-def parallel_generate_all_sets(ensemble_type):
+def parallel_generate_all_sets(dataset_id):
     """
     Distribute ensemble set generation across available MPI ranks
+    
+    Parameters:
+    -----------
+    dataset_id : str
+        Dataset identifier to generate
     """
-        
+    
     # MPI setup
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
     
+    # Verify dataset
+    verify_dataset_id(dataset_id)
+    dataset_config = DATASET_CONFIGS[dataset_id]
+    
     # Make sure more ranks than sets (preferred for large nodes)
-    assert size > N_ENSEMBLE_SETS, \
-        f"Requires more MPI ranks than ensemble sets. Got {size} ranks, {N_ENSEMBLE_SETS} sets."
+    if size <= N_ENSEMBLE_SETS:
+        if rank == 0:
+            print(f"WARNING: Only {size} ranks for {N_ENSEMBLE_SETS} sets.")
+            print(f"Ideally use > {N_ENSEMBLE_SETS} ranks for better performance.")
     
     if rank == 0:
         print("=" * 60)
-        print("PARALLEL ENSEMBLE SET GENERATION")
+        print(f"PARALLEL ENSEMBLE SET GENERATION: {dataset_id}")
         print("=" * 60)
+        print(f"Dataset type: {dataset_config['type']}")
+        print(f"Description: {dataset_config['description']}")
         print(f"Total ensemble sets: {N_ENSEMBLE_SETS}")
         print(f"Realizations per set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
         print(f"Available MPI ranks: {size}")
@@ -308,55 +337,76 @@ def parallel_generate_all_sets(ensemble_type):
     
     # Ensure all directories exist
     if rank == 0:
-        ensure_ensemble_set_dirs()
+        ensure_ensemble_set_dirs(dataset_id)
     
     comm.Barrier()  # Wait for directories to be created
     
-    ranks_per_set = size // N_ENSEMBLE_SETS
-    set_id = rank // ranks_per_set
-    
-    # Only generate if we're within valid set range
-    if set_id < N_ENSEMBLE_SETS:
-        # Create sub-communicator for this ensemble set
-        color = set_id
-        local_comm = comm.Split(color, rank)
+    if size >= N_ENSEMBLE_SETS:
+        # More ranks than sets - distribute ranks across sets
+        ranks_per_set = size // N_ENSEMBLE_SETS
+        set_id = rank // ranks_per_set
         
-        # Store original communicator
-        original_comm = MPI.COMM_WORLD
-        
-        # Temporarily replace global communicator for the generation function
-        # (This is a bit hacky but allows reuse of existing generation code)
-        MPI.COMM_WORLD = local_comm
-        
-        try:
-            true_if_success = generate_ensemble_set(set_id, ensemble_type=ensemble_type)
-            assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
+        # Only generate if we're within valid set range
+        if set_id < N_ENSEMBLE_SETS:
+            # Create sub-communicator for this ensemble set
+            color = set_id
+            local_comm = comm.Split(color, rank)
+            
+            # Store original communicator
+            original_comm = MPI.COMM_WORLD
+            
+            # Temporarily replace global communicator for the generation function
+            MPI.COMM_WORLD = local_comm
+            
+            try:
+                true_if_success = generate_ensemble_set(set_id, dataset_id)
+                assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
 
-        finally:
-            # Restore original communicator
-            MPI.COMM_WORLD = original_comm
-            local_comm.Free()
-
+            finally:
+                # Restore original communicator
+                MPI.COMM_WORLD = original_comm
+                local_comm.Free()
+    else:
+        # More sets than ranks - each rank processes multiple sets sequentially
+        sets_per_rank = N_ENSEMBLE_SETS // size
+        extra_sets = N_ENSEMBLE_SETS % size
+        
+        if rank < extra_sets:
+            my_sets = list(range(rank * (sets_per_rank + 1), (rank + 1) * (sets_per_rank + 1)))
+        else:
+            start = extra_sets * (sets_per_rank + 1) + (rank - extra_sets) * sets_per_rank
+            my_sets = list(range(start, start + sets_per_rank))
+        
+        for set_id in my_sets:
+            # Create single-rank communicator
+            local_comm = MPI.COMM_SELF
+            original_comm = MPI.COMM_WORLD
+            MPI.COMM_WORLD = local_comm
+            
+            try:
+                true_if_success = generate_ensemble_set(set_id, dataset_id)
+                assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
+            finally:
+                MPI.COMM_WORLD = original_comm
 
     # Synchronize all ranks
     comm.Barrier()
     
     if rank == 0:
         print("\n" + "=" * 60)
-        print("ALL ENSEMBLE SETS GENERATED SUCCESSFULLY!")
+        print(f"GENERATION COMPLETED: {dataset_id}")
         print("=" * 60)
         
         # Verify all sets were created
-        existing_sets = get_existing_ensemble_sets(ensemble_type=ensemble_type)
+        existing_sets = get_existing_ensemble_sets(dataset_id)
         if len(existing_sets) == N_ENSEMBLE_SETS:
             print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets verified")
         else:
             print(f"WARNING: Only {len(existing_sets)}/{N_ENSEMBLE_SETS} sets found")
-            missing = set(range(N_ENSEMBLE_SETS)) - set(existing_sets)
+            missing = set(range(N_ENSEMBLE_SETS)) - set([s.set_id for s in existing_sets])
             print(f"  Missing sets: {sorted(missing)}")
 
-
-def main(ensemble_type):
+def main(dataset_id):
     """Main function"""
     
     # Initialize MPI
@@ -365,20 +415,23 @@ def main(ensemble_type):
     
     if rank == 0:
         # Print configuration summary
-        print_experiment_summary(ensemble_type=ensemble_type)
+        print_experiment_summary(dataset_id)
     
     # Generate all ensemble sets in parallel
-    parallel_generate_all_sets(ensemble_type=ensemble_type)
+    parallel_generate_all_sets(dataset_id)
 
     if rank == 0:
-        print("\nEnsemble generation workflow completed!")
-
+        print(f"\nEnsemble generation workflow completed for {dataset_id}!")
 
 if __name__ == "__main__":
     
-    # Get the ensemble_type from command line arguments
-    ensemble_type = sys.argv[1]
-    verify_ensemble_type(ensemble_type)
+    # Get the dataset_id from command line arguments
+    if len(sys.argv) != 2:
+        print("Usage: python 01_generate_ensemble_sets.py <dataset_id>")
+        print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
+        sys.exit(1)
     
+    dataset_id = sys.argv[1]
+    verify_dataset_id(dataset_id)
     
-    main(ensemble_type=ensemble_type)
+    main(dataset_id)

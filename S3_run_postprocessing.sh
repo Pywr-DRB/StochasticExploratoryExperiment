@@ -2,10 +2,12 @@
 #SBATCH --job-name=post
 #SBATCH --output=./logs/postprocessing.out
 #SBATCH --error=./logs/postprocessing.err
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
+#SBATCH --nodes=3
+#SBATCH --ntasks-per-node=40
 #SBATCH --time=1:00:00
 #SBATCH --mem=0
+#SBATCH --exclusive
+
 
 # =============================================================================
 # SETUP
@@ -25,49 +27,17 @@ CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-true}
 # make directories
 mkdir -p logs figures
 
-# =============================================================================
-# WORKFLOW
-# =============================================================================
 
-echo "========================================================================"
-echo "POSTPROCESSING ENSEMBLE WORKFLOW STARTING"
-echo "========================================================================"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Nodes: $SLURM_NNODES"
-echo "Tasks per node: $SLURM_NTASKS_PER_NODE"
-echo "Total MPI ranks: $np"
-echo "Total realizations: $TOTAL_REALIZATIONS"
-echo "Ensemble sets: $N_ENSEMBLE_SETS"
-echo "Realizations per set: $N_REALIZATIONS_PER_ENSEMBLE_SET"
-echo "========================================================================"
-
-
-
-# Step 6: Analyze outcomes and generate plots (single core)
 if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
 
-    echo "Calculating post-processed data..."
-    python3 04_postprocess_data.py "stationary"
-    python3 04_postprocess_data.py "climate_adjusted"
+    echo "Calculating SSI based drought metrics..."
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
 
-    # echo "Calculating SSI based drought metrics..."
-    # python3 05_calculate_ssi_drought_metrics.py "stationary"
-    # python3 05_calculate_ssi_drought_metrics.py "climate_adjusted"
-
-    # echo "Calculating Hashimoto metrics during droughts for stationary ensemble..."
-    # python3 06_calculate_hashimoto_metrics_during_droughts.py "stationary"
-    # python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted"
-
-    echo "----------------------------------------"
-
-
-    # echo "Plotting stationary drought scatters..."
-    # python3 999_plot_drought_montague_violations.py "stationary"
-
+    echo "Calculating Hashimoto metrics during droughts for stationary ensemble..."
+    # mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "stationary_ensemble"
+    mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted_ssp245_min"
+    mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted_ssp245_max"
 
 fi
-
-
-echo "========================================================================"
-echo "POST-PROCESSING COMPLETE - CHECK LOGS FOR DETAILED RESULTS"
-echo "========================================================================"

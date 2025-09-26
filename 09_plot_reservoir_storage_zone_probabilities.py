@@ -2,43 +2,26 @@
 This script is used to plot patterns in reservoir storage zone probabilities.
 
 The final plot should have time on the horizontal axis, corresponding to a single year. 
-
 The Y-axis will be total simulated NYC reservoir storage as a percentage. 
-
 The storage will be broken-up based on the FFMP level boundaries which are the same for each year. 
-
-The plot should show a heatmap indicating the probability of being inside each of the FFMP sotrage zones 
+The plot should show a heatmap indicating the probability of being inside each of the FFMP storage zones 
 during a particular period of the year. 
-
 The plot should support daily, weekly, and monthly time aggregations.
-
-Ultimately, for each time period, there should be N colors vertically, representing the N storage zones. 
 """
 
-
-# add near other imports
+import sys
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from matplotlib.colors import TwoSlopeNorm
+from matplotlib import colors
+import warnings
+warnings.filterwarnings("ignore")
 
 import pywrdrb
-import sys
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib import colors
+from config import *
 
-
-from config import RECONSTRUCTION_OUTPUT_FNAME
-from config import verify_ensemble_type
-
-### Plotting
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib import colors
 
 def _period_index(dts: pd.DatetimeIndex, period: str = 'daily', origin: str = 'june1') -> np.ndarray:
     """
@@ -136,22 +119,6 @@ def plot_ffmp_zone_probabilities(
       - X: generic-year period (daily/weekly/monthly) relative to June 1,
       - Y: storage % with time-dynamic FFMP zone edges (median per period),
       - Color: probability (log scale) of being in each zone at that period.
-
-    Parameters
-    ----------
-    df_ts : DataFrame
-        Wide matrix with datetime index and simulation columns (storage % in [0,100]).
-    ffmp_level_boundaries : DataFrame
-        Daily (or higher frequency) thresholds with the same datetime index,
-        columns are level thresholds in % of capacity (internal boundaries).
-    period : str
-        'daily', 'weekly', or 'monthly' aggregation along the generic year (June 1 origin).
-    zone_cols : list[str] or None
-        Which columns in ffmp_level_boundaries define the internal thresholds; if None, use all numeric.
-    pct_extents : (float, float)
-        Lower and upper bounds for the storage axis (typically (0,100)).
-    log_floor : float or None
-        If given, replace 0 probabilities by this floor before LogNorm.
     """
     if not isinstance(df_ts.index, pd.DatetimeIndex):
         raise ValueError("df_ts must have a DatetimeIndex.")
@@ -184,7 +151,6 @@ def plot_ffmp_zone_probabilities(
     sim_cols = S.columns.tolist()
     counts = np.zeros((P, Z), dtype=np.int64)  # (P, Z)
     # Iterate per date: histogram across simulations using that day's edges
-    # This avoids exploding to long format.
     S_vals = S.to_numpy()  # (N_dates, N_sims)
     B_vals = B[thr_cols].to_numpy()  # (N_dates, K)
 
@@ -259,137 +225,216 @@ def plot_ffmp_zone_probabilities(
     return fig, ax, probs, x_edges_1d, y_edges_grid
 
 
-if __name__ == "__main__":
+def plot_storage_zone_analysis(dataset_id, period='weekly'):
+    """
+    Generate storage zone probability plots for a dataset
     
-    # Load a single FFMP level boundary data
+    Parameters:
+    -----------
+    dataset_id : str
+        Dataset identifier to analyze
+    period : str
+        Time aggregation period ('daily', 'weekly', 'monthly')
+    """
+    
+    # Verify dataset
+    verify_dataset_id(dataset_id)
+    dataset_config = DATASET_CONFIGS[dataset_id]
+    
+    print(f"Generating storage zone probability plots for: {dataset_id}")
+    print(f"Dataset type: {dataset_config['type']}")
+    print(f"Time period: {period}")
+    
+    # Load FFMP level boundary data (same for all datasets)
+    print("Loading FFMP level boundaries...")
     ffmp_level_data = pywrdrb.Data(results_sets=["ffmp_level_boundaries"])
-    ffmp_level_data.load_output(output_filenames = [RECONSTRUCTION_OUTPUT_FNAME])
+    ffmp_level_data.load_output(output_filenames=[RECONSTRUCTION_OUTPUT_FNAME])
     
     # The FFMP level boundaries indicate different storage zones
     # These are the same for all years and simulations
-    # Here, I want to keep just one copy of the pd.DataFrame
-    # This will be a daily timeseries data
     ffmp_level_boundaries = ffmp_level_data.ffmp_level_boundaries['reconstruction'][0]
-
+    
     # Convert ffmp level boundaries to percentage (currently fraction)
     ffmp_level_boundaries = ffmp_level_boundaries * 100
 
+    # Load ensemble data from processed HDF5
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    if not os.path.exists(fname):
+        print(f"ERROR: Postprocessed data not found: {fname}")
+        print("Run postprocessing (04_postprocess_data.py) first!")
+        return None, None, None
+    
+    print(f"Loading ensemble data for {dataset_id}...")
+    data = pywrdrb.Data()
+    data.load_from_export(fname)
+    
+    realization_ids = list(data.res_storage[dataset_id].keys())
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    
+    # Make a df with nyc_agg storage for all realizations
+    if period == 'daily':
+        agg_period = 'D'
+    elif period == 'weekly':
+        agg_period = 'W'
+    elif period == 'annual':
+        agg_period = 'YS'
+    else:
+        raise ValueError(f"Invalid period: {period}")
+    
+    # Get all realizations at once
+    print(f'Creating storage DataFrame for {len(realization_ids)} realizations...')
+    all_data = {rid: data.res_storage[dataset_id][rid][nyc_reservoirs].sum(axis=1).resample(agg_period).min() 
+                for rid in realization_ids}
+    df_nyc_storage = pd.DataFrame(all_data)
+    
+    # Convert to percentage of max storage
+    df = df_nyc_storage.copy()
+    df = df / df.max().max() * 100  # Percentage of max storage
+    
+    # Relabel all columns 1, 2, ..., N
+    df.columns = [f'{i+1}' for i in range(df.shape[1])]
+    
+    # Period of year should be relative to June 1st
+    if period == 'daily':
+        # Calculate period_of_year where June 1 = 1, July 31 next year = 365/366
+        june_1 = pd.to_datetime(df.index.year.astype(str) + '-06-01')
+        mask_after_june = df.index >= june_1
+        
+        df['period_of_year'] = np.where(
+            mask_after_june,
+            (df.index - june_1).days + 1,
+            (df.index - pd.to_datetime((df.index.year - 1).astype(str) + '-06-01')).days + 1
+        )
+    elif period == 'weekly':
+        df['period_of_year'] = pd.to_datetime(df.index).isocalendar().week
+    
+    # Plot results
+    print('Plotting FFMP zone probabilities...')
+    
+    output_fname = f'{FIG_DIR}/storage_zones/{dataset_id}_storage_zone_probabilities_{period}.png'
+    os.makedirs(os.path.dirname(output_fname), exist_ok=True)
+    
+    fig, ax, prob, x_edges_1d, y_edges_grid = plot_ffmp_zone_probabilities(
+        df, ffmp_level_boundaries,
+        period=period,
+        vmin=0.01,
+        vmax=100,
+        log_floor=0.01,
+        title=f"{dataset_id} - NYC Storage Zone Probabilities",
+        fname=output_fname
+    )
+    
+    print(f"  Saved: {output_fname}")
+    
+    return prob, x_edges_1d, y_edges_grid
 
-    # Save storage probabilities in this dict, to compare in the difference plot
+
+def plot_storage_zone_comparison(dataset_ids, period='weekly'):
+    """
+    Compare storage zone probabilities between multiple datasets
+    
+    Parameters:
+    -----------
+    dataset_ids : list
+        List of dataset identifiers to compare
+    period : str
+        Time aggregation period
+    """
+    
+    print(f"\nComparing storage zone probabilities between datasets...")
+    
     storage_probs = {}
-
-    # Get ensemble type from command line arguments
-    for ensemble_type in ['stationary', 'climate_adjusted']:
-        inflow_type = f'{ensemble_type}_ensemble'
-        verify_ensemble_type(ensemble_type)
-
-        # Load ensemble data from processed HDF5 - should have everything we need inside
-        fname = f'./pywrdrb/outputs/{ensemble_type}_ensemble_with_postprocessing.hdf5'
-        data = pywrdrb.Data()
-        data.load_from_export(fname)
-
-        realization_ids = list(data.res_storage[inflow_type].keys())
-
-        nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-
-        # Make a df with nyc_agg storage for all realizations
-        period = 'weekly'
-        if period == 'daily':
-            agg_period = 'D'
-        elif period == 'weekly':
-            agg_period = 'W'
-        elif period == 'annual':
-            agg_period = 'YS'
-
-        # If you can restructure to get all realizations at once
-        print('Making DF of all data')
-        all_data = {rid: data.res_storage[inflow_type][rid][nyc_reservoirs].sum(axis=1).resample(agg_period).min() 
-                    for rid in realization_ids}
-        df_nyc_storage = pd.DataFrame(all_data)
-
-        df = df_nyc_storage.copy()
-        df = df / df.max().max() * 100 # Percentage of max storage
-
-
-        # Relabel all columns 1, 2, ..., N
-        df.columns = [f'{i+1}' for i in range(df.shape[1])]
-
-        # Period of year should be relative to June 1st
-        if period == 'daily':
-            # Calculate period_of_year where June 1 = 1, July 31 next year = 365/366
-            june_1 = pd.to_datetime(df.index.year.astype(str) + '-06-01')
-
-            # For dates >= June 1: days since June 1 + 1
-            # For dates < June 1: days since June 1 of previous year + 1
-            mask_after_june = df.index >= june_1
-
-            df['period_of_year'] = np.where(
-                mask_after_june,
-                (df.index - june_1).days + 1,
-                (df.index - pd.to_datetime((df.index.year - 1).astype(str) + '-06-01')).days + 1
-            )
-        elif period == 'weekly':
-            df['period_of_year'] = pd.to_datetime(df.index).isocalendar().week
-
-        # Plot results
-        print('Plotting FFMP zone probabilities...')
-
-        fname = f'{inflow_type}_storage_zone_probabilities.png'
-        _, _, prob, x_edges_1d, y_edges_grid = plot_ffmp_zone_probabilities(df, ffmp_level_boundaries,
-                                    period=period,
-                                    vmin=0.01,
-                                    vmax=100,
-                                    log_floor=0.01,
-                                    fname=None)
+    x_edges_1d_ref = None
+    y_edges_grid_ref = None
+    
+    # Generate plots for each dataset
+    for dataset_id in dataset_ids:
+        prob, x_edges_1d, y_edges_grid = plot_storage_zone_analysis(dataset_id, period)
         
-        storage_probs[ensemble_type] = prob
+        if prob is not None:
+            storage_probs[dataset_id] = prob
+            
+            if x_edges_1d_ref is None:
+                x_edges_1d_ref = x_edges_1d
+                y_edges_grid_ref = y_edges_grid
+    
+    # If we have multiple datasets, create difference plots
+    if len(storage_probs) > 1 and 'stationary_ensemble' in storage_probs:
+        print("\nGenerating difference plots...")
         
-        if 'x_edges_1d_ref' not in locals():
-            x_edges_1d_ref, y_edges_grid_ref = x_edges_1d, y_edges_grid
-    
-    ### Now plot the difference between the two. 
-    # This plot should match the same x, y format as the prior
-    # period on the horizontal and storage on the y
-    # However, the cmap should be used to show the percent change in storage prob
-    # for the climate_adjusted relative to the stationary
-    print("Plotting difference in storage probs...")
-    
-    # percent change relative to stationary (in %), with small floor to avoid 0-division
-    eps = 1e-8
-    p_s = storage_probs['stationary']
-    p_c = storage_probs['climate_adjusted']
-    prob_diff = (p_c - p_s)
-    
-    # Print min/max of prob_diff 
-    print(f"Max prob_diff: {prob_diff.max().max()} | Min prob diff: {prob_diff.min().min()}")
-    
-    prob_diff_perc = 100.0 * (prob_diff / np.maximum(p_s, eps))       
-    
-    for use_percent_change in [False, True]:
+        # Use stationary as reference
+        p_ref = storage_probs['stationary_ensemble']
         
-        prob_vals = prob_diff_perc if use_percent_change else prob_diff
-        if use_percent_change:
-            cbar_lab = 'Δ Probability (% relative to stationary)'
-            norm = TwoSlopeNorm(vmin=-100, vcenter=0, vmax=100)
-            fname='storage_zone_prob_diff_percent.png'
-        else:
-            cbar_lab = 'Δ Probability (absolute)'
-            vmin = prob_vals.min().min()
-            vmax = prob_vals.max().max()
+        for dataset_id in storage_probs:
+            if dataset_id == 'stationary_ensemble':
+                continue
+            
+            p_comp = storage_probs[dataset_id]
+            
+            # Calculate difference
+            eps = 1e-8
+            prob_diff = p_comp - p_ref
+            prob_diff_perc = 100.0 * (prob_diff / np.maximum(p_ref, eps))
+            
+            print(f"  {dataset_id} vs stationary:")
+            print(f"    Max absolute diff: {prob_diff.max():.4f}")
+            print(f"    Min absolute diff: {prob_diff.min():.4f}")
+            
+            # Plot absolute difference
+            fig, ax = plt.subplots(figsize=(14, 6))
+            X = np.tile(x_edges_1d_ref, (y_edges_grid_ref.shape[0], 1))
+            Y = y_edges_grid_ref
+            
+            vmin = prob_diff.min()
+            vmax = prob_diff.max()
             norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-            fname = 'storage_zone_prob_diff_absolute.png'
-        
-        # plot difference using same grids
-        fig, ax = plt.subplots(figsize=(14, 6))
-        X = np.tile(x_edges_1d_ref, (y_edges_grid_ref.shape[0], 1))
-        Y = y_edges_grid_ref
-        pcm = ax.pcolormesh(X, Y, prob_vals, 
-                            cmap='BrBG', norm=norm, shading='flat')
-        for j in range(Y.shape[1]):
-            ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
-        ax.set_xlabel('Period of year')
-        ax.set_ylabel('Total NYC storage (% of capacity)')
-        cbar = plt.colorbar(pcm, ax=ax, pad=0.02, extend='both')
-        cbar.set_label(cbar_lab)
-        plt.tight_layout()
-        plt.savefig(fname, dpi=300, bbox_inches='tight')
+            
+            pcm = ax.pcolormesh(X, Y, prob_diff, 
+                               cmap='BrBG', norm=norm, shading='flat')
+            
+            for j in range(Y.shape[1]):
+                ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
+            
+            ax.set_xlabel('Period of year')
+            ax.set_ylabel('Total NYC storage (% of capacity)')
+            ax.set_title(f'Storage Zone Probability Difference: {dataset_id} - stationary')
+            
+            cbar = plt.colorbar(pcm, ax=ax, pad=0.02, extend='both')
+            cbar.set_label('Δ Probability (absolute)')
+            
+            plt.tight_layout()
+            fname = f'{FIG_DIR}/storage_zones/{dataset_id}_vs_stationary_diff_{period}.png'
+            plt.savefig(fname, dpi=300, bbox_inches='tight')
+            print(f"    Saved difference plot: {fname}")
+
+
+def main(dataset_id):
+    """Main function"""
+    
+    print("=" * 60)
+    print(f"RESERVOIR STORAGE ZONE PROBABILITY ANALYSIS: {dataset_id}")
+    print("=" * 60)
+    
+    # Generate storage zone analysis for this dataset
+    plot_storage_zone_analysis(dataset_id, period='weekly')
+    
+    # If running for climate-adjusted, also generate comparison plots
+    if dataset_id != 'stationary_ensemble':
+        plot_storage_zone_comparison(['stationary_ensemble', dataset_id], period='weekly')
+    
+    print("=" * 60)
+    print("Storage zone analysis completed successfully!")
+
+
+if __name__ == "__main__":
+    
+    # Get the dataset_id from command line arguments
+    if len(sys.argv) != 2:
+        print("Usage: python 09_plot_reservoir_storage_zone_probabilities.py <dataset_id>")
+        print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
+        sys.exit(1)
+    
+    dataset_id = sys.argv[1]
+    verify_dataset_id(dataset_id)
+    
+    main(dataset_id)
