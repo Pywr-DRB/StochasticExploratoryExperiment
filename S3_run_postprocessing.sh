@@ -25,8 +25,8 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     echo "Calculating SSI based drought metrics..."
     ################################################################################
     # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_median"
 
     ################################################################################

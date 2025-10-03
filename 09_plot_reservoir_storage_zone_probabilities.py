@@ -374,7 +374,7 @@ def plot_storage_zone_comparison(dataset_ids, period='weekly'):
             # Calculate difference
             eps = 1e-8
             prob_diff = p_comp - p_ref
-            prob_diff_perc = 100.0 * (prob_diff / np.maximum(p_ref, eps))
+            prob_diff = 100.0 * (prob_diff / np.maximum(p_ref, eps))
             
             print(f"  {dataset_id} vs stationary:")
             print(f"    Max absolute diff: {prob_diff.max():.4f}")

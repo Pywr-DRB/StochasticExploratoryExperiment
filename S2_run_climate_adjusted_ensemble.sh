@@ -9,7 +9,7 @@
 #SBATCH --exclusive
 
 # Setup
-DATASET_ID="${1:-climate_adjusted_ssp245_median}"  # Default or pass as argument
+DATASET_ID="${1:-climate_adjusted_ssp370_min}"  # Default or pass as argument
 module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))

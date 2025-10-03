@@ -357,22 +357,6 @@ def plot_drought_frequency_analysis(dataset_id, ssi_window=12):
     )
     print(f"  Saved: {fname}")
     
-    # Also plot frequency
-    print(f"Plotting frequency heatmap...")
-    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_drought_frequency.png"
-    
-    plot_drought_frequency_heatmap(
-        result,
-        syn_droughts=None,
-        obs_droughts=obs_droughts,
-        return_period=False,
-        vmin=0,
-        vmax=0.5,
-        title=f"{dataset_id} - Annual Drought Frequency (SSI-{ssi_window})",
-        fname=fname
-    )
-    print(f"  Saved: {fname}")
-    
     return result
 
 

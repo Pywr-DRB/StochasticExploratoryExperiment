@@ -128,11 +128,8 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         # Process assigned realizations
         local_ssi_data = {}
         local_drought_data = []
-
+        
         for i, real_id in enumerate(my_realizations):
-            if rank == 0 and i % 10 == 0:
-                print(f"    Rank 0: {i}/{len(my_realizations)} realizations processed...")
-
             Qsi = local_syn_ensemble[real_id].loc[:, node]
             Qsi_monthly = Qsi.resample('MS').sum()
 
