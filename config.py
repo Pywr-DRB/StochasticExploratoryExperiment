@@ -37,11 +37,12 @@ assert N_REALIZATIONS_PER_ENSEMBLE_SET % N_REALIZATIONS_PER_PYWRDRB_BATCH == 0, 
 
 # Load monthly shift data for climate adjustments
 fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp245_2020_2059.csv"
-monthly_shift_range = pd.read_csv(fname, index_col=0)
+ssp245_monthly_shift_range = pd.read_csv(fname, index_col=0)
+
+fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp370_2020_2059.csv"
+ssp370_monthly_shift_range = pd.read_csv(fname, index_col=0)
 
 # Define all dataset configurations
-
-
 DATASET_CONFIGS = {
     'stationary_ensemble': {
         'type': 'stationary',
@@ -51,33 +52,33 @@ DATASET_CONFIGS = {
     'climate_adjusted_ssp245_min': {
         'type': 'climate_adjusted',
         'description': 'SSP2-4.5 2020-2059 minimum change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'min'].values
+        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'min'].values
     },
     'climate_adjusted_ssp245_median': {
         'type': 'climate_adjusted', 
         'description': 'SSP2-4.5 2020-2059 median change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'median'].values
+        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'median'].values
     },
     'climate_adjusted_ssp245_max': {
         'type': 'climate_adjusted',
         'description': 'SSP2-4.5 2020-2059 maximum change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'max'].values
+        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'max'].values
     },
-    'climate_adjusted_ssp375_min': {
+    'climate_adjusted_ssp370_min': {
         'type': 'climate_adjusted',
         'description': 'SSP3-7.0 2020-2059 minimum change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'min'].values
+        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'min'].values
     },
-    'climate_adjusted_ssp375_median': {
-        'type': 'climate_adjusted',
-        'description': 'SSP3-7.0 2020-2059 median change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'median'].values
-    },
-    'climate_adjusted_ssp375_max': {
-        'type': 'climate_adjusted',
-        'description': 'SSP3-7.0 2020-2059 maximum change',
-        'monthly_prc_change': monthly_shift_range.loc[:, 'max'].values
-    },
+    # 'climate_adjusted_ssp370_median': {
+    #     'type': 'climate_adjusted',
+    #     'description': 'SSP3-7.0 2020-2059 median change',
+    #     'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'median'].values
+    # },
+    # 'climate_adjusted_ssp370_max': {
+    #     'type': 'climate_adjusted',
+    #     'description': 'SSP3-7.0 2020-2059 maximum change',
+    #     'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'max'].values
+    # },
 }
 
 # =============================================================================

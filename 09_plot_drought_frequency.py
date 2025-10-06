@@ -83,8 +83,6 @@ def calculate_drought_frequency(
         E_L_years = float(np.mean(n_years / counts))
     else:
         E_L_years = float(np.mean(starts) / 365.25)
-    
-    lam_all = 1.0 / E_L_years  # events/year (all droughts)
 
     # --- Grids (keep shapes consistent with plotting: rows=x1, cols=x2) ---
     x1_grid = np.linspace(x1_range[0], x1_range[1], ngrid)
@@ -111,6 +109,7 @@ def calculate_drought_frequency(
     # Return period and annual probability (Poisson at-least-one in a year)
     # T (years) = E[L]/p_joint ; P_year = 1 - exp(-lambda * p_joint)
     return_period = E_L_years / p_joint
+    lam_all = 1.0 / E_L_years  # events/year (all droughts)
     freq = 1.0 - np.exp(-lam_all * p_joint)
 
     # small floor for plotting stability
@@ -183,7 +182,12 @@ def plot_drought_frequency_heatmap(freq_result,
         default_contours = None
 
     if difference:
-        norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        if vmin<0 and vmax>0:
+            norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+        elif vmin<1 and vmax>1:
+            norm = TwoSlopeNorm(vmin=vmin, vcenter=1, vmax=vmax)
+        else:
+            norm = colors.Normalize(vmin=vmin, vmax=vmax)
         cbar_label = "Change in Return Period (%)"
 
     # Grid edges for pcolormesh
@@ -360,7 +364,10 @@ def plot_drought_frequency_analysis(dataset_id, ssi_window=12):
     return result
 
 
-def compare_drought_frequencies(dataset_ids, ssi_window=12):
+def compare_drought_frequencies(dataset_ids, 
+                                ssi_window=12,
+                                vmax=None, 
+                                vmin=None):
     """
     Compare drought frequencies between multiple datasets
     
@@ -403,10 +410,11 @@ def compare_drought_frequencies(dataset_ids, ssi_window=12):
             # Calculate percentage difference
             eps = 1e-8
             return_period_diff_perc = 100.0 * (T_comp - T_ref) / np.maximum(T_ref, eps)
+            log_ratio = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
             
             # Create difference results dict
             diff_results = {
-                "return_period_matrix": return_period_diff_perc,
+                "return_period_matrix": log_ratio,
                 "frequency_matrix": all_results[dataset_id]['frequency_matrix'] - 
                                    all_results['stationary_ensemble']['frequency_matrix'],
                 "total_years": all_results['stationary_ensemble']['total_years'],
@@ -431,8 +439,8 @@ def compare_drought_frequencies(dataset_ids, ssi_window=12):
                 obs_droughts=obs_droughts,
                 return_period=True,
                 log_cmap=False,
-                vmin=-50,
-                vmax=50,
+                vmin=vmin,
+                vmax=vmax,
                 cmap='BrBG',
                 title=f"Return Period Change: {dataset_id} vs stationary (%)",
                 fname=fname,
@@ -453,7 +461,8 @@ def main(dataset_id):
     
     # If not stationary, also compare with stationary
     if dataset_id != 'stationary_ensemble':
-        compare_drought_frequencies(['stationary_ensemble', dataset_id], ssi_window=12)
+        compare_drought_frequencies(['stationary_ensemble', dataset_id], ssi_window=12,
+                                    vmin=-1, vmax=1)
     
     print("=" * 60)
     print("Drought frequency analysis completed successfully!")

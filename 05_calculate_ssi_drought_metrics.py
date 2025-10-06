@@ -66,7 +66,8 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     # --- Only rank 0 loads the export; others wait for metadata ---
     if rank == 0:
         data = pywrdrb.Data()
-        data.load_from_export(fname)
+        data.load_from_export(fname, results_sets=['gage_flow'])
+
         # Keep just the combined ensemble dict
         syn_ensemble = data.gage_flow[dataset_id]  # no copy: avoid doubling memory
         del data  # free wrapper memory
@@ -116,13 +117,13 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
 
         # Fit SSI on historical data (same on all ranks)
-        ssi_calculator.fit(Q_monthly.loc[:, node])
+        ssi_calculator.fit(Q_monthly.loc['1980-01-01':'2019-12-31', node])
 
         # Calculate SSI for historical data (only rank 0)
         if rank == 0:
-            ssi_obs = ssi_calculator.get_training_ssi()
+            ssi_obs = ssi_calculator.transform(Q_monthly.loc[:, node])
             obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
-
+        
         print(f"  Rank {rank} processing {len(my_realizations)} realizations")
 
         # Process assigned realizations
@@ -214,7 +215,7 @@ def main(dataset_id):
         os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
     
     # Calculate drought metrics (using default SSI windows)
-    success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12])
+    success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[12])
     
     if rank == 0:
         if success:
