@@ -13,8 +13,8 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
-CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-true}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
+CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-false}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
 # make directories
 mkdir -p logs figures
@@ -25,18 +25,14 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     ################################################################################
     echo "Calculating SSI based drought metrics..."
     ################################################################################
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_median"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_median"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_min"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_max"
+    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_median"
 
-    ################################################################################
-    # echo "Calculating Hashimoto metrics during droughts for stationary ensemble..."
-    ################################################################################
-    # mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "stationary_ensemble"
-    # mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted_ssp245_min"
-    # mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted_ssp245_max"
-    # mpirun -np $np python3 06_calculate_hashimoto_metrics_during_droughts.py "climate_adjusted_ssp245_median"
 fi
 
 if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then

@@ -230,7 +230,7 @@ def main():
         sys.exit(1)
     
     arg = sys.argv[1]
-    period = 'weekly'  # Can be made configurable if needed
+    period = 'weekly' 
     
     if arg == '--all':
         print("=" * 60)

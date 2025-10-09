@@ -27,10 +27,13 @@ PLOT_OUTCOMES=${PLOT_OUTCOMES:-true}
 # make directories
 mkdir -p logs figures
 
-# python3 09_plot_reservoir_storage_zone_probabilities.py --all
+python3 09_plot_reservoir_storage_zone_probabilities.py --all
 
 
 # python3 09_plot_drought_frequency.py "stationary_ensemble"
-python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_min"
-python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_max"
-python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_median"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_min"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_max"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_median"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_min"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_max"
+# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_median"

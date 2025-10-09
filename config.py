@@ -69,16 +69,16 @@ DATASET_CONFIGS = {
         'description': 'SSP3-7.0 2020-2059 minimum change',
         'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'min'].values
     },
-    # 'climate_adjusted_ssp370_median': {
-    #     'type': 'climate_adjusted',
-    #     'description': 'SSP3-7.0 2020-2059 median change',
-    #     'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'median'].values
-    # },
-    # 'climate_adjusted_ssp370_max': {
-    #     'type': 'climate_adjusted',
-    #     'description': 'SSP3-7.0 2020-2059 maximum change',
-    #     'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'max'].values
-    # },
+    'climate_adjusted_ssp370_median': {
+        'type': 'climate_adjusted',
+        'description': 'SSP3-7.0 2020-2059 median change',
+        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'median'].values
+    },
+    'climate_adjusted_ssp370_max': {
+        'type': 'climate_adjusted',
+        'description': 'SSP3-7.0 2020-2059 maximum change',
+        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'max'].values
+    },
 }
 
 # =============================================================================

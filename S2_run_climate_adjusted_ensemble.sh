@@ -2,14 +2,14 @@
 #SBATCH --job-name=CAE
 #SBATCH --output=./logs/%x_%j.out
 #SBATCH --error=./logs/%x_%j.err
-#SBATCH --nodes=4
+#SBATCH --nodes=3
 #SBATCH --ntasks-per-node=40
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
 #SBATCH --exclusive
 
 # Setup
-DATASET_ID="${1:-climate_adjusted_ssp370_min}"  # Default or pass as argument
+DATASET_ID="${1:-climate_adjusted_ssp370_max}"  # Default or pass as argument
 module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
