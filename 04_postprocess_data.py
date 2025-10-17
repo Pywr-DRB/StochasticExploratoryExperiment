@@ -223,6 +223,7 @@ def process_dataset(dataset_id):
     res_storage_dict = {}
     ibt_diversions_dict = {}
     ibt_demands_dict = {}
+    mrf_target_dict = {}
     
     for model in ['reconstruction', dataset_id]:
         if model in data.inflow:
@@ -231,13 +232,15 @@ def process_dataset(dataset_id):
             res_storage_dict[model] = data.res_storage[model]
             ibt_diversions_dict[model] = data.ibt_diversions[model]
             ibt_demands_dict[model] = data.ibt_demands[model]
-    
-    keep_data.inflow = inflow_dict    
+            mrf_target_dict[model] = data.mrf_target[model]
+
+    keep_data.inflow = inflow_dict
     keep_data.major_flow = major_flow_dict
     keep_data.res_storage = res_storage_dict
     keep_data.ibt_diversions = ibt_diversions_dict
     keep_data.ibt_demands = ibt_demands_dict
-    
+    keep_data.mrf_target = mrf_target_dict
+
     ### Export the new data object to HDF5
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     print(f"Exporting combined data to {fname}...")

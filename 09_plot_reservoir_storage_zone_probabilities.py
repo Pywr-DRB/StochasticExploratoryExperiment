@@ -133,7 +133,7 @@ def plot_storage_zone_probabilities(prob_df,
                                      ffmp_boundaries,
                                      period='weekly',
                                      figsize=(14, 6),
-                                     cmap='magma',
+                                     cmap='magma_r',
                                      vmin=0.01,
                                      vmax=100,
                                      title=None,
@@ -232,13 +232,16 @@ def plot_storage_zone_comparison(prob_df_ref,
     # Plot
     fig, ax = plt.subplots(figsize=figsize)
     
-    vmin, vmax = prob_diff.min(), prob_diff.max()
+    # set vmin and vmax as 90% percentiles
+    vmin = -100
+    vmax = 100
+
     if vmin < 0 and vmax > 0:
         norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
     else:
         norm = colors.Normalize(vmin=vmin, vmax=vmax)
 
-    pcm = ax.pcolormesh(X, Y, prob_diff, cmap='BrBG', norm=norm, shading='flat')
+    pcm = ax.pcolormesh(X, Y, prob_diff, cmap='BrBG_r', norm=norm, shading='flat')
     
     # Zone boundary lines
     for j in range(Y.shape[1]):
@@ -259,7 +262,7 @@ def plot_storage_zone_comparison(prob_df_ref,
     return fig, ax
 
 
-def plot_dataset(dataset_id, period='weekly'):
+def plot_dataset(dataset_id, period='weekly', figsize=(14, 6)):
     """Plot zone probabilities for a single dataset."""
     print(f"Plotting {dataset_id}...")
     
@@ -277,6 +280,7 @@ def plot_dataset(dataset_id, period='weekly'):
         prob_df,
         ffmp_boundaries,
         period=period,
+        figsize=figsize,
         title=f"{dataset_id} - NYC Storage Zone Probabilities",
         fname=fname
     )
@@ -285,7 +289,8 @@ def plot_dataset(dataset_id, period='weekly'):
     return True
 
 
-def plot_comparison(dataset_id_ref, dataset_id_comp, period='weekly'):
+def plot_comparison(dataset_id_ref, dataset_id_comp, period='weekly',
+                    figsize=(14, 6)):
     """Plot comparison between two datasets."""
     print(f"Plotting {dataset_id_comp} vs {dataset_id_ref}...")
     
@@ -306,6 +311,7 @@ def plot_comparison(dataset_id_ref, dataset_id_comp, period='weekly'):
         prob_df_comp,
         ffmp_boundaries,
         period=period,
+        figsize=figsize,
         title=f"Storage Zone Probability Difference: {dataset_id_comp} - {dataset_id_ref}",
         fname=fname
     )
@@ -314,16 +320,18 @@ def plot_comparison(dataset_id_ref, dataset_id_comp, period='weekly'):
     return True
 
 
-def plot_all_datasets(period='weekly'):
+def plot_all_datasets(period='weekly', figsize=(14, 6)):
     """Plot all datasets and comparisons."""
     print("=" * 60)
     print("PLOTTING ZONE PROBABILITIES")
     print("=" * 60)
     
+    
+    
     # Plot individual datasets
     print("\nPlotting individual datasets...")
     for dataset_id in DATASET_CONFIGS.keys():
-        plot_dataset(dataset_id, period)
+        plot_dataset(dataset_id, period, figsize=figsize)
     
     # Plot comparisons (all climate-adjusted vs stationary)
     if 'stationary_ensemble' in DATASET_CONFIGS:
@@ -332,9 +340,9 @@ def plot_all_datasets(period='weekly'):
         for dataset_id in DATASET_CONFIGS.keys():
             if dataset_id == 'stationary_ensemble':
                 continue
-            
-            plot_comparison('stationary_ensemble', dataset_id, period)
-    
+
+            plot_comparison('stationary_ensemble', dataset_id, period, figsize=figsize)
+
     print("\n" + "=" * 60)
     print(f"All plots saved to {FIG_OUTPUT_DIR}")
 
@@ -349,8 +357,9 @@ def main():
     arg = sys.argv[1]
     period = 'weekly'
     
+    figsize = (10, 8)
     if arg == '--all':
-        plot_all_datasets(period)
+        plot_all_datasets(period, figsize=figsize)
     else:
         dataset_id = arg
         verify_dataset_id(dataset_id)
@@ -360,12 +369,12 @@ def main():
         print("=" * 60)
         
         # Plot this dataset
-        success = plot_dataset(dataset_id, period)
+        success = plot_dataset(dataset_id, period, figsize=figsize)
         
         # If not stationary, also plot comparison
         if success and dataset_id != 'stationary_ensemble':
             print()
-            plot_comparison('stationary_ensemble', dataset_id, period)
+            plot_comparison('stationary_ensemble', dataset_id, period, figsize=figsize)
         
         print("=" * 60)
         print("Done!")

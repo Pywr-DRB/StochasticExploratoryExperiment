@@ -14,11 +14,19 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
 CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-false}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
 
 # make directories
 mkdir -p logs figures
 
+
+python3 04_postprocess_data.py "stationary_ensemble"
+python3 04_postprocess_data.py "climate_adjusted_ssp245_min"
+python3 04_postprocess_data.py "climate_adjusted_ssp245_max"
+python3 04_postprocess_data.py "climate_adjusted_ssp245_median"
+python3 04_postprocess_data.py "climate_adjusted_ssp370_min"
+python3 04_postprocess_data.py "climate_adjusted_ssp370_max"
+python3 04_postprocess_data.py "climate_adjusted_ssp370_median"
 
 if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
 
