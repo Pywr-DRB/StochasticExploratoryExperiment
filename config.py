@@ -154,7 +154,10 @@ class EnsembleSetSpec:
         return {
             'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
             'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5",
-            'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5"
+            'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5",
+            'diversion_nyc_extrapolated': f"{set_dir}/diversion_nyc_extrapolated_mgd.hdf5",
+            'diversion_nj_extrapolated': f"{set_dir}/diversion_nj_extrapolated_mgd.hdf5",
+            'predicted_diversions': f"{set_dir}/predicted_diversions_mgd.hdf5"
         }
     
     @property

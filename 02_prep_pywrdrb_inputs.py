@@ -11,7 +11,11 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
-from pywrdrb.pre import PredictedInflowEnsemblePreprocessor
+from pywrdrb.pre import (
+    PredictedInflowEnsemblePreprocessor,
+    ExtrapolatedDiversionEnsemblePreprocessor,
+    PredictedDiversionEnsemblePreprocessor
+)
 
 from config import *
 
@@ -57,17 +61,21 @@ def prep_ensemble_set(set_id, dataset_id):
             # Get realization numbers from the HDF5 file
             realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
             print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
-    
+
         else:
             realization_ids = None
         realization_ids = comm.bcast(realization_ids, root=0)
-        
-        # Initialize the preprocessor
-        # Optimized: use_mpi=True enables internal MPI parallelization
-        preprocessor = PredictedInflowEnsemblePreprocessor(
+
+        # =====================================================================
+        # Step 1: Process predicted inflows
+        # =====================================================================
+        if rank == 0:
+            print(f"Set {set_id + 1}: Processing predicted inflows...")
+
+        inflow_preprocessor = PredictedInflowEnsemblePreprocessor(
             flow_type=f"{dataset_id}_set{set_id + 1}",
             ensemble_hdf5_file=catchment_inflow_file,
-            realization_ids=realization_ids,  
+            realization_ids=realization_ids,
             start_date=None,  # Use full range
             end_date=None,
             modes=('regression_disagg',),
@@ -76,22 +84,97 @@ def prep_ensemble_set(set_id, dataset_id):
             use_const=False,
             use_mpi=True  # Enable MPI within the preprocessor
         )
-        
-        # Process the data
+
+        inflow_preprocessor.load()
+        inflow_preprocessor.process()
+        inflow_preprocessor.save()
+
         if rank == 0:
-            print(f"Set {set_id + 1}: Loading and predicting future inflows...")
-        
-        preprocessor.load()
-        preprocessor.process()        
-        preprocessor.save()
-        
+            print(f"Set {set_id + 1}: Predicted inflows complete.")
+
+        # =====================================================================
+        # Step 2: Process NYC diversions ensemble
+        # =====================================================================
         if rank == 0:
-            print(f"Set {set_id + 1}: Pywr-DRB inputs prepared successfully.")
-        
+            print(f"Set {set_id + 1}: Processing NYC diversions ensemble...")
+
+        # Use the gage_flow file as input for diversions
+        gage_flow_file = set_spec.files['gage_flow']
+
+        nyc_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
+            loc="nyc",
+            flow_type=f"{dataset_id}_set{set_id + 1}",
+            ensemble_hdf5_file=gage_flow_file,
+            realization_ids=realization_ids,
+            use_mpi=True
+        )
+
+        nyc_extrapolator.load()
+        nyc_extrapolator.process()
+        nyc_extrapolator.save()
+
+        if rank == 0:
+            print(f"Set {set_id + 1}: NYC diversions ensemble complete.")
+
+        # =====================================================================
+        # Step 3: Process NJ diversions ensemble
+        # =====================================================================
+        if rank == 0:
+            print(f"Set {set_id + 1}: Processing NJ diversions ensemble...")
+
+        nj_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
+            loc="nj",
+            flow_type=f"{dataset_id}_set{set_id + 1}",
+            ensemble_hdf5_file=gage_flow_file,
+            realization_ids=realization_ids,
+            use_mpi=True
+        )
+
+        nj_extrapolator.load()
+        nj_extrapolator.process()
+        nj_extrapolator.save()
+
+        if rank == 0:
+            print(f"Set {set_id + 1}: NJ diversions ensemble complete.")
+
+        # =====================================================================
+        # Step 4: Process predicted diversions ensemble
+        # =====================================================================
+        if rank == 0:
+            print(f"Set {set_id + 1}: Processing predicted diversions ensemble...")
+
+        # Get path to the NJ extrapolated diversions we just created
+        nj_div_hdf5 = str(pywrdrb.get_pn_object().sc.get(
+            f"flows/{dataset_id}_set{set_id + 1}"
+        ) / "diversion_nj_extrapolated_mgd.hdf5")
+
+        diversion_predictor = PredictedDiversionEnsemblePreprocessor(
+            flow_type=f"{dataset_id}_set{set_id + 1}",
+            ensemble_hdf5_file=nj_div_hdf5,
+            realization_ids=realization_ids,
+            start_date=None,
+            end_date=None,
+            modes=('regression_disagg',),
+            use_log=True,
+            remove_zeros=False,
+            use_const=False,
+            use_mpi=True
+        )
+
+        diversion_predictor.load()
+        diversion_predictor.process()
+        diversion_predictor.save()
+
+        if rank == 0:
+            print(f"Set {set_id + 1}: Predicted diversions ensemble complete.")
+            print(f"Set {set_id + 1}: All Pywr-DRB inputs prepared successfully.")
+
         return True
-        
+
     except Exception as e:
         print(f"Error processing set {set_id + 1}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -219,13 +302,22 @@ def parallel_prep_all_sets(dataset_id):
             # Try to identify which sets might have failed
             # by checking for expected output files
             failed_sets = []
+            required_files = [
+                'predicted_inflow',
+                'diversion_nyc_extrapolated',
+                'diversion_nj_extrapolated',
+                'predicted_diversions'
+            ]
+
             for set_id in range(N_ENSEMBLE_SETS):
                 set_spec = get_ensemble_set_spec(set_id, dataset_id)
-                # Check if preprocessed files exist (this is a rough check)
-                f = set_spec.files['predicted_inflow']
-                if not os.path.exists(f):
-                    failed_sets.append(set_id + 1)
-                
+                # Check if any required file is missing
+                for file_key in required_files:
+                    if not os.path.exists(set_spec.files[file_key]):
+                        if set_id + 1 not in failed_sets:
+                            failed_sets.append(set_id + 1)
+                        break
+
             if failed_sets:
                 print(f"  Potentially failed sets: {failed_sets}")
         
@@ -235,37 +327,59 @@ def parallel_prep_all_sets(dataset_id):
 def verify_prep_outputs(dataset_id):
     """
     Verify that all ensemble sets have been properly prepared for a dataset
-    
+
     Parameters:
     -----------
     dataset_id : str
         Dataset identifier to verify
     """
-    
+
     verify_dataset_id(dataset_id)
     print(f"\nVerifying Pywr-DRB input preparation for {dataset_id}...")
-    
+
     all_prepared = True
     successful_sets = []
     failed_sets = []
-    
+    missing_files = {}
+
+    # Required files to check
+    required_files = [
+        'predicted_inflow',
+        'diversion_nyc_extrapolated',
+        'diversion_nj_extrapolated',
+        'predicted_diversions'
+    ]
+
     for set_id in range(N_ENSEMBLE_SETS):
         set_spec = get_ensemble_set_spec(set_id, dataset_id)
-        
-        fname = set_spec.files['predicted_inflow']
-        if not os.path.exists(fname):
-            print(f"FAIL:  Set {set_id + 1}: Predicted inflow file {fname} not found")
-            all_prepared = False
-            failed_sets.append(set_id + 1)
-        else:
+        set_complete = True
+        missing_in_set = []
+
+        for file_key in required_files:
+            fname = set_spec.files[file_key]
+            if not os.path.exists(fname):
+                set_complete = False
+                missing_in_set.append(file_key)
+                all_prepared = False
+
+        if set_complete:
             successful_sets.append(set_id + 1)
-    
+        else:
+            failed_sets.append(set_id + 1)
+            missing_files[set_id + 1] = missing_in_set
+
     if all_prepared:
         print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets properly prepared!")
+        print(f"  All required files present:")
+        for file_key in required_files:
+            print(f"    - {file_key}")
     else:
         print(f"WARNING: {len(failed_sets)} sets not properly prepared: {failed_sets}")
         print(f"Successfully prepared: {len(successful_sets)} sets")
-    
+        print(f"\nMissing files by set:")
+        for set_id, missing in missing_files.items():
+            print(f"  Set {set_id}: {missing}")
+
     return all_prepared
 
 
