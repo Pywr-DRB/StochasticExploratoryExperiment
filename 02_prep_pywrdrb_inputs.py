@@ -88,6 +88,9 @@ def prep_ensemble_set(set_id, dataset_id):
         inflow_preprocessor.load()
         inflow_preprocessor.process()
         inflow_preprocessor.save()
+        
+        # Free up memory
+        del inflow_preprocessor
 
         if rank == 0:
             print(f"Set {set_id + 1}: Predicted inflows complete.")
@@ -112,6 +115,9 @@ def prep_ensemble_set(set_id, dataset_id):
         nyc_extrapolator.load()
         nyc_extrapolator.process()
         nyc_extrapolator.save()
+
+        # Free up memory
+        del nyc_extrapolator
 
         if rank == 0:
             print(f"Set {set_id + 1}: NYC diversions ensemble complete.")

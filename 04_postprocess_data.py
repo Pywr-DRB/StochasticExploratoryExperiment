@@ -103,7 +103,7 @@ def process_dataset(dataset_id):
     # This will load the full natural flow (gage_flow_mgd.hdf5) but NOT the simulation outputs
     ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
     results_sets = ['major_flow']
-    data = pywrdrb.Data(results_sets=results_sets)
+    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
     data.load_hydrologic_model_flow(ensemble_set_names)
     
     # Combine all sets into single dataset key
@@ -131,16 +131,19 @@ def process_dataset(dataset_id):
         "major_flow", 
         "inflow", 
         "res_storage",
-        "lower_basin_mrf_contributions", 
+        "res_release",
         "mrf_target", 
         "ibt_diversions", 
         "ibt_demands",
         "nyc_release_components"
     ] 
     
-    data = pywrdrb.Data(results_sets=results_sets, print_status=True)
+    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
     data.load_output(output_filenames=output_filenames)
-    data.load_observations()
+    data.load_observations(results_sets=['res_storage', 'major_flow', 'reservoir_downstream_gage'])
+    data.res_release['obs'] = {}
+    data.res_release['obs'][0] = data.reservoir_downstream_gage['obs'][0]
+    
     data = add_trenton_equiv_flow(data)
     
     # Combine all sets into single dataset key for each results_set

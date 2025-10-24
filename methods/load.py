@@ -29,9 +29,6 @@ def load_drb_reconstruction(gage_flow=True):
                              freq='D')
     
     Q.index = datetime
-    # Q = Q.replace(0, np.nan)  # Replace zeros with NaN
-    # Q = Q.dropna(axis=1, how='any')
-    
     return Q
 
 

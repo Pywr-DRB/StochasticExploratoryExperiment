@@ -4,6 +4,7 @@ import pandas as pd
 import pywrdrb
 from pywrdrb.pywr_drb_node_data import downstream_node_lags, immediate_downstream_nodes_dict
 from pywrdrb.utils.timeseries import subset_timeseries
+from pywrdrb.utils.constants import cfs_to_mgd
 
 
 def annual_max_positive_streak(series):
@@ -127,16 +128,18 @@ def calculate_hashimoto_metrics(flows,
 
 
 def add_trenton_equiv_flow(data):
+
+    blueMarsh_conservation_release_mgd = 50 * cfs_to_mgd
     
     ### Check data requirements
     # make sure data is a pywrdrb.Data object
     assert isinstance(data, pywrdrb.Data), \
         "data must be a pywrdrb.Data object."
     
-    # data must have major_flow and lower_basin_mrf_contributions attributes
+    # data must have major_flow and res_release attributes
     necessary_results_sets = [
         "major_flow",
-        "lower_basin_mrf_contributions"
+        "res_release"
     ]
     for result_set in necessary_results_sets:
         if not hasattr(data, result_set):
@@ -159,10 +162,11 @@ def add_trenton_equiv_flow(data):
             flows = data.major_flow[m][r]['delTrenton']
             flows = flows.copy()
             
-            # add blueMarsh contributions, accounting for lag
-            if m in data.lower_basin_mrf_contributions:
-                lower_basin_mrf_contributions = data.lower_basin_mrf_contributions[m][r]
-                lower_basin_mrf = lower_basin_mrf_contributions['mrf_trenton_blueMarsh']
+            # add blueMarsh releases beyond the conservation release
+            if m in data.res_release:
+                blueMarsh_total_release = data.res_release[m][r]['blueMarsh']
+                blueMarsh_excess_release = blueMarsh_total_release - blueMarsh_conservation_release_mgd
+                blueMarsh_excess_release[blueMarsh_excess_release < 0] = 0
                 
                 # account for lag at blue marsh
                 lag = downstream_node_lags['blueMarsh']
@@ -172,9 +176,9 @@ def add_trenton_equiv_flow(data):
                     downstream_node = immediate_downstream_nodes_dict[downstream_node]
                 
                 if lag > 0:
-                    lower_basin_mrf.iloc[lag:] = lower_basin_mrf.iloc[:-lag]
+                    blueMarsh_excess_release.iloc[lag:] = blueMarsh_excess_release.iloc[:-lag]
                 
-                flows += lower_basin_mrf
+                flows += blueMarsh_excess_release
 
                 # Store in the data.major_flow attribute
                 data.major_flow[m][r]['delTrenton_equiv'] = flows
@@ -182,7 +186,7 @@ def add_trenton_equiv_flow(data):
             else:
                 # Raise warning that this model is skipped
                 print(
-                    f"Model {m} does not have lower_basin_mrf_contributions, skipping trenton equiv flow calc for this data."
+                    f"Model {m} does not have res_release, skipping trenton equiv flow calc for this data."
                 )
                 
     return data
