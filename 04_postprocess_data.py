@@ -119,8 +119,15 @@ def process_dataset(dataset_id):
             set_data = data.major_flow[set_name]
             # Renumber realizations to be continuous across sets
             set_idx = int(set_name.split('_set')[-1]) - 1
+
+            # Check if local IDs are 0-indexed or 1-indexed
+            local_ids = list(set_data.keys())
+            min_local_id = min(local_ids)
+
             for local_id, df in set_data.items():
-                global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
+                # Convert to 0-indexed if needed (local IDs might be 1-100 instead of 0-99)
+                local_id_normalized = local_id - min_local_id
+                global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
                 combined_gage_flow[global_id] = df
 
         # Store combined gage flow
@@ -163,9 +170,18 @@ def process_dataset(dataset_id):
 
                 set_data = full_results_set_dict[set_name]
 
+                # Check if local IDs are 0-indexed or 1-indexed
+                local_ids = list(set_data.keys())
+                if local_ids:
+                    min_local_id = min(local_ids)
+                else:
+                    min_local_id = 0
+
                 # Renumber realizations to be continuous
                 for local_id, df in set_data.items():
-                    global_id = i * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
+                    # Convert to 0-indexed if needed
+                    local_id_normalized = local_id - min_local_id
+                    global_id = i * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
                     combined_data[global_id] = df
 
             # Store combined data back
