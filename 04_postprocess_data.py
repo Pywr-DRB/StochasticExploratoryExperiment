@@ -155,8 +155,6 @@ def process_dataset(dataset_id):
         data.res_release['obs'] = {}
         data.res_release['obs'][0] = data.reservoir_downstream_gage['obs'][0]
 
-        data = add_trenton_equiv_flow(data)
-
         # Combine all sets into single dataset key for each results_set
         for results_set in results_sets:
             combined_data = {}
@@ -190,6 +188,10 @@ def process_dataset(dataset_id):
 
         # Replace gage flow with combined version
         data.major_flow[dataset_id] = gage_flow_dict[dataset_id]
+
+        # Add Trenton equivalent flow AFTER combining datasets
+        # This ensures delTrenton_equiv is added to the combined dataset
+        data = add_trenton_equiv_flow(data)
 
         print("  Rank 0: Data loading complete")
     else:
