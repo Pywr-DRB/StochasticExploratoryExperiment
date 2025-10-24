@@ -5,6 +5,11 @@ Shows:
 - Left panel: Absolute performance for stationary ensemble (p5, p50, p95)
 - Right panels: Absolute change for each climate scenario (3x2 grid)
 
+This script uses pre-calculated metrics from postprocessing:
+- shortage: Pre-calculated flow target violations
+- mrf_target: Flow targets for calculating reliability
+- res_storage: Reservoir storage for NYC system
+
 Usage:
   python 09_plot_performance_metrics.py
 """
@@ -26,10 +31,27 @@ from config import *
 FIG_OUTPUT_DIR = f"{FIG_DIR}/performance_metrics"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
+# Storage capacities for NYC reservoirs (MG)
+NYC_STORAGE_CAPACITIES = {
+    'cannonsville': 95706,
+    'pepacton': 140190,
+    'neversink': 34941
+}
+NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())
+
 
 def calculate_performance_metrics(data, model, realizations):
     """
-    Calculate three performance metrics for each realization.
+    Calculate three performance metrics for each realization using pre-calculated data.
+    
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with pre-calculated shortage, mrf_target, and res_storage
+    model : str
+        Model/dataset identifier
+    realizations : list
+        List of realization IDs
     
     Returns
     -------
@@ -37,46 +59,40 @@ def calculate_performance_metrics(data, model, realizations):
         {realization_id: {'metric1': value, 'metric2': value, 'metric3': value}}
     """
     metrics = {}
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
     
     for r in realizations:
         if (r % 100 == 0) and (r > 0):
             print(f"    Processed {r}/{len(realizations)} realizations...")
         
-        # Metric 1: # years where Montague flow target met >90% of time
+        # Use pre-calculated shortage and target data
         montague_shortage = data.shortage[model][r]['delMontague']
         montague_target = data.mrf_target[model][r]['delMontague']
         
-        # Annual reliability = 1 - (annual_shortage / annual_target)
+        # Metric 1: # years where Montague flow target met >90% of time
         annual_shortage = montague_shortage.resample('YS').sum()
         annual_target = montague_target.resample('YS').sum()
         annual_reliability = 1 - (annual_shortage / annual_target)
         annual_reliability = annual_reliability.clip(0, 1)
-        
         n_years_reliable = (annual_reliability > 0.90).sum()
         
         # Metric 2: # years where NYC storage >90% on June 1
-        nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
         nyc_storage = data.res_storage[model][r][nyc_reservoirs].sum(axis=1)
-        
-        # Get max possible storage (assume full storage is max observed)
-        max_storage = nyc_storage.max()
-        nyc_storage_pct = 100 * nyc_storage / max_storage
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
         
         # Filter for June 1 dates
-        june1_storage = nyc_storage_pct[nyc_storage_pct.index.month == 6]
-        june1_storage = june1_storage[june1_storage.index.day == 1]
-        
+        june1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 6) & 
+                                        (nyc_storage_pct.index.day == 1)]
         n_years_high_storage = (june1_storage > 90).sum()
         
-        # Metric 3: Maximum daily shortage magnitude (INVERTED: lower is better → higher score)
+        # Metric 3: Maximum daily shortage magnitude (positive value, lower is better)
+        # For visualization, we'll show the actual value (not inverted)
         max_shortage = montague_shortage.max()
-        # Invert so up = better (we'll use negative of max shortage)
-        max_shortage_inverted = -max_shortage
         
         metrics[r] = {
             'metric1': n_years_reliable,
             'metric2': n_years_high_storage,
-            'metric3': max_shortage_inverted
+            'metric3': max_shortage  # Positive value
         }
     
     return metrics
@@ -107,9 +123,9 @@ def plot_parallel_performance(ax, percentiles_dict,
                               metric_names,
                               title=None,
                               is_difference=False,
-                              y_lims=None):
+                              metric_scales=None):
     """
-    Plot parallel axes for performance metrics.
+    Plot parallel axes for performance metrics with independent y-scales.
     
     Parameters
     ----------
@@ -120,8 +136,8 @@ def plot_parallel_performance(ax, percentiles_dict,
         Names for each metric axis
     is_difference : bool
         If True, plot as difference from baseline (centered at 0)
-    y_lims : dict or None
-        {'metric1': (ymin, ymax), ...} for shared limits
+    metric_scales : dict or None
+        {'metric1': (ymin, ymax), ...} for independent axis scales
     """
     n_metrics = 3
     x_positions = np.arange(n_metrics)
@@ -130,57 +146,85 @@ def plot_parallel_performance(ax, percentiles_dict,
     color_band = 'steelblue' if not is_difference else 'coral'
     color_median = 'darkblue' if not is_difference else 'darkred'
     
-    # Plot each metric axis
-    for i, metric in enumerate(['metric1', 'metric2', 'metric3']):
+    # Calculate normalization for each metric to [0, 1] range for plotting
+    # but keep track of original values for labels
+    normalized_percentiles = {}
+    original_values = {}
+    
+    for metric in ['metric1', 'metric2', 'metric3']:
         p5, p50, p95 = percentiles_dict[metric]
+        original_values[metric] = [p5, p50, p95]
+        
+        # Determine scale for this metric
+        if metric_scales and metric in metric_scales:
+            vmin, vmax = metric_scales[metric]
+        else:
+            if is_difference:
+                max_abs = max(abs(p5), abs(p95))
+                vmin, vmax = -max_abs * 1.2, max_abs * 1.2
+            else:
+                vmin = min(0, p5 * 0.9)
+                vmax = p95 * 1.1
+        
+        # Normalize to [0, 1] for plotting
+        value_range = vmax - vmin
+        if value_range > 0:
+            norm_p5 = (p5 - vmin) / value_range
+            norm_p50 = (p50 - vmin) / value_range
+            norm_p95 = (p95 - vmin) / value_range
+        else:
+            norm_p5 = norm_p50 = norm_p95 = 0.5
+        
+        normalized_percentiles[metric] = [norm_p5, norm_p50, norm_p95]
+    
+    # Plot each metric axis with normalized values
+    for i, metric in enumerate(['metric1', 'metric2', 'metric3']):
+        norm_p5, norm_p50, norm_p95 = normalized_percentiles[metric]
         x = x_positions[i]
         
         # Vertical band (p5 to p95)
-        ax.add_patch(Rectangle((x - 0.15, p5), 0.3, p95 - p5,
+        ax.add_patch(Rectangle((x - 0.15, norm_p5), 0.3, norm_p95 - norm_p5,
                                facecolor=color_band, alpha=0.3, 
                                edgecolor=color_band, linewidth=1.5))
         
         # Percentile dots
-        ax.plot(x, p5, 'o', color=color_band, markersize=6, zorder=3)
-        ax.plot(x, p95, 'o', color=color_band, markersize=6, zorder=3)
-        ax.plot(x, p50, 'o', color=color_median, markersize=8, zorder=4)
+        ax.plot(x, norm_p5, 'o', color=color_band, markersize=6, zorder=3)
+        ax.plot(x, norm_p95, 'o', color=color_band, markersize=6, zorder=3)
+        ax.plot(x, norm_p50, 'o', color=color_median, markersize=8, zorder=4)
+        
+        # Add value labels below each metric
+        orig_p5, orig_p50, orig_p95 = original_values[metric]
+        label_text = f"{orig_p50:.0f}"
+        ax.text(x, -0.15, label_text, ha='center', va='top', fontsize=8, 
+               fontweight='bold', color=color_median)
         
         # Vertical line at axis position
-        if y_lims and metric in y_lims:
-            ymin, ymax = y_lims[metric]
-        else:
-            ymin, ymax = ax.get_ylim()
-        ax.plot([x, x], [ymin, ymax], 'k-', linewidth=1, alpha=0.3, zorder=1)
+        ax.plot([x, x], [0, 1], 'k-', linewidth=1, alpha=0.3, zorder=1)
     
     # Formatting
     ax.set_xticks(x_positions)
     ax.set_xticklabels(metric_names, fontsize=10)
     ax.set_xlim(-0.5, n_metrics - 0.5)
+    ax.set_ylim(-0.2, 1.05)
     
-    # Set y-limits if provided
-    if y_lims:
-        for i, metric in enumerate(['metric1', 'metric2', 'metric3']):
-            if metric in y_lims:
-                current_ylim = ax.get_ylim()
-                ax.set_ylim(y_lims[metric])
-    
-    # Add horizontal line at 0 for difference plots
+    # Add horizontal line at middle for difference plots
     if is_difference:
-        ax.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.5, zorder=2)
+        ax.axhline(0.5, color='gray', linestyle='--', linewidth=1, alpha=0.5, zorder=2)
+    
+    # Hide y-axis (we're using normalized values)
+    ax.set_yticks([])
     
     # Remove spines
-    for spine in ['top', 'right', 'left']:
+    for spine in ['top', 'right', 'left', 'bottom']:
         ax.spines[spine].set_visible(False)
-    ax.spines['bottom'].set_position(('data', ax.get_ylim()[0]))
     
     # Y-axis label
-    ylabel = 'Δ Performance' if is_difference else 'Performance'
+    ylabel = 'Δ Performance (normalized)' if is_difference else 'Performance (normalized)'
     ax.set_ylabel(ylabel, fontsize=11)
     
     if title:
         ax.set_title(title, fontsize=10, pad=10)
     
-    ax.tick_params(left=True, bottom=False)
     ax.grid(axis='y', alpha=0.2, zorder=0)
 
 
@@ -222,40 +266,31 @@ def calculate_shared_ylims(all_percentiles, is_difference=False):
 
 def plot_all_performance_metrics():
     """
-    Generate complete performance metrics figure.
+    Generate complete performance metrics figure using pre-calculated data.
     """
     print("=" * 60)
     print("CALCULATING PERFORMANCE METRICS")
     print("=" * 60)
     
-    # Load data for all datasets
+    # Load pre-calculated data for all datasets
     all_data = {}
     all_percentiles = {}
     
     for dataset_id in DATASET_CONFIGS.keys():
         fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
         
-        
         if not os.path.exists(fname):
-            print(f"Skipping {dataset_id}: file not found")
+            print(f"Skipping {dataset_id}: postprocessed data not found")
             continue
         
         print(f"\nLoading {dataset_id}...")
         data = pywrdrb.Data()
-        data.load_from_export(fname,
-                              results_sets = ['shortage', 'res_storage', 'mrf_target'],)
-        
-        # Check if data has attributes for each results_set
-        for rs in ['shortage', 'res_storage', 'mrf_target']:
-            if not hasattr(data, rs):
-                print(f"  ERROR: {dataset_id} missing results_set '{rs}'")
-                continue
-            else:
-                print(f"  Loaded results_set '{rs}' for {dataset_id}")
+        # Load only pre-calculated metrics needed
+        data.load_from_export(fname, results_sets=['shortage', 'res_storage', 'mrf_target'])
         
         all_data[dataset_id] = data
         
-        # Calculate metrics
+        # Calculate metrics using pre-calculated data
         print(f"  Calculating metrics...")
         realizations = list(data.shortage[dataset_id].keys())
         metrics_dict = calculate_performance_metrics(data, dataset_id, realizations)
@@ -268,7 +303,7 @@ def plot_all_performance_metrics():
               f"p50={percentiles['metric1'][1]:.1f}, p95={percentiles['metric1'][2]:.1f}")
         print(f"  Metric 2 (# years NYC storage high): p5={percentiles['metric2'][0]:.1f}, "
               f"p50={percentiles['metric2'][1]:.1f}, p95={percentiles['metric2'][2]:.1f}")
-        print(f"  Metric 3 (-max shortage): p5={percentiles['metric3'][0]:.1f}, "
+        print(f"  Metric 3 (max shortage): p5={percentiles['metric3'][0]:.1f}, "
               f"p50={percentiles['metric3'][1]:.1f}, p95={percentiles['metric3'][2]:.1f}")
     
     if 'stationary_ensemble' not in all_percentiles:
@@ -292,10 +327,10 @@ def plot_all_performance_metrics():
             ]
         differences[dataset_id] = diff
     
-    # Calculate shared y-limits
-    print("\nCalculating shared y-limits...")
-    y_lims_absolute = calculate_shared_ylims({'stationary': stationary}, is_difference=False)
-    y_lims_difference = calculate_shared_ylims(differences, is_difference=True)
+    # Calculate metric scales for normalization
+    print("\nCalculating metric scales for normalization...")
+    metric_scales_absolute = calculate_shared_ylims({'stationary': stationary}, is_difference=False)
+    metric_scales_difference = calculate_shared_ylims(differences, is_difference=True)
     
     # Create figure
     print("\nGenerating figure...")
@@ -307,7 +342,7 @@ def plot_all_performance_metrics():
     metric_names = [
         'Years w/\nMontague\nreliable',
         'Years w/\nNYC storage\nhigh',
-        'Min. max\nshortage\n(inverted)'
+        'Max.\nshortage\n(MGD)'
     ]
     
     plot_parallel_performance(
@@ -316,7 +351,7 @@ def plot_all_performance_metrics():
         metric_names,
         title='Stationary Ensemble',
         is_difference=False,
-        y_lims=y_lims_absolute
+        metric_scales=metric_scales_absolute
     )
     
     # Right panels: Climate scenarios (3x2 grid)
@@ -341,7 +376,7 @@ def plot_all_performance_metrics():
             metric_names,
             title=title,
             is_difference=True,
-            y_lims=y_lims_difference
+            metric_scales=metric_scales_difference
         )
     
     # Overall title

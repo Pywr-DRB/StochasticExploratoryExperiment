@@ -4,6 +4,11 @@ Plot NYC inflow vs Montague contributions colored by satisficing conditions.
 Satisficing conditions:
 1. NYC storage >= 20% throughout June-Dec period
 2. Montague flow target violations <= 3 continuous days
+
+This script uses pre-calculated metrics from the postprocessing output:
+- shortage: Pre-calculated flow target violations for each node
+- contribution: Pre-calculated NYC downstream contributions to Montague
+- inflow: Reservoir inflows with aggregated NYC values
 """
 
 import sys
@@ -12,7 +17,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.colors import ListedColormap
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -22,12 +26,12 @@ from config import *
 
 def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, violation_days=3):
     """
-    Calculate satisficing conditions for each (year, realization) pair.
+    Calculate satisficing conditions for each (year, realization) pair using pre-calculated metrics.
     
     Parameters:
     -----------
     data : pywrdrb.Data
-        Data object with res_storage and shortage attributes
+        Data object with pre-calculated shortage, contribution, res_storage, and inflow
     dataset_id : str
         Dataset identifier
     storage_threshold : float
@@ -37,13 +41,10 @@ def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, v
     
     Returns:
     --------
-    dict : Results with satisficing status and aggregated metrics
+    pd.DataFrame : Results with satisficing status and aggregated metrics
     """
     
     nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-    
-    # Get realizations
-    realizations = list(data.res_storage[dataset_id].keys())
     
     # Storage capacities for NYC reservoirs (MG)
     storage_capacities = {
@@ -52,6 +53,9 @@ def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, v
         'neversink': 34941
     }
     total_capacity = sum(storage_capacities.values())
+    
+    # Get realizations from shortage data (all dicts should have same realizations)
+    realizations = list(data.shortage[dataset_id].keys())
     
     results = {
         'year': [],
@@ -64,23 +68,18 @@ def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, v
     }
     
     for r in realizations:
-        # Get NYC storage
+        # Use pre-calculated data directly from postprocessing
         nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
         nyc_storage_pct = 100.0 * nyc_storage / total_capacity
         
-        # Get Montague shortage (violation when > 0)
+        # Use pre-calculated shortage (already filtered for violations >= 3 consecutive days)
         montague_shortage = data.shortage[dataset_id][r]['delMontague']
         
-        # Get NYC inflow (sum of 3 reservoirs)
-        nyc_inflow = data.inflow[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        # Use pre-calculated NYC inflow (aggregated in postprocessing)
+        nyc_inflow = data.inflow[dataset_id][r]['nyc']
         
-        # Get Montague contributions from NYC
-        contrib_cols = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
-        if 'contribution' in dir(data):
-            montague_contrib = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
-        else:
-            # Calculate from nyc_release_components if contribution not available
-            montague_contrib = data.nyc_release_components[dataset_id][r][contrib_cols].sum(axis=1)
+        # Use pre-calculated NYC contribution to Montague
+        montague_contrib = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
         
         # Get years in data
         years = pd.DatetimeIndex(nyc_storage.index).year.unique()
@@ -96,11 +95,10 @@ def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, v
             min_storage = nyc_storage_pct[mask].min()
             storage_ok = min_storage >= storage_threshold
             
-            # Check Montague violation condition
+            # Check Montague violation condition using pre-calculated shortage
             violations = montague_shortage[mask] > 0
-            # Calculate max consecutive True values
             if violations.any():
-                # Use groupby trick to find consecutive groups
+                # Calculate max consecutive violation days
                 groups = (violations != violations.shift()).cumsum()
                 max_consec = violations.groupby(groups).sum().max()
             else:
@@ -108,7 +106,7 @@ def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, v
             
             montague_ok = max_consec <= violation_days
             
-            # Calculate aggregates for Jun-Dec
+            # Calculate aggregates for Jun-Dec period
             total_inflow = nyc_inflow[mask].sum()
             total_contrib = montague_contrib[mask].sum()
             
@@ -257,22 +255,19 @@ def main(dataset_id):
     # Verify dataset
     verify_dataset_id(dataset_id)
     
-    # Load data
+    # Load pre-calculated data from postprocessing
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         print(f"ERROR: Data file not found: {fname}")
-        print("Run postprocessing first!")
+        print("Run postprocessing (04_postprocess_data.py) first!")
         return
     
-    print(f"Loading data from: {fname}")
+    print(f"Loading pre-calculated metrics from: {fname}")
     data = pywrdrb.Data()
-    data.load_from_export(fname)
+    # Only load what we need: pre-calculated shortage, contribution, plus res_storage and inflow
+    data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'shortage', 'contribution'])
     
-    # Add Trenton equivalent flow if needed
-    from methods.metrics.shortfall import add_trenton_equiv_flow
-    data = add_trenton_equiv_flow(data)
-    
-    # Calculate satisficing conditions
+    # Calculate satisficing conditions using pre-calculated metrics
     print("Calculating satisficing conditions...")
     results = calculate_satisficing_conditions(data, dataset_id)
     
@@ -317,7 +312,7 @@ def main(dataset_id):
 
 
 def compare_all_datasets():
-    """Compare satisficing conditions across all datasets."""
+    """Compare satisficing conditions across all datasets using pre-calculated metrics."""
     
     print("=" * 60)
     print("COMPARING SATISFICING CONDITIONS ACROSS DATASETS")
@@ -329,15 +324,13 @@ def compare_all_datasets():
     for dataset_id in DATASET_CONFIGS.keys():
         fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
         if not os.path.exists(fname):
-            print(f"Skipping {dataset_id} (data not found)")
+            print(f"Skipping {dataset_id} (postprocessed data not found)")
             continue
         
         print(f"\nProcessing {dataset_id}...")
         data = pywrdrb.Data()
-        data.load_from_export(fname)
-        
-        from methods.metrics.shortfall import add_trenton_equiv_flow
-        data = add_trenton_equiv_flow(data)
+        # Load only pre-calculated metrics needed
+        data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'shortage', 'contribution'])
         
         results = calculate_satisficing_conditions(data, dataset_id)
         all_results[dataset_id] = results

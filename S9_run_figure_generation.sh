@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Figs
-#SBATCH --output=./logs/fig_generation.out
-#SBATCH --error=./logs/fig_generation.err
+#SBATCH --job-name=Figs2
+#SBATCH --output=./logs/fig_generation2.out
+#SBATCH --error=./logs/fig_generation2.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=48:00:00
@@ -19,6 +19,8 @@ mkdir -p logs figures
 # python3 09_plot_reservoir_storage_zone_probabilities.py --all
 
 python3 09_plot_performance_outcome_bars.py
+
+# python3 09_plot_satisficing_scatter.py --all
 
 # python3 09_plot_drought_frequency.py "stationary_ensemble"
 # python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_min"
