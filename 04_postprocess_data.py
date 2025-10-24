@@ -88,33 +88,32 @@ def process_dataset(dataset_id):
         COMM.barrier()
 
     ### Load data through pywrdrb API #######################################
-    ### OPTIMIZATION: Only rank 0 loads data, then broadcasts to all ranks
+    ### OPTIMIZATION: Only rank 0 loads full data to avoid memory overload
+    ### Other ranks will access data via direct HDF5 reads as needed
     if RANK == 0:
-        print(f"Loading hydrologic flow data for {len(ensemble_set_specs)} ensemble sets...")
-        print(f"  (Only rank 0 loads data to avoid memory overload with {SIZE} processes)")
+        print(f"Loading data for postprocessing...")
+        print(f"  MPI mode: Only rank 0 loads full dataset to avoid memory overload with {SIZE} processes")
+        print(f"  Other ranks will perform lazy HDF5 reads as needed")
 
+    ## Setup pathnavigator (all ranks need this)
+    pn_config = pywrdrb.get_pn_config()
+    for spec in ensemble_set_specs:
+        dataset_dir = spec.directory
+        dataset_name = spec.directory.split('/')[-1]
+        pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
+    pywrdrb.load_pn_config(pn_config)
+
+    ## Only rank 0 loads full data
     if RANK == 0:
-        ## Setup pathnavigator
-        pn_config = pywrdrb.get_pn_config()
-        for spec in ensemble_set_specs:
-            dataset_dir = spec.directory
-            dataset_name = spec.directory.split('/')[-1]
-            pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
-        pywrdrb.load_pn_config(pn_config)
+        if RANK == 0:
+            print("  Rank 0: Loading hydrologic model flow...")
 
-        ## Load synthetic ensemble natural flows
-        # This will load the full natural flow (gage_flow_mgd.hdf5) but NOT the simulation outputs
         ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
         results_sets = ['major_flow']
-        data = pywrdrb.Data(results_sets=results_sets)
+        data = pywrdrb.Data(results_sets=results_sets, print_status=False)
         data.load_hydrologic_model_flow(ensemble_set_names)
-    else:
-        ensemble_set_names = None
-        data = None
-    
-    # Combine all sets into single dataset key (only on rank 0)
-    if RANK == 0:
-        # Optimized: process in place rather than creating new object
+
+        # Combine all sets into single dataset key
         combined_gage_flow = {}
         for set_name in ensemble_set_names:
             set_data = data.major_flow[set_name]
@@ -126,200 +125,189 @@ def process_dataset(dataset_id):
 
         # Store combined gage flow
         gage_flow_dict = {dataset_id: combined_gage_flow}
-    else:
-        gage_flow_dict = None
-    
-    ## Load simulation outputs (only on rank 0)
-    if RANK == 0:
-        print(f"Loading simulation outputs...")
 
-    output_filenames = [spec.output_file for spec in ensemble_set_specs]
-    output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
-    
-    results_sets = [
-        "major_flow", 
-        "inflow", 
-        "res_storage",
-        "res_release",
-        "mrf_target", 
-        "ibt_diversions", 
-        "ibt_demands",
-        "nyc_release_components"
-    ] 
-    
-    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
-    data.load_output(output_filenames=output_filenames)
-    data.load_observations(results_sets=['res_storage', 'major_flow', 'reservoir_downstream_gage'])
-    data.res_release['obs'] = {}
-    data.res_release['obs'][0] = data.reservoir_downstream_gage['obs'][0]
-    
-    data = add_trenton_equiv_flow(data)
-    
-    # Combine all sets into single dataset key for each results_set
-    # Optimized: process each results_set once
-    for results_set in results_sets:
-        combined_data = {}
-        full_results_set_dict = getattr(data, results_set)
-        
-        for i, spec in enumerate(ensemble_set_specs):
-            set_name = f"{dataset_id}_set{i+1}"
-            if set_name not in full_results_set_dict:
-                print(f"WARNING: {set_name} not found in {results_set}")
-                continue
-                
-            set_data = full_results_set_dict[set_name]
-            
-            # Renumber realizations to be continuous
-            for local_id, df in set_data.items():
-                global_id = i * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
-                combined_data[global_id] = df
-        
-        # Store combined data back
-        full_results_set_dict[dataset_id] = combined_data
-        setattr(data, results_set, full_results_set_dict)
+        print("  Rank 0: Loading simulation outputs...")
+
+        output_filenames = [spec.output_file for spec in ensemble_set_specs]
+        output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
+
+        results_sets = [
+            "major_flow",
+            "inflow",
+            "res_storage",
+            "res_release",
+            "mrf_target",
+            "ibt_diversions",
+            "ibt_demands",
+            "nyc_release_components"
+        ]
+
+        data = pywrdrb.Data(results_sets=results_sets, print_status=False)
+        data.load_output(output_filenames=output_filenames)
+        data.load_observations(results_sets=['res_storage', 'major_flow', 'reservoir_downstream_gage'])
+        data.res_release['obs'] = {}
+        data.res_release['obs'][0] = data.reservoir_downstream_gage['obs'][0]
+
+        data = add_trenton_equiv_flow(data)
+
+        # Combine all sets into single dataset key for each results_set
+        for results_set in results_sets:
+            combined_data = {}
+            full_results_set_dict = getattr(data, results_set)
+
+            for i, spec in enumerate(ensemble_set_specs):
+                set_name = f"{dataset_id}_set{i+1}"
+                if set_name not in full_results_set_dict:
+                    print(f"WARNING: {set_name} not found in {results_set}")
+                    continue
+
+                set_data = full_results_set_dict[set_name]
+
+                # Renumber realizations to be continuous
+                for local_id, df in set_data.items():
+                    global_id = i * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
+                    combined_data[global_id] = df
+
+            # Store combined data back
+            full_results_set_dict[dataset_id] = combined_data
+            setattr(data, results_set, full_results_set_dict)
+
+        # Replace gage flow with combined version
+        data.major_flow[dataset_id] = gage_flow_dict[dataset_id]
+
+        print("  Rank 0: Data loading complete")
+    else:
+        # Other ranks: Create empty data object
+        # They will NOT load full data to save memory
+        data = None
+
+    # Sync all ranks
+    if USE_MPI:
+        COMM.barrier()
     
     ### Post-process data ##############################################
     if RANK == 0:
         print('Calculating shortages for different nodes...')
         if USE_MPI:
-            print(f'  Using MPI parallelization with {SIZE} processes')
+            print(f'  WARNING: Only rank 0 has data loaded. Processing will be serial.')
+            print(f'  (With {SIZE} ranks, each would need {8}GB RAM = {SIZE * 8}GB total)')
+            print(f'  Recommend running with fewer ranks (20-40) for MPI parallelization')
 
-    # Calculate shortages with MPI parallelization
+    # With current memory constraints, only rank 0 does the work
     all_shortage_dict = {}
 
-    for model in ['reconstruction', dataset_id]:
-        realizations = list(data.major_flow[model].keys())
+    if RANK == 0:
+        for model in ['reconstruction', dataset_id]:
+            realizations = list(data.major_flow[model].keys())
 
-        # Distribute realizations across MPI ranks
-        realizations_per_rank = np.array_split(realizations, SIZE)
-        my_realizations = realizations_per_rank[RANK]
-
-        if RANK == 0:
             print(f"  Processing model: {model}")
             print(f"    Total realizations: {len(realizations)}")
-            print(f"    Realizations per rank: ~{len(my_realizations)}")
 
-        # Each rank processes its assigned realizations
-        local_shortage_dict = {}
-        for r in my_realizations:
-            local_shortage_dict[r] = {}
+            shortage_dict = {}
 
-        # Process each node for assigned realizations
-        nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
-        for node in nodes:
-            if RANK == 0:
+            # Initialize shortage dict for all realizations
+            for r in realizations:
+                shortage_dict[r] = {}
+
+            # Process each node
+            nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
+            for node in nodes:
                 print(f"    Processing {node}...")
 
-            for i, r in enumerate(my_realizations):
-                # Progress reporting (every 10% for rank 0)
-                if RANK == 0 and len(my_realizations) > 10 and (i + 1) % max(1, len(my_realizations) // 10) == 0:
-                    progress = 100 * (i + 1) / len(my_realizations)
-                    print(f"      Rank 0 progress: {progress:.0f}% ({i+1}/{len(my_realizations)} realizations)")
+                for i, r in enumerate(realizations):
+                    # Progress reporting (every 10%)
+                    if len(realizations) > 10 and (i + 1) % max(1, len(realizations) // 10) == 0:
+                        progress = 100 * (i + 1) / len(realizations)
+                        print(f"      Progress: {progress:.0f}% ({i+1}/{len(realizations)} realizations)")
 
-                flow_series, target_series = get_flow_and_target_values(
-                    data, node, model, r,
-                    start_date=None, end_date=None
-                )
+                    flow_series, target_series = get_flow_and_target_values(
+                        data, node, model, r,
+                        start_date=None, end_date=None
+                    )
 
-                # Calculate shortages
-                shortage_series = target_series - flow_series
-                shortage_series[shortage_series < 0] = 0  # Set negative shortages (surplus) to zero
-                shortage_series.iloc[:3] = 0.0  # Set first 3 days to 0.0 due to model warmup
+                    # Calculate shortages
+                    shortage_series = target_series - flow_series
+                    shortage_series[shortage_series < 0] = 0  # Set negative shortages (surplus) to zero
+                    shortage_series.iloc[:3] = 0.0  # Set first 3 days to 0.0 due to model warmup
 
-                # Ignore shortages when duration of consecutive shortage>0 days is <3
-                shortage_durations = (shortage_series > 0).astype(int).groupby(
-                    (shortage_series > 0).astype(int).diff().ne(0).cumsum()
-                ).cumsum()
-                shortage_series[shortage_durations < 3] = 0.0
+                    # Ignore shortages when duration of consecutive shortage>0 days is <3
+                    shortage_durations = (shortage_series > 0).astype(int).groupby(
+                        (shortage_series > 0).astype(int).diff().ne(0).cumsum()
+                    ).cumsum()
+                    shortage_series[shortage_durations < 3] = 0.0
 
-                local_shortage_dict[r][node] = shortage_series
+                    shortage_dict[r][node] = shortage_series
 
-        # Gather results from all ranks to rank 0
-        if USE_MPI:
-            all_local_dicts = COMM.gather(local_shortage_dict, root=0)
-        else:
-            all_local_dicts = [local_shortage_dict]
-
-        # Rank 0 combines all results
-        if RANK == 0:
-            shortage_dict = {}
-            for local_dict in all_local_dicts:
-                shortage_dict.update(local_dict)
-
-            # Convert to DataFrames (do once at end)
+            # Convert to DataFrames
             for r in realizations:
                 shortage_dict[r] = pd.DataFrame(shortage_dict[r])
 
             all_shortage_dict[model] = shortage_dict
             print(f"    Completed shortage calculations for {model}")
 
-        # Ensure all ranks are synchronized
-        if USE_MPI:
-            COMM.barrier()
-
-    # Broadcast the combined shortage_dict to all ranks (needed for later calculations)
+    # Sync all ranks before continuing
     if USE_MPI:
-        all_shortage_dict = COMM.bcast(all_shortage_dict, root=0)
+        COMM.barrier()
     
-    ## Calculate downstream contributions from NYC reservoirs
+    ## Calculate downstream contributions from NYC reservoirs (only rank 0)
     if RANK == 0:
         print('Calculating total downstream contributions...')
 
-    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
-    all_contribution_dict = {}
+        nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+        contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
+        all_contribution_dict = {}
 
-    for model in ['reconstruction', dataset_id]:
-        contribution_dict = {}
-        realizations = list(data.major_flow[model].keys())
+        for model in ['reconstruction', dataset_id]:
+            contribution_dict = {}
+            realizations = list(data.major_flow[model].keys())
 
-        for r in realizations:
-            total_nyc_contribution = data.nyc_release_components[model][r].loc[:, contribution_columns].sum(axis=1)
-            contribution_dict[r] = total_nyc_contribution.to_frame(name='mrf_montagueTrenton_nyc')
+            for r in realizations:
+                total_nyc_contribution = data.nyc_release_components[model][r].loc[:, contribution_columns].sum(axis=1)
+                contribution_dict[r] = total_nyc_contribution.to_frame(name='mrf_montagueTrenton_nyc')
 
-        all_contribution_dict[model] = contribution_dict
+            all_contribution_dict[model] = contribution_dict
 
-    ### Calculate aggregate NYC inflow ###########################################
+    ### Calculate aggregate NYC inflow (only rank 0)
     if RANK == 0:
         print('Calculating aggregate NYC inflow...')
 
-    for model in ['reconstruction', dataset_id]:
-        realizations = list(data.inflow[model].keys())
-        for r in realizations:
-            data.inflow[model][r].loc[:, 'nyc'] = data.inflow[model][r].loc[:, nyc_reservoirs].sum(axis=1)
+        for model in ['reconstruction', dataset_id]:
+            realizations = list(data.inflow[model].keys())
+            for r in realizations:
+                data.inflow[model][r].loc[:, 'nyc'] = data.inflow[model][r].loc[:, nyc_reservoirs].sum(axis=1)
 
-    ### Organize data to be kept for later #######################################
+    ### Organize data to be kept for later (only rank 0)
     if RANK == 0:
         print('Organizing final data structure...')
-    
-    keep_data = pywrdrb.Data()
-    keep_data.gage_flow = gage_flow_dict
-    keep_data.shortage = all_shortage_dict
-    keep_data.contribution = all_contribution_dict
-    
-    # Make copies of output results_sets just for the combined dataset
-    inflow_dict = {}
-    major_flow_dict = {}
-    res_storage_dict = {}
-    ibt_diversions_dict = {}
-    ibt_demands_dict = {}
-    mrf_target_dict = {}
-    
-    for model in ['reconstruction', dataset_id]:
-        if model in data.inflow:
-            inflow_dict[model] = data.inflow[model]
-            major_flow_dict[model] = data.major_flow[model]
-            res_storage_dict[model] = data.res_storage[model]
-            ibt_diversions_dict[model] = data.ibt_diversions[model]
-            ibt_demands_dict[model] = data.ibt_demands[model]
-            mrf_target_dict[model] = data.mrf_target[model]
 
-    keep_data.inflow = inflow_dict
-    keep_data.major_flow = major_flow_dict
-    keep_data.res_storage = res_storage_dict
-    keep_data.ibt_diversions = ibt_diversions_dict
-    keep_data.ibt_demands = ibt_demands_dict
-    keep_data.mrf_target = mrf_target_dict
+        keep_data = pywrdrb.Data()
+        keep_data.gage_flow = gage_flow_dict
+        keep_data.shortage = all_shortage_dict
+        keep_data.contribution = all_contribution_dict
+
+        # Make copies of output results_sets just for the combined dataset
+        inflow_dict = {}
+        major_flow_dict = {}
+        res_storage_dict = {}
+        ibt_diversions_dict = {}
+        ibt_demands_dict = {}
+        mrf_target_dict = {}
+
+        for model in ['reconstruction', dataset_id]:
+            if model in data.inflow:
+                inflow_dict[model] = data.inflow[model]
+                major_flow_dict[model] = data.major_flow[model]
+                res_storage_dict[model] = data.res_storage[model]
+                ibt_diversions_dict[model] = data.ibt_diversions[model]
+                ibt_demands_dict[model] = data.ibt_demands[model]
+                mrf_target_dict[model] = data.mrf_target[model]
+
+        keep_data.inflow = inflow_dict
+        keep_data.major_flow = major_flow_dict
+        keep_data.res_storage = res_storage_dict
+        keep_data.ibt_diversions = ibt_diversions_dict
+        keep_data.ibt_demands = ibt_demands_dict
+        keep_data.mrf_target = mrf_target_dict
 
     ### Export the new data object to HDF5 (only on rank 0)
     if RANK == 0:
