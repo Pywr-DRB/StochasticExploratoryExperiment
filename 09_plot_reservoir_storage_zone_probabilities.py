@@ -129,7 +129,60 @@ def build_x_edges(periods_sorted):
     return x_edges
 
 
-def plot_storage_zone_probabilities(prob_df, 
+def _plot_single_storage_panel(ax,
+                                M,
+                                X,
+                                Y,
+                                cmap,
+                                norm,
+                                show_zone_lines=True,
+                                xlabel='Period of year',
+                                ylabel='Total NYC storage (% of capacity)'):
+    """
+    Plot a single storage zone probability panel.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    M : np.ndarray
+        Probability matrix (Z, P)
+    X, Y : np.ndarray
+        Meshgrid coordinates (Z+1, P+1)
+    cmap : str or matplotlib colormap
+        Colormap to use
+    norm : matplotlib normalization
+        Color normalization
+    show_zone_lines : bool
+        Whether to show white zone boundary lines
+    xlabel, ylabel : str
+        Axis labels
+
+    Returns
+    -------
+    pcolormesh
+        The pcolormesh object for creating colorbars
+    """
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color='#f0f0f0')
+
+    pcm = ax.pcolormesh(X, Y, M, cmap=cmap_obj, norm=norm, shading='flat')
+
+    # Zone boundary lines
+    if show_zone_lines:
+        for j in range(Y.shape[1]):
+            ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
+
+    ax.set_xlim(X.min(), X.max())
+    ax.set_ylim(0, 100)
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.tick_params(labelsize=10)
+
+    return pcm
+
+
+def plot_storage_zone_probabilities(prob_df,
                                      ffmp_boundaries,
                                      period='weekly',
                                      figsize=(14, 6),
@@ -140,7 +193,7 @@ def plot_storage_zone_probabilities(prob_df,
                                      fname=None):
     """
     Plot storage zone probability heatmap.
-    
+
     Parameters
     ----------
     prob_df : pd.DataFrame
@@ -153,39 +206,39 @@ def plot_storage_zone_probabilities(prob_df,
     # Build grids
     y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
     x_edges = build_x_edges(periods_sorted)
-    
+
     # Align probability data to periods_sorted
     M = prob_df.loc[periods_sorted].to_numpy().T  # (Z, P)
-    
+
     # Handle zeros for LogNorm
     M = np.where(M > 0, M, vmin)
-    
+
     # Build meshgrid
     X = np.tile(x_edges, (y_edges_grid.shape[0], 1))  # (Z+1, P+1)
     Y = y_edges_grid  # (Z+1, P+1)
-    
-    # Plot
+
+    # Plot using helper
     fig, ax = plt.subplots(figsize=figsize)
-    cmap_obj = plt.get_cmap(cmap).copy()
-    cmap_obj.set_bad(color='#f0f0f0')
-    
     norm = LogNorm(vmin=vmin, vmax=vmax)
-    quad = ax.pcolormesh(X, Y, M, cmap=cmap_obj, norm=norm, shading='flat')
-    
-    # Zone boundary lines
-    for j in range(Y.shape[1]):
-        ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
-    
-    ax.set_xlim(X.min(), X.max())
-    ax.set_ylim(0, 100)
-    ax.set_xlabel('Period of year')
-    ax.set_ylabel('Total NYC storage (% of capacity)')
+
+    quad = _plot_single_storage_panel(
+        ax=ax,
+        M=M,
+        X=X,
+        Y=Y,
+        cmap=cmap,
+        norm=norm,
+        show_zone_lines=True,
+        xlabel='Period of year',
+        ylabel='Total NYC storage (% of capacity)'
+    )
+
     if title:
         ax.set_title(title)
-    
+
     cbar = plt.colorbar(quad, ax=ax, pad=0.02)
     cbar.set_label('Probability (%)')
-    
+
     plt.tight_layout()
     if fname:
         plt.savefig(fname, dpi=300, bbox_inches='tight')
@@ -202,7 +255,7 @@ def plot_storage_zone_comparison(prob_df_ref,
                                   fname=None):
     """
     Plot percentage difference between two zone probability datasets.
-    
+
     Parameters
     ----------
     prob_df_ref : pd.DataFrame
@@ -215,51 +268,238 @@ def plot_storage_zone_comparison(prob_df_ref,
     # Build grids
     y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
     x_edges = build_x_edges(periods_sorted)
-    
+
     # Align data
     M_ref = prob_df_ref.loc[periods_sorted].to_numpy().T  # (Z, P)
     M_comp = prob_df_comp.loc[periods_sorted].to_numpy().T  # (Z, P)
-    
+
     # Calculate percentage difference
     eps = 1e-8
     prob_diff = 100.0 * (M_comp - M_ref) / np.maximum(M_ref, eps)
-    prob_ratio = np.log10(np.maximum(M_comp, eps) / np.maximum(M_ref, eps))
-    
+
     # Build meshgrid
     X = np.tile(x_edges, (y_edges_grid.shape[0], 1))
     Y = y_edges_grid
-    
-    # Plot
+
+    # Plot using helper
     fig, ax = plt.subplots(figsize=figsize)
-    
-    # set vmin and vmax as 90% percentiles
+
     vmin = -100
     vmax = 100
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
 
-    if vmin < 0 and vmax > 0:
-        norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
-    else:
-        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+    pcm = _plot_single_storage_panel(
+        ax=ax,
+        M=prob_diff,
+        X=X,
+        Y=Y,
+        cmap='BrBG_r',
+        norm=norm,
+        show_zone_lines=True,
+        xlabel='Period of year',
+        ylabel='Total NYC storage (% of capacity)'
+    )
 
-    pcm = ax.pcolormesh(X, Y, prob_diff, cmap='BrBG_r', norm=norm, shading='flat')
-    
-    # Zone boundary lines
-    for j in range(Y.shape[1]):
-        ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
-    
-    ax.set_xlabel('Period of year')
-    ax.set_ylabel('Total NYC storage (% of capacity)')
     if title:
         ax.set_title(title)
-    
+
     cbar = plt.colorbar(pcm, ax=ax, pad=0.02, extend='both')
     cbar.set_label('Δ Probability (%)')
-    
+
     plt.tight_layout()
     if fname:
         plt.savefig(fname, dpi=300, bbox_inches='tight')
         plt.close()
     return fig, ax
+
+
+def plot_4panel_storage_comparison(period='weekly',
+                                    figsize=(14, 10),
+                                    vmin_abs=0.01,
+                                    vmax_abs=100,
+                                    vmin_diff=-100,
+                                    vmax_diff=100,
+                                    fname=None):
+    """
+    Create a 4-panel comparison figure showing storage zone probabilities for all scenarios.
+
+    Layout:
+    - Left panel: Stationary ensemble (absolute probability)
+    - Right panels (stacked): Low, Medium, High climate scenarios (% difference from stationary)
+
+    Parameters
+    ----------
+    period : str
+        Time aggregation period ('weekly', 'monthly', 'daily')
+    figsize : tuple
+        Figure size in inches
+    vmin_abs, vmax_abs : float
+        Color scale limits for absolute probability (left panel)
+    vmin_diff, vmax_diff : float
+        Color scale limits for percentage difference (right panels)
+    fname : str
+        Output filename (if None, will auto-generate)
+    """
+
+    print(f"\n{'='*60}")
+    print("Creating 4-Panel Storage Zone Comparison Figure")
+    print(f"{'='*60}")
+
+    # Define datasets to plot
+    datasets = {
+        'stationary_ensemble': 'Stationary',
+        'climate_adjusted_low': 'Low',
+        'climate_adjusted_medium': 'Medium',
+        'climate_adjusted_high': 'High'
+    }
+
+    # Load zone probabilities for all datasets
+    all_prob_dfs = {}
+    for dataset_id, label in datasets.items():
+        print(f"\nLoading {dataset_id} ({label})...")
+        prob_df = load_zone_probabilities(dataset_id, period)
+        if prob_df is None:
+            print(f"ERROR: Could not load {dataset_id}")
+            return None
+        all_prob_dfs[dataset_id] = prob_df
+
+    # Load FFMP boundaries
+    ffmp_boundaries = load_ffmp_boundaries()
+
+    # Build grids (same for all panels)
+    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
+    x_edges = build_x_edges(periods_sorted)
+    X = np.tile(x_edges, (y_edges_grid.shape[0], 1))  # (Z+1, P+1)
+    Y = y_edges_grid  # (Z+1, P+1)
+
+    # Calculate percentage differences for climate scenarios
+    print(f"\n{'='*60}")
+    print("Calculating percentage differences from stationary...")
+    print(f"{'='*60}")
+
+    M_ref = all_prob_dfs['stationary_ensemble'].loc[periods_sorted].to_numpy().T  # (Z, P)
+    eps = 1e-8
+
+    diff_matrices = {}
+    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+        M_comp = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
+        prob_diff = 100.0 * (M_comp - M_ref) / np.maximum(M_ref, eps)
+        diff_matrices[dataset_id] = prob_diff
+
+    print(f"\n{'='*60}")
+    print("Creating multi-panel figure...")
+    print(f"{'='*60}")
+
+    # Set up figure with GridSpec
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[1, 1],
+                          hspace=0.15, wspace=0.25,
+                          left=0.08, right=0.95, top=0.95, bottom=0.12)
+
+    # Create axes
+    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans all rows
+    ax_low = fig.add_subplot(gs[0, 1])   # Top right
+    ax_med = fig.add_subplot(gs[1, 1])   # Middle right
+    ax_high = fig.add_subplot(gs[2, 1])  # Bottom right
+
+    axes = [ax_stat, ax_low, ax_med, ax_high]
+    dataset_list = list(datasets.keys())
+    panel_labels = ['(a)', '(b)', '(c)', '(d)']
+
+    # Set up colormaps and norms
+    # Left panel: absolute probability
+    cmap_abs = 'magma_r'
+    norm_abs = LogNorm(vmin=vmin_abs, vmax=vmax_abs)
+
+    # Right panels: percentage difference (diverging colormap)
+    cmap_diff = 'BrBG_r'
+    norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
+
+    # Storage for pcolormeshes
+    pm_abs = None
+    pm_diff = None
+
+    # Plot each panel
+    for idx, (ax, dataset_id, panel_label) in enumerate(zip(axes, dataset_list, panel_labels)):
+
+        if idx == 0:  # Stationary panel (absolute values)
+            M = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
+            M = np.where(M > 0, M, vmin_abs)  # Handle zeros for LogNorm
+
+            pm_abs = _plot_single_storage_panel(
+                ax=ax,
+                M=M,
+                X=X,
+                Y=Y,
+                cmap=cmap_abs,
+                norm=norm_abs,
+                show_zone_lines=True,
+                xlabel='Period of year',
+                ylabel='Total NYC storage (% of capacity)'
+            )
+
+        else:  # Climate scenario panels (percentage difference)
+            M_diff = diff_matrices[dataset_id]
+
+            pm_diff = _plot_single_storage_panel(
+                ax=ax,
+                M=M_diff,
+                X=X,
+                Y=Y,
+                cmap=cmap_diff,
+                norm=norm_diff,
+                show_zone_lines=True,
+                xlabel='Period of year',
+                ylabel=''  # No ylabel for right panels
+            )
+
+        # Panel title
+        title_text = datasets[dataset_id]
+        ax.text(0.02, 0.98, f"{panel_label} {title_text}",
+               transform=ax.transAxes, fontsize=13, fontweight='bold',
+               verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.3))
+
+        # X-axis labels only for bottom panels
+        if idx == 0:  # Left panel (always show)
+            ax.set_xlabel('Period of year', fontsize=12)
+            ax.set_ylabel('Total NYC storage (% of capacity)', fontsize=12)
+        elif idx == 3:  # Bottom right panel
+            ax.set_xlabel('Period of year', fontsize=12)
+        else:  # Other right panels
+            ax.set_xticklabels([])
+            ax.set_xlabel('')
+
+        # Y-axis labels only for left panel
+        if idx != 0:
+            ax.set_ylabel('')
+
+    # Add two colorbars at bottom
+    # Left colorbar for absolute probability
+    cbar_abs_ax = fig.add_axes([0.08, 0.04, 0.35, 0.02])
+    cbar_abs = fig.colorbar(pm_abs, cax=cbar_abs_ax, orientation='horizontal', extend='max')
+    cbar_abs.set_label('Probability (%)', fontsize=11, fontweight='bold')
+    cbar_abs.ax.tick_params(labelsize=9)
+
+    # Right colorbar for percentage difference
+    cbar_diff_ax = fig.add_axes([0.56, 0.04, 0.35, 0.02])
+    cbar_diff = fig.colorbar(pm_diff, cax=cbar_diff_ax, orientation='horizontal', extend='both')
+    cbar_diff.set_label('Δ Probability (%)', fontsize=11, fontweight='bold')
+    cbar_diff.ax.tick_params(labelsize=9)
+
+    # Save figure
+    if fname is None:
+        fname = f"{FIG_OUTPUT_DIR}/comparison_4panel_storage_zone_probabilities_{period}.png"
+
+    plt.savefig(fname, dpi=400, bbox_inches='tight')
+    # Also save vector version
+    base = fname.rsplit('.', 1)[0]
+    plt.savefig(f"{base}.svg", bbox_inches='tight')
+
+    print(f"\nSaved: {fname}")
+    print(f"Saved: {base}.svg")
+
+    return fig, axes
 
 
 def plot_dataset(dataset_id, period='weekly', figsize=(14, 6)):
@@ -352,30 +592,42 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
+        print("Special option: 'comparison' - generates 4-panel comparison figure")
         sys.exit(1)
-    
+
     arg = sys.argv[1]
     period = 'weekly'
-    
+
     figsize = (10, 8)
+
+    # Handle special 'comparison' option for 4-panel figure
+    if arg.lower() == 'comparison':
+        print("=" * 60)
+        print("PLOTTING 4-PANEL STORAGE ZONE COMPARISON")
+        print("=" * 60)
+        plot_4panel_storage_comparison(period=period)
+        print("=" * 60)
+        print("4-panel comparison figure completed successfully!")
+        return
+
     if arg == '--all':
         plot_all_datasets(period, figsize=figsize)
     else:
         dataset_id = arg
         verify_dataset_id(dataset_id)
-        
+
         print("=" * 60)
         print(f"PLOTTING ZONE PROBABILITIES: {dataset_id}")
         print("=" * 60)
-        
+
         # Plot this dataset
         success = plot_dataset(dataset_id, period, figsize=figsize)
-        
+
         # If not stationary, also plot comparison
         if success and dataset_id != 'stationary_ensemble':
             print()
             plot_comparison('stationary_ensemble', dataset_id, period, figsize=figsize)
-        
+
         print("=" * 60)
         print("Done!")
 
