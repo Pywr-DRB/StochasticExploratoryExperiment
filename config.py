@@ -10,7 +10,7 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 1000
+TOTAL_REALIZATIONS = 2000
 
 # Ensemble set configuration (for generation and storage)
 N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
@@ -35,51 +35,34 @@ assert N_REALIZATIONS_PER_ENSEMBLE_SET % N_REALIZATIONS_PER_PYWRDRB_BATCH == 0, 
 # DATASET CONFIGURATIONS
 # =============================================================================
 
+
 # Load monthly shift data for climate adjustments
-fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp245_2020_2059.csv"
-ssp245_monthly_shift_range = pd.read_csv(fname, index_col=0)
+fname = "./data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv"
+monthly_shift_scenarios = pd.read_csv(fname, index_col=0)
 
-fname = "./data/summary_nyc_inflow_monthly_mean_prc_change_ssp370_2020_2059.csv"
-ssp370_monthly_shift_range = pd.read_csv(fname, index_col=0)
-
-# Define all dataset configurations
 DATASET_CONFIGS = {
     'stationary_ensemble': {
         'type': 'stationary',
         'description': 'Stationary ensemble (no climate adjustment)',
         'monthly_prc_change': None
     },
-    'climate_adjusted_ssp245_min': {
+    'climate_adjusted_low': {
         'type': 'climate_adjusted',
-        'description': 'SSP2-4.5 2020-2059 minimum change',
-        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'min'].values
+        'description': 'Driest climate change',
+        'monthly_prc_change': monthly_shift_scenarios.loc[:, 'low'].values
     },
-    'climate_adjusted_ssp245_median': {
+    'climate_adjusted_medium': {
         'type': 'climate_adjusted', 
-        'description': 'SSP2-4.5 2020-2059 median change',
-        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'median'].values
+        'description': 'Mid-range climate change',
+        'monthly_prc_change': monthly_shift_scenarios.loc[:, 'medium'].values
     },
-    'climate_adjusted_ssp245_max': {
+    'climate_adjusted_high': {
         'type': 'climate_adjusted',
-        'description': 'SSP2-4.5 2020-2059 maximum change',
-        'monthly_prc_change': ssp245_monthly_shift_range.loc[:, 'max'].values
-    },
-    'climate_adjusted_ssp370_min': {
-        'type': 'climate_adjusted',
-        'description': 'SSP3-7.0 2020-2059 minimum change',
-        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'min'].values
-    },
-    'climate_adjusted_ssp370_median': {
-        'type': 'climate_adjusted',
-        'description': 'SSP3-7.0 2020-2059 median change',
-        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'median'].values
-    },
-    'climate_adjusted_ssp370_max': {
-        'type': 'climate_adjusted',
-        'description': 'SSP3-7.0 2020-2059 maximum change',
-        'monthly_prc_change': ssp370_monthly_shift_range.loc[:, 'max'].values
+        'description': 'Wettest climate change',
+        'monthly_prc_change': monthly_shift_scenarios.loc[:, 'high'].values
     },
 }
+
 
 # =============================================================================
 # Salinity LSTM model settings
