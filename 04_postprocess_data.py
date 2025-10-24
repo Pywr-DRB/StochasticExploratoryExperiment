@@ -88,39 +88,48 @@ def process_dataset(dataset_id):
         COMM.barrier()
 
     ### Load data through pywrdrb API #######################################
+    ### OPTIMIZATION: Only rank 0 loads data, then broadcasts to all ranks
     if RANK == 0:
         print(f"Loading hydrologic flow data for {len(ensemble_set_specs)} ensemble sets...")
+        print(f"  (Only rank 0 loads data to avoid memory overload with {SIZE} processes)")
+
+    if RANK == 0:
+        ## Setup pathnavigator
+        pn_config = pywrdrb.get_pn_config()
+        for spec in ensemble_set_specs:
+            dataset_dir = spec.directory
+            dataset_name = spec.directory.split('/')[-1]
+            pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
+        pywrdrb.load_pn_config(pn_config)
+
+        ## Load synthetic ensemble natural flows
+        # This will load the full natural flow (gage_flow_mgd.hdf5) but NOT the simulation outputs
+        ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
+        results_sets = ['major_flow']
+        data = pywrdrb.Data(results_sets=results_sets)
+        data.load_hydrologic_model_flow(ensemble_set_names)
+    else:
+        ensemble_set_names = None
+        data = None
     
-    ## Setup pathnavigator
-    pn_config = pywrdrb.get_pn_config()
-    for spec in ensemble_set_specs:
-        dataset_dir = spec.directory
-        dataset_name = spec.directory.split('/')[-1]
-        pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
-    pywrdrb.load_pn_config(pn_config)
+    # Combine all sets into single dataset key (only on rank 0)
+    if RANK == 0:
+        # Optimized: process in place rather than creating new object
+        combined_gage_flow = {}
+        for set_name in ensemble_set_names:
+            set_data = data.major_flow[set_name]
+            # Renumber realizations to be continuous across sets
+            set_idx = int(set_name.split('_set')[-1]) - 1
+            for local_id, df in set_data.items():
+                global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
+                combined_gage_flow[global_id] = df
+
+        # Store combined gage flow
+        gage_flow_dict = {dataset_id: combined_gage_flow}
+    else:
+        gage_flow_dict = None
     
-    ## Load synthetic ensemble natural flows
-    # This will load the full natural flow (gage_flow_mgd.hdf5) but NOT the simulation outputs
-    ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
-    results_sets = ['major_flow']
-    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
-    data.load_hydrologic_model_flow(ensemble_set_names)
-    
-    # Combine all sets into single dataset key
-    # Optimized: process in place rather than creating new object
-    combined_gage_flow = {}
-    for set_name in ensemble_set_names:
-        set_data = data.major_flow[set_name]
-        # Renumber realizations to be continuous across sets
-        set_idx = int(set_name.split('_set')[-1]) - 1
-        for local_id, df in set_data.items():
-            global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id
-            combined_gage_flow[global_id] = df
-    
-    # Store combined gage flow
-    gage_flow_dict = {dataset_id: combined_gage_flow}
-    
-    ## Load simulation outputs
+    ## Load simulation outputs (only on rank 0)
     if RANK == 0:
         print(f"Loading simulation outputs...")
 
