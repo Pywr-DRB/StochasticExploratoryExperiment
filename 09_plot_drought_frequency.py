@@ -140,6 +140,113 @@ def _grid_edges_from_centers(grid: np.ndarray):
     return edges
 
 
+def _load_observed_droughts(ssi_window=12):
+    """
+    Load and preprocess observed drought events.
+
+    Parameters:
+    -----------
+    ssi_window : int
+        SSI window size (months)
+
+    Returns:
+    --------
+    pd.DataFrame
+        Observed droughts with log-transformed severity and magnitude
+    """
+    obs_fname = f"./pywrdrb/drought_metrics/observed_ssi{ssi_window}_drought_events.csv"
+    obs_droughts = pd.read_csv(obs_fname)
+    obs_droughts['severity'] = np.log(obs_droughts['severity'].abs())
+    obs_droughts['magnitude'] = np.log(obs_droughts['magnitude'].abs())
+    return obs_droughts
+
+
+def _plot_single_heatmap_panel(ax,
+                               data_matrix,
+                               x_grid,
+                               y_grid,
+                               cmap,
+                               norm,
+                               contour_levels=None,
+                               contour_colors='white',
+                               contour_fmt=None,
+                               obs_droughts=None,
+                               x_metric='severity',
+                               y_metric='magnitude',
+                               scatter_size=80,
+                               show_grid=True):
+    """
+    Plot a single heatmap panel with optional contours and observed drought overlay.
+
+    Parameters:
+    -----------
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    data_matrix : np.ndarray
+        2D array of values to plot
+    x_grid, y_grid : np.ndarray
+        Grid centers for x and y axes
+    cmap : matplotlib colormap
+        Colormap to use
+    norm : matplotlib normalization
+        Color normalization
+    contour_levels : list, optional
+        Levels for contour lines
+    contour_colors : str or list
+        Colors for contour lines
+    contour_fmt : callable, optional
+        Format function for contour labels
+    obs_droughts : pd.DataFrame, optional
+        Observed drought events to overlay
+    x_metric, y_metric : str
+        Column names for scatter plot
+    scatter_size : float
+        Size of scatter points
+    show_grid : bool
+        Whether to show grid lines
+
+    Returns:
+    --------
+    pcolormesh
+        The pcolormesh object (for creating colorbars)
+    """
+    # Ensure valid data
+    M = np.where(np.isfinite(data_matrix), data_matrix, np.nan)
+
+    # Grid edges for pcolormesh
+    x_edges = _grid_edges_from_centers(x_grid)
+    y_edges = _grid_edges_from_centers(y_grid)
+
+    # Heatmap
+    pm = ax.pcolormesh(x_edges, y_edges, M, cmap=cmap, norm=norm, shading='auto')
+
+    # Contours
+    if contour_levels is not None:
+        with np.errstate(invalid='ignore'):
+            cs = ax.contour(x_grid, y_grid, M,
+                           levels=contour_levels,
+                           colors=contour_colors,
+                           linewidths=1.0,
+                           alpha=0.8)
+            if contour_fmt is not None:
+                ax.clabel(cs, fmt=contour_fmt, fontsize=9, inline=True, inline_spacing=5)
+
+    # Observed droughts overlay
+    if obs_droughts is not None:
+        o = obs_droughts[[x_metric, y_metric]].dropna()
+        ax.scatter(o[x_metric], o[y_metric],
+                  s=scatter_size, marker='^', c='black',
+                  edgecolors='white', linewidths=0.5,
+                  alpha=0.95, label='Observed', zorder=10)
+
+    # Grid
+    if show_grid:
+        ax.grid(which='both', color='white', alpha=0.15, linewidth=0.5)
+        ax.set_axisbelow(True)
+
+    return pm
+
+
 def plot_drought_frequency_heatmap(freq_result, 
                                    syn_droughts=None,
                                    obs_droughts=None,
@@ -190,35 +297,42 @@ def plot_drought_frequency_heatmap(freq_result,
             norm = colors.Normalize(vmin=vmin, vmax=vmax)
         cbar_label = "Change in Return Period (%)"
 
-    # Grid edges for pcolormesh
-    x_edges = _grid_edges_from_centers(freq_result['x2_grid'])  # x-axis = X2
-    y_edges = _grid_edges_from_centers(freq_result['x1_grid'])  # y-axis = X1
-
     # Build figure
     fig, ax = plt.subplots(figsize=figsize)
     cmap_obj = plt.get_cmap(cmap).copy()
     cmap_obj.set_bad(color='#f0f0f0')
 
-    # Heatmap
-    pm = ax.pcolormesh(x_edges, y_edges, M, cmap=cmap_obj, norm=norm, shading='auto')
-
-    # Optional isolines
-    if show_contours and (contour_levels is not None or default_contours is not None):
+    # Determine contour settings
+    levels = None
+    contour_fmt = None
+    if show_contours:
         levels = contour_levels if contour_levels is not None else default_contours
-        with np.errstate(invalid='ignore'):
-            cs = ax.contour(freq_result['x2_grid'], freq_result['x1_grid'], M, 
-                            levels=levels, colors='white', linewidths=0.8)
-            ax.clabel(cs, fmt=lambda v: f"{int(v)}-yr" if return_period else f"{v:.2f}", 
-                      fontsize=8, inline=True, inline_spacing=4)
+        if levels is not None:
+            contour_fmt = lambda v: f"{int(v)}-yr" if return_period else f"{v:.2f}"
 
-    # Overlays
+    # Use helper to plot heatmap
+    pm = _plot_single_heatmap_panel(
+        ax=ax,
+        data_matrix=M,
+        x_grid=freq_result['x2_grid'],
+        y_grid=freq_result['x1_grid'],
+        cmap=cmap_obj,
+        norm=norm,
+        contour_levels=levels,
+        contour_colors='white',
+        contour_fmt=contour_fmt,
+        obs_droughts=obs_droughts,
+        x_metric=freq_result['x2_metric'],
+        y_metric=freq_result['x1_metric'],
+        scatter_size=80,  # Updated from 30 to 80 for consistency
+        show_grid=False  # Will add custom grid below
+    )
+
+    # Add synthetic droughts if provided (not in helper since it's unique to this function)
     xcol, ycol = freq_result['x2_metric'], freq_result['x1_metric']
     if syn_droughts is not None:
         s = syn_droughts[[xcol, ycol]].dropna()
         ax.scatter(s[xcol], s[ycol], s=10, facecolors='none', edgecolors='k', alpha=0.25, lw=0.5, label='Synthetic')
-    if obs_droughts is not None:
-        o = obs_droughts[[xcol, ycol]].dropna()
-        ax.scatter(o[xcol], o[ycol], s=30, marker='^', c='k', alpha=0.9, label='Observed')
 
     # Axes labels & title
     ax.set_xlabel(f"{xcol.title()}")
@@ -364,6 +478,231 @@ def plot_drought_frequency_analysis(dataset_id, ssi_window=12):
     return result
 
 
+def plot_4panel_comparison(ssi_window=12,
+                           figsize=(14, 10),
+                           vmin_abs=1,
+                           vmax_abs=1000,
+                           vmin_diff=-1.0,
+                           vmax_diff=1.0,
+                           fname=None):
+    """
+    Create a 4-panel comparison figure showing return periods for all scenarios.
+
+    Layout:
+    - Left panel: Stationary ensemble (absolute return period)
+    - Right panels (stacked): Low, Medium, High climate scenarios (relative change from stationary)
+
+    Parameters:
+    -----------
+    ssi_window : int
+        SSI window size (months)
+    figsize : tuple
+        Figure size in inches
+    vmin_abs, vmax_abs : float
+        Color scale limits for absolute return period (left panel)
+    vmin_diff, vmax_diff : float
+        Color scale limits for log ratio difference (right panels)
+    fname : str
+        Output filename (if None, will auto-generate)
+    """
+
+    print(f"\n{'='*60}")
+    print("Creating 4-Panel Comparison Figure")
+    print(f"{'='*60}")
+
+    # Define datasets to plot
+    datasets = {
+        'stationary_ensemble': 'Stationary',
+        'climate_adjusted_low': 'Low',
+        'climate_adjusted_medium': 'Medium',
+        'climate_adjusted_high': 'High'
+    }
+
+    # Calculate frequency for all datasets
+    all_results = {}
+
+    for dataset_id, label in datasets.items():
+        print(f"\nAnalyzing {dataset_id} ({label})...")
+        result = analyze_drought_frequency(dataset_id, ssi_window)
+        if result is None:
+            print(f"ERROR: Could not analyze {dataset_id}")
+            return None
+        all_results[dataset_id] = result[0]  # Just the frequency result
+
+    # Load observed droughts once
+    obs_droughts = _load_observed_droughts(ssi_window)
+
+    # Calculate relative changes (log ratio) for climate scenarios
+    print(f"\n{'='*60}")
+    print("Calculating relative changes from stationary...")
+    print(f"{'='*60}")
+
+    T_ref = all_results['stationary_ensemble']['return_period_matrix']
+    eps = 1e-8
+
+    diff_results = {}
+    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+        T_comp = all_results[dataset_id]['return_period_matrix']
+        log_ratio = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
+
+        diff_results[dataset_id] = {
+            'log_ratio_matrix': log_ratio,
+            'x1_grid': all_results['stationary_ensemble']['x1_grid'],
+            'x2_grid': all_results['stationary_ensemble']['x2_grid'],
+            'x1_metric': all_results['stationary_ensemble']['x1_metric'],
+            'x2_metric': all_results['stationary_ensemble']['x2_metric'],
+        }
+
+    print(f"\n{'='*60}")
+    print("Creating multi-panel figure...")
+    print(f"{'='*60}")
+
+    # Set up figure with GridSpec for flexible layout
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[1, 1],
+                          hspace=0.15, wspace=0.25,
+                          left=0.08, right=0.95, top=0.95, bottom=0.12)
+
+    # Create axes
+    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans all rows
+    ax_low = fig.add_subplot(gs[0, 1])   # Top right
+    ax_med = fig.add_subplot(gs[1, 1])   # Middle right
+    ax_high = fig.add_subplot(gs[2, 1])  # Bottom right
+
+    axes = [ax_stat, ax_low, ax_med, ax_high]
+    dataset_list = list(datasets.keys())
+    panel_labels = ['(a)', '(b)', '(c)', '(d)']
+
+    # Set up colormaps and norms
+    # Left panel: absolute return period
+    cmap_abs = plt.get_cmap('magma').copy()
+    cmap_abs.set_bad(color='#f0f0f0')
+    norm_abs = colors.LogNorm(vmin=vmin_abs, vmax=vmax_abs)
+
+    # Right panels: relative change (diverging colormap)
+    cmap_diff = plt.get_cmap('BrBG').copy()
+    cmap_diff.set_bad(color='#f0f0f0')
+    norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
+
+    # Contour levels
+    contour_levels_abs = [2, 5, 10, 20, 50, 100, 200, 500]
+
+    # Storage for colormeshes (to create colorbars later)
+    pm_abs = None
+    pm_diff = None
+
+    # Plot each panel
+    for idx, (ax, dataset_id, panel_label) in enumerate(zip(axes, dataset_list, panel_labels)):
+
+        if idx == 0:  # Stationary panel (absolute values)
+            result = all_results[dataset_id]
+
+            pm_abs = _plot_single_heatmap_panel(
+                ax=ax,
+                data_matrix=result['return_period_matrix'],
+                x_grid=result['x2_grid'],
+                y_grid=result['x1_grid'],
+                cmap=cmap_abs,
+                norm=norm_abs,
+                contour_levels=contour_levels_abs,
+                contour_colors='white',
+                contour_fmt=lambda v: f"{int(v)}",
+                obs_droughts=obs_droughts,
+                x_metric='severity',
+                y_metric='magnitude',
+                scatter_size=80,
+                show_grid=True
+            )
+
+        else:  # Climate scenario panels (relative change)
+            diff_res = diff_results[dataset_id]
+
+            pm_diff = _plot_single_heatmap_panel(
+                ax=ax,
+                data_matrix=diff_res['log_ratio_matrix'],
+                x_grid=diff_res['x2_grid'],
+                y_grid=diff_res['x1_grid'],
+                cmap=cmap_diff,
+                norm=norm_diff,
+                contour_levels=[0],  # Zero contour line
+                contour_colors='black',
+                contour_fmt=None,  # No labels on zero contour
+                obs_droughts=obs_droughts,
+                x_metric='severity',
+                y_metric='magnitude',
+                scatter_size=80,
+                show_grid=True
+            )
+
+        # Panel title
+        title_text = datasets[dataset_id]
+        ax.text(0.02, 0.98, f"{panel_label} {title_text}",
+               transform=ax.transAxes, fontsize=13, fontweight='bold',
+               verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.3))
+
+        # Axis labels
+        if idx == 0:  # Stationary (left panel)
+            ax.set_xlabel('Severity (log)', fontsize=12)
+            ax.set_ylabel('Magnitude (log)', fontsize=12)
+        elif idx == 3:  # Bottom right panel
+            ax.set_xlabel('Severity (log)', fontsize=12)
+        else:  # Other right panels
+            ax.set_xticklabels([])
+
+        # Y-axis labels only for left panel
+        if idx != 0:
+            ax.set_ylabel('')
+
+        # Tick label sizes
+        ax.tick_params(labelsize=10)
+
+    # Add two colorbars at bottom
+    # Left colorbar for absolute return period
+    cbar_abs_ax = fig.add_axes([0.08, 0.04, 0.35, 0.02])  # [left, bottom, width, height]
+    cbar_abs = fig.colorbar(pm_abs, cax=cbar_abs_ax, orientation='horizontal', extend='max')
+    cbar_abs.set_label('Return Period (years)', fontsize=11, fontweight='bold')
+
+    # Set colorbar ticks for absolute
+    ticks = np.array([1, 2, 5, 10, 20, 50, 100, 200, 500, 1000])
+    ticks = ticks[(ticks >= vmin_abs) & (ticks <= vmax_abs)]
+    cbar_abs.set_ticks(ticks)
+    cbar_abs.set_ticklabels([f"{int(t)}" for t in ticks], fontsize=9)
+
+    # Right colorbar for relative change
+    cbar_diff_ax = fig.add_axes([0.56, 0.04, 0.35, 0.02])  # [left, bottom, width, height]
+    cbar_diff = fig.colorbar(pm_diff, cax=cbar_diff_ax, orientation='horizontal', extend='both')
+    cbar_diff.set_label('Change in Return Period (log₁₀ ratio)', fontsize=11, fontweight='bold')
+
+    # Set colorbar ticks for difference
+    diff_ticks = np.linspace(vmin_diff, vmax_diff, 9)
+    cbar_diff.set_ticks(diff_ticks)
+    cbar_diff.set_ticklabels([f"{t:.1f}" for t in diff_ticks], fontsize=9)
+
+    # Add legend for observed droughts
+    handles = [plt.Line2D([0], [0], marker='^', color='w',
+                         markerfacecolor='black', markeredgecolor='white',
+                         markersize=10, label='Observed', linewidth=0)]
+    fig.legend(handles=handles, loc='upper right', bbox_to_anchor=(0.97, 0.98),
+              fontsize=11, frameon=True, fancybox=True, shadow=True)
+
+    # Save figure
+    if fname is None:
+        output_dir = f"{FIG_DIR}/drought_return_period"
+        os.makedirs(output_dir, exist_ok=True)
+        fname = f"{output_dir}/comparison_4panel_ssi{ssi_window}_drought_return_period.png"
+
+    plt.savefig(fname, dpi=400, bbox_inches='tight')
+    # Also save vector version
+    base = fname.rsplit('.', 1)[0]
+    plt.savefig(f"{base}.svg", bbox_inches='tight')
+
+    print(f"\nSaved: {fname}")
+    print(f"Saved: {base}.svg")
+
+    return fig, axes
+
+
 def compare_drought_frequencies(dataset_ids, 
                                 ssi_window=12,
                                 vmax=None, 
@@ -451,32 +790,44 @@ def compare_drought_frequencies(dataset_ids,
 
 def main(dataset_id):
     """Main function"""
-    
+
     print("=" * 60)
     print(f"DROUGHT FREQUENCY ANALYSIS: {dataset_id}")
     print("=" * 60)
-    
+
+    # Handle special 'comparison' dataset ID for 4-panel figure
+    if dataset_id.lower() == 'comparison':
+        print("\nGenerating 4-panel comparison figure...")
+        plot_4panel_comparison(ssi_window=12)
+        print("=" * 60)
+        print("4-panel comparison figure completed successfully!")
+        return
+
     # Analyze drought frequency for this dataset
     plot_drought_frequency_analysis(dataset_id, ssi_window=12)
-    
+
     # If not stationary, also compare with stationary
     if dataset_id != 'stationary_ensemble':
         compare_drought_frequencies(['stationary_ensemble', dataset_id], ssi_window=12,
                                     vmin=-1, vmax=1)
-    
+
     print("=" * 60)
     print("Drought frequency analysis completed successfully!")
 
 
 if __name__ == "__main__":
-    
+
     # Get the dataset_id from command line arguments
     if len(sys.argv) != 2:
         print("Usage: python 09_plot_drought_frequency.py <dataset_id>")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
+        print("Special option: 'comparison' - generates 4-panel comparison figure")
         sys.exit(1)
-    
+
     dataset_id = sys.argv[1]
-    verify_dataset_id(dataset_id)
-    
+
+    # Skip verification for special 'comparison' option
+    if dataset_id.lower() != 'comparison':
+        verify_dataset_id(dataset_id)
+
     main(dataset_id)
