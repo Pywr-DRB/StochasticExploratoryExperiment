@@ -23,7 +23,6 @@ from matplotlib.colors import TwoSlopeNorm
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from config import *
 
 
@@ -31,88 +30,55 @@ from config import *
 FIG_OUTPUT_DIR = f"{FIG_DIR}/performance_metrics"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Storage capacities for NYC reservoirs (MG)
-NYC_STORAGE_CAPACITIES = {
-    'cannonsville': 95706,
-    'pepacton': 140190,
-    'neversink': 34941
-}
-NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())
+# Performance metrics directory
+PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 
 
-def calculate_performance_metrics(data, model, realizations):
+def load_performance_metrics(dataset_id):
     """
-    Calculate three performance metrics for each realization using pre-calculated data.
+    Load pre-calculated performance metrics from CSV.
 
     Parameters
     ----------
-    data : pywrdrb.Data
-        Data object with pre-calculated shortage, mrf_target, and res_storage
-    model : str
-        Model/dataset identifier
-    realizations : list
-        List of realization IDs
+    dataset_id : str
+        Dataset identifier
 
     Returns
     -------
-    metrics_dict : dict
-        {realization_id: {'metric1': value, 'metric2': value, 'metric3': value}}
+    metrics_df : pd.DataFrame
+        DataFrame with performance metrics for all realizations
     """
-    metrics = {}
-    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_performance_metrics.csv"
 
-    for r in realizations:
-        if (r % 100 == 0) and (r > 0):
-            print(f"    Processed {r}/{len(realizations)} realizations...")
+    if not os.path.exists(csv_file):
+        raise FileNotFoundError(
+            f"Performance metrics not found: {csv_file}\n"
+            f"Run 04_postprocess_data.py first to calculate metrics!"
+        )
 
-        # Use pre-calculated shortage and target data
-        montague_shortage = data.shortage[model][r]['delMontague']
-        montague_target = data.mrf_target[model][r]['delMontague']
-
-        # Metric 1: # years where Montague flow target met >90% of time
-        annual_shortage = montague_shortage.resample('YS').sum()
-        annual_target = montague_target.resample('YS').sum()
-        annual_reliability = 1 - (annual_shortage / annual_target)
-        annual_reliability = annual_reliability.clip(0, 1)
-        n_years_reliable = (annual_reliability > 0.90).sum()
-
-        # Metric 2: # years where NYC storage >90% on June 1
-        nyc_storage = data.res_storage[model][r][nyc_reservoirs].sum(axis=1)
-        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
-
-        # Filter for June 1 dates
-        june1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 6) &
-                                        (nyc_storage_pct.index.day == 1)]
-        n_years_high_storage = (june1_storage > 90).sum()
-
-        # Metric 3: Maximum daily shortage magnitude (MGD)
-        max_shortage = montague_shortage.max()
-
-        metrics[r] = {
-            'years_reliable': n_years_reliable,
-            'years_high_storage': n_years_high_storage,
-            'max_shortage': max_shortage
-        }
-
-    return metrics
+    metrics_df = pd.read_csv(csv_file, index_col='realization_id')
+    return metrics_df
 
 
-def calculate_ensemble_percentiles(metrics_dict):
+def calculate_ensemble_percentiles(metrics_df):
     """
     Calculate p5, p50, p95 for each metric across realizations.
+
+    Parameters
+    ----------
+    metrics_df : pd.DataFrame
+        DataFrame with columns ['years_reliable', 'years_high_storage', 'max_shortage']
 
     Returns
     -------
     percentiles : dict
         {'years_reliable': [p5, p50, p95], ...}
     """
-    df = pd.DataFrame(metrics_dict).T
-
     percentiles = {}
     for metric in ['years_reliable', 'years_high_storage', 'max_shortage']:
-        p5 = df[metric].quantile(0.05)
-        p50 = df[metric].quantile(0.50)
-        p95 = df[metric].quantile(0.95)
+        p5 = metrics_df[metric].quantile(0.05)
+        p50 = metrics_df[metric].quantile(0.50)
+        p95 = metrics_df[metric].quantile(0.95)
         percentiles[metric] = [p5, p50, p95]
 
     return percentiles
@@ -142,24 +108,17 @@ def plot_4panel_performance_comparison():
     all_percentiles = {}
 
     for dataset_id, label in datasets.items():
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+        print(f"\nLoading {dataset_id} ({label})...")
 
-        if not os.path.exists(fname):
-            print(f"ERROR: Postprocessed data not found: {fname}")
-            print(f"Run postprocessing first for {dataset_id}!")
+        # Load pre-calculated metrics from CSV
+        try:
+            metrics_df = load_performance_metrics(dataset_id)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}")
             return None
 
-        print(f"\nLoading {dataset_id} ({label})...")
-        data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=['shortage', 'res_storage', 'mrf_target'])
-
-        # Calculate metrics
-        print(f"  Calculating metrics...")
-        realizations = list(data.shortage[dataset_id].keys())
-        metrics_dict = calculate_performance_metrics(data, dataset_id, realizations)
-
         # Calculate percentiles
-        percentiles = calculate_ensemble_percentiles(metrics_dict)
+        percentiles = calculate_ensemble_percentiles(metrics_df)
         all_percentiles[dataset_id] = percentiles
 
         print(f"  Years Montague reliable: p5={percentiles['years_reliable'][0]:.1f}, "

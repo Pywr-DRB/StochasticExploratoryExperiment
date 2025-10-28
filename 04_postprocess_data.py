@@ -35,6 +35,18 @@ from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_eq
 from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
 from config import *
 
+# Output directory for performance metrics
+PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
+os.makedirs(PERFORMANCE_METRICS_DIR, exist_ok=True)
+
+# Storage capacities for NYC reservoirs (MG)
+NYC_STORAGE_CAPACITIES = {
+    'cannonsville': 95706,
+    'pepacton': 140190,
+    'neversink': 34941
+}
+NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())
+
 # MPI support (optional)
 USE_MPI = True
 try:
@@ -49,6 +61,82 @@ except ImportError:
     RANK = 0
     SIZE = 1
     COMM = None
+
+
+def calculate_and_save_performance_metrics(data, dataset_id, realizations):
+    """
+    Calculate performance metrics and save to CSV.
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with shortage, mrf_target, and res_storage
+    dataset_id : str
+        Dataset identifier
+    realizations : list
+        List of realization IDs
+
+    Returns
+    -------
+    metrics_df : pd.DataFrame
+        DataFrame with performance metrics for all realizations
+    """
+    print(f"  Calculating performance metrics...")
+
+    metrics = {}
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+    for r in realizations:
+        if (r % 100 == 0) and (r > 0):
+            print(f"    Processed {r}/{len(realizations)} realizations...")
+
+        # Use pre-calculated shortage and target data
+        montague_shortage = data.shortage[dataset_id][r]['delMontague']
+        montague_target = data.mrf_target[dataset_id][r]['delMontague']
+
+        # Metric 1: # years where Montague flow target met >90% of time
+        annual_shortage = montague_shortage.resample('YS').sum()
+        annual_target = montague_target.resample('YS').sum()
+        annual_reliability = 1 - (annual_shortage / annual_target)
+        annual_reliability = annual_reliability.clip(0, 1)
+        n_years_reliable = (annual_reliability > 0.90).sum()
+
+        # Metric 2: # years where NYC storage >90% on June 1
+        nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+        # Filter for June 1 dates
+        june1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 6) &
+                                        (nyc_storage_pct.index.day == 1)]
+        n_years_high_storage = (june1_storage > 90).sum()
+
+        # Metric 3: Maximum daily shortage magnitude (MGD)
+        max_shortage = montague_shortage.max()
+
+        metrics[r] = {
+            'years_reliable': n_years_reliable,
+            'years_high_storage': n_years_high_storage,
+            'max_shortage': max_shortage
+        }
+
+    # Convert to DataFrame
+    metrics_df = pd.DataFrame(metrics).T
+    metrics_df.index.name = 'realization_id'
+
+    # Save to CSV
+    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_performance_metrics.csv"
+    metrics_df.to_csv(csv_file)
+    print(f"  Saved performance metrics to: {csv_file}")
+
+    # Calculate and print percentiles
+    for metric in ['years_reliable', 'years_high_storage', 'max_shortage']:
+        p5 = metrics_df[metric].quantile(0.05)
+        p50 = metrics_df[metric].quantile(0.50)
+        p95 = metrics_df[metric].quantile(0.95)
+        print(f"    {metric}: p5={p5:.1f}, p50={p50:.1f}, p95={p95:.1f}")
+
+    return metrics_df
+
 
 def process_dataset(dataset_id):
     """
@@ -333,6 +421,11 @@ def process_dataset(dataset_id):
         print(f"Exporting combined data to {fname}...")
         keep_data.export(fname)
         print(f"Successfully processed and saved data for {dataset_id}!")
+
+        # Calculate and save performance metrics
+        print(f"\nCalculating performance metrics for {dataset_id}...")
+        realizations = list(keep_data.shortage[dataset_id].keys())
+        calculate_and_save_performance_metrics(keep_data, dataset_id, realizations)
 
     # Synchronize all ranks before returning
     if USE_MPI:
