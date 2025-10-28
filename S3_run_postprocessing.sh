@@ -2,8 +2,8 @@
 #SBATCH --job-name=post
 #SBATCH --output=./logs/postprocessing.out
 #SBATCH --error=./logs/postprocessing.err
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=32
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --mem=0
 #SBATCH --exclusive
 
@@ -13,41 +13,30 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
-CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-false}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
+RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
 # make directories
 mkdir -p logs figures
 
 
-python3 04_postprocess_data.py "stationary_ensemble"
-python3 04_postprocess_data.py "climate_adjusted_ssp245_min"
-python3 04_postprocess_data.py "climate_adjusted_ssp245_max"
-python3 04_postprocess_data.py "climate_adjusted_ssp245_median"
-python3 04_postprocess_data.py "climate_adjusted_ssp370_min"
-python3 04_postprocess_data.py "climate_adjusted_ssp370_max"
-python3 04_postprocess_data.py "climate_adjusted_ssp370_median"
-
-if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
-
+if [ "$RUN_POSTPROCESSING" = true ]; then
     ################################################################################
-    echo "Calculating SSI based drought metrics..."
+    echo "Post-processing..."
     ################################################################################
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_min"
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_max"
-    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp245_median"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_min"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_max"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_ssp370_median"
-
+    
+    # Loop through datasets
+    DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_medium" "climate_adjusted_high")
+    for DATASET_ID in "${DATASETS[@]}"; do
+        echo "Post-processing $DATASET_ID..."
+        python3 04_postprocess_data.py "$DATASET_ID"
+    done
 fi
 
-if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then
 
+if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then
     ################################################################################
     echo "Calculating storage zone probabilities..."
     ################################################################################
     python3 06_calculate_storage_zone_probabilities.py --all
-    
 fi
