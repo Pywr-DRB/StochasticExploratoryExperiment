@@ -212,19 +212,11 @@ def plot_4panel_performance_comparison():
         else:  # Climate scenario panels (percentage change)
             pct_change = pct_changes[dataset_id]
 
-            # Plot bars for each metric
+            # Plot bars for each metric (median percentage change only)
             x_pos = np.arange(3)
             p50_values = [pct_change[m][1] for m in metric_keys]
-            p5_values = [pct_change[m][0] for m in metric_keys]
-            p95_values = [pct_change[m][2] for m in metric_keys]
 
-            # Error bars
-            yerr_low = [p50_values[i] - p5_values[i] for i in range(3)]
-            yerr_high = [p95_values[i] - p50_values[i] for i in range(3)]
-
-            bars = ax.bar(x_pos, p50_values, color=colors_diff, alpha=0.8,
-                         yerr=[yerr_low, yerr_high], capsize=5,
-                         error_kw={'linewidth': 2, 'ecolor': 'black', 'alpha': 0.6})
+            bars = ax.bar(x_pos, p50_values, color=colors_diff, alpha=0.8)
 
             # Add value labels on bars
             for i, (bar, val) in enumerate(zip(bars, p50_values)):
