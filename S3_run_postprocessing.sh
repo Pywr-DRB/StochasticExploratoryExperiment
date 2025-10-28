@@ -14,11 +14,10 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
 RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
 
 # make directories
 mkdir -p logs figures
-
 
 if [ "$RUN_POSTPROCESSING" = true ]; then
     ################################################################################
