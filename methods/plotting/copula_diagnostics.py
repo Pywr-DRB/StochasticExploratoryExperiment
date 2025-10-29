@@ -85,8 +85,8 @@ def plot_marginal_fits(df, marginals, ssi_window, dataset_id, output_dir):
     x_sev = np.linspace(0, df['severity'].max(), 1000)
     ax1.hist(df['severity'], bins=200, density=True, alpha=0.7,
             color='skyblue', label='Empirical')
-    # Get distribution name (handle truncnorm_0 special case)
-    sev_dist_name = marginals['severity_dist'].name if hasattr(marginals['severity_dist'], 'name') else 'truncnorm'
+    # Frozen distributions have .dist.name, not .name
+    sev_dist_name = marginals['severity_dist'].dist.name if hasattr(marginals['severity_dist'], 'dist') else 'truncnorm'
     ax1.plot(x_sev,
             marginals['severity_dist'].pdf(x_sev),
             'r-', lw=2, label=f"{sev_dist_name.title()}")
@@ -100,8 +100,8 @@ def plot_marginal_fits(df, marginals, ssi_window, dataset_id, output_dir):
     x_mag = np.linspace(0, df['magnitude'].max(), 1000)
     ax2.hist(df['magnitude'], bins=100, density=True, alpha=0.7,
             color='lightcoral', label='Empirical')
-    # Get distribution name (handle truncnorm_0 special case)
-    mag_dist_name = marginals['magnitude_dist'].name if hasattr(marginals['magnitude_dist'], 'name') else 'truncnorm'
+    # Frozen distributions have .dist.name, not .name
+    mag_dist_name = marginals['magnitude_dist'].dist.name if hasattr(marginals['magnitude_dist'], 'dist') else 'truncnorm'
     ax2.plot(x_mag,
             marginals['magnitude_dist'].pdf(x_mag),
             'r-', lw=2, label=f"{mag_dist_name.title()}")
@@ -471,16 +471,22 @@ def generate_diagnostics_summary(df, marginals, copula, tail, interarrival,
 
     # Marginal distributions
     summary.append("MARGINAL DISTRIBUTIONS:")
-    summary.append(f"  Severity: {marginals['severity_dist'].name}")
+    # Get distribution names (handle frozen distributions)
+    sev_dist_name = marginals['severity_dist'].dist.name if hasattr(marginals['severity_dist'], 'dist') else 'truncnorm'
+    mag_dist_name = marginals['magnitude_dist'].dist.name if hasattr(marginals['magnitude_dist'], 'dist') else 'truncnorm'
+    summary.append(f"  Severity: {sev_dist_name}")
     summary.append(f"    Parameters: {marginals['severity_params']}")
-    summary.append(f"  Magnitude: {marginals['magnitude_dist'].name}")
+    summary.append(f"  Magnitude: {mag_dist_name}")
     summary.append(f"    Parameters: {marginals['magnitude_params']}")
     summary.append("")
 
     # Copula
     summary.append("COPULA:")
-    summary.append(f"  Type: Gaussian")
+    copula_type = copula.get('type', 'gaussian')
+    summary.append(f"  Type: {copula_type}")
     summary.append(f"  Correlation (ρ): {copula['rho']:.4f}")
+    if copula_type == 't_copula' and 'nu' in copula:
+        summary.append(f"  Degrees of freedom (ν): {copula['nu']:.2f}")
     summary.append(f"  Log-likelihood: {copula['loglik']:.2f}")
     summary.append("")
 

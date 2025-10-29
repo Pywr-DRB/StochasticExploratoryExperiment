@@ -6,7 +6,8 @@ This directory contains methodological documentation for the StochasticExplorato
 
 1. [Copula Methodology for Drought Return Period Analysis](#copula-methodology)
 2. [Streamflow Scenario Comparison](#streamflow-comparison)
-3. [Centralized Styling System](#styling-system)
+3. [Satisficing Conditions Analysis](#satisficing-analysis)
+4. [Centralized Styling System](#styling-system)
 
 ---
 
@@ -335,6 +336,183 @@ The figure demonstrates:
 2. ✅ Climate scenarios shift distributions in expected directions
 3. ✅ Uncertainty ranges (p10-p90) show ensemble spread
 4. ✅ Seasonal patterns preserved across scenarios
+
+---
+
+# Satisficing Conditions Analysis {#satisficing-analysis}
+
+## Overview
+
+Script `09_plot_satisficing_scatter.py` analyzes "satisficing" conditions - scenarios where the water system meets acceptable performance thresholds simultaneously for NYC water supply and Delaware River flow targets.
+
+## Satisficing Criteria
+
+A year-realization pair is considered **satisficing** if it meets BOTH conditions:
+
+1. **NYC Storage ≥ 20%** throughout June-December period
+   - Combined storage of Cannonsville, Pepacton, and Neversink reservoirs
+   - 20% threshold ensures minimum water supply reliability
+
+2. **Montague Flow Target Violations ≤ 3 consecutive days**
+   - Pre-calculated shortage at delMontague node
+   - Short-term violations acceptable; extended failures are not
+
+## Methodology
+
+### Data Sources (Pre-calculated in 04_postprocess_data.py)
+
+- `res_storage`: Daily reservoir storage levels
+- `shortage`: Flow target violations (already calculated)
+- `inflow`: NYC reservoir inflows (aggregated)
+- `contribution`: NYC downstream contributions to Montague
+
+### Calculation Process
+
+For each year-realization pair:
+
+1. **Filter to June 1 - December 31** (critical period for both systems)
+
+2. **Check NYC storage**:
+   ```python
+   nyc_storage_pct = 100 * (Cannonsville + Pepacton + Neversink) / total_capacity
+   storage_ok = min(nyc_storage_pct) >= 20%
+   ```
+
+3. **Check Montague violations**:
+   ```python
+   # Find maximum consecutive violation days
+   violations = shortage > 0
+   max_consecutive_days = max_run_length(violations)
+   montague_ok = max_consecutive_days <= 3
+   ```
+
+4. **Calculate aggregates** for plotting:
+   - Total NYC inflow (Jun-Dec)
+   - Total NYC → Montague contributions (Jun-Dec)
+
+5. **Classify**: `satisficing = storage_ok AND montague_ok`
+
+## Figure Layout
+
+### 4-Panel Comparison
+
+Layout matches other analysis figures:
+- **Left panel**: Stationary ensemble
+- **Right panels (stacked)**: Climate Low, Medium, High
+
+Each panel shows:
+- **X-axis**: NYC Reservoir Inflow (Jun-Dec) [MG]
+- **Y-axis**: NYC → Montague Contributions (Jun-Dec) [MG]
+- **Colors**:
+  - Satisficing points: Dataset color (blue/red/purple/green) with alpha=0.6
+  - Non-satisficing points: Gray (#808080) with alpha=0.4
+- **Statistics**: Satisficing percentage displayed in bottom-right corner
+
+### Design Choices
+
+**Why scatter plot?**
+- Shows relationship between inflow and contributions
+- Identifies trade-off regions (low inflow but high contributions = stress)
+- Reveals whether satisficing depends on hydrologic conditions
+
+**Why different colors for satisficing vs non-satisficing?**
+- Clear visual distinction
+- Satisficing points use dataset color for consistency with other figures
+- Non-satisficing points in gray to de-emphasize
+
+**Why plot non-satisficing first (zorder=1)?**
+- Satisficing points overlay on top (zorder=2)
+- Important (satisficing) points more visible
+- Gray background shows "problematic" region
+
+## Interpretation
+
+### What the Plot Shows
+
+**Horizontal spread (X-axis variability)**:
+- Wide spread → Diverse inflow conditions
+- Tight clustering → Consistent inflow across realizations
+
+**Vertical spread (Y-axis variability)**:
+- Wide spread → Variable contribution requirements
+- Linear relationship → Contributions scale with inflow
+- Non-linear → Threshold effects or operational constraints
+
+**Color distribution**:
+- **Satisficing clustered at high inflows**: System needs wet conditions
+- **Satisficing across inflow range**: System robust to variability
+- **Non-satisficing at low inflows only**: Low-flow years are problematic
+- **Non-satisficing scattered**: Other factors beyond inflow matter
+
+### Expected Climate Scenario Effects
+
+**Climate Low (Dry)**:
+- **Lower satisficing rate**: More non-satisficing points
+- **Shift left**: Lower inflows overall
+- **Compressed range**: Less variability in contributions
+- **More failures**: Both storage and Montague criteria violated
+
+**Climate High (Wet)**:
+- **Higher satisficing rate**: Fewer non-satisficing points
+- **Shift right**: Higher inflows
+- **Expanded range**: More diverse contribution patterns
+- **Fewer failures**: Ample water for both NYC and Montague
+
+## Summary Statistics
+
+Script prints detailed breakdown:
+
+### Overall Satisficing Rates
+```
+Dataset                          Total  Satisficing        %
+Stationary                     140,000      98,000     70.0%
+Climate Low                    140,000      85,000     60.7%
+Climate Medium                 140,000      95,000     67.9%
+Climate High                   140,000     105,000     75.0%
+```
+
+### Failure Breakdown
+```
+Stationary:
+  Storage < 20% only:          15,000  (10.7%)
+  Montague > 3 days only:      20,000  (14.3%)
+  Both failures:                7,000   (5.0%)
+```
+
+**Interpretation**:
+- If "Storage only" dominates → NYC supply more vulnerable
+- If "Montague only" dominates → River flow targets more vulnerable
+- If "Both" is large → Compound failures common (worse scenario)
+
+## Usage
+
+```bash
+# Run analysis for all datasets (generates 4-panel figure)
+python 09_plot_satisficing_scatter.py
+
+# Output
+figures/satisficing/satisficing_4panel_comparison.png
+figures/satisficing/satisficing_4panel_comparison.svg
+figures/satisficing/<dataset_id>_satisficing_results.csv  # Individual CSVs
+```
+
+## Validation
+
+Check for expected patterns:
+1. ✅ Higher inflows correlate with higher satisficing rates
+2. ✅ Climate Low has lowest satisficing rates
+3. ✅ Climate High has highest satisficing rates
+4. ✅ Failure types make physical sense
+5. ✅ Axis limits consistent across panels for comparison
+
+## Applications
+
+This analysis helps answer:
+- **Robustness**: How often does the system meet both objectives?
+- **Trade-offs**: What inflow-contribution combinations work?
+- **Climate sensitivity**: How do satisficing rates change?
+- **Failure modes**: Which constraint fails first?
+- **Risk assessment**: What are odds of simultaneous failures?
 
 ---
 

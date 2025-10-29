@@ -85,8 +85,9 @@ def run_copula_diagnostics(dataset_id, ssi_window):
     # Fit marginal distributions (using config)
     print("Fitting marginal distributions...")
     marginals = fit_marginal_distributions(df)
-    sev_dist_name = marginals['severity_dist'].name if hasattr(marginals['severity_dist'], 'name') else 'truncnorm_0'
-    mag_dist_name = marginals['magnitude_dist'].name if hasattr(marginals['magnitude_dist'], 'name') else 'truncnorm_0'
+    # Frozen distributions have .dist.name, not .name
+    sev_dist_name = marginals['severity_dist'].dist.name if hasattr(marginals['severity_dist'], 'dist') else 'truncnorm'
+    mag_dist_name = marginals['magnitude_dist'].dist.name if hasattr(marginals['magnitude_dist'], 'dist') else 'truncnorm'
     print(f"  Severity: {sev_dist_name}")
     print(f"  Magnitude: {mag_dist_name}")
 
