@@ -243,6 +243,23 @@ SAVE_RESULTS_SETS = [
 RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
 
 # =============================================================================
+# DROUGHT COPULA CONFIGURATION
+# =============================================================================
+
+# Marginal distributions for copula fitting
+# These match the distributions used in 09_plot_drought_frequency.py
+DROUGHT_MARGINAL_DISTRIBUTIONS = {
+    'severity': 'genexpon',     # Generalized Exponential
+    'magnitude': 'norm',        # Normal
+}
+
+# SSI windows to calculate drought metrics for
+SSI_WINDOWS = [3, 6, 12]  # months
+
+# Copula type (currently only Gaussian is used in production)
+DROUGHT_COPULA_TYPE = 'gaussian'
+
+# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
