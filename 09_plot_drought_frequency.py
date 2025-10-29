@@ -563,8 +563,9 @@ def plot_4panel_comparison(ssi_window=12,
                            figsize=(14, 10),
                            vmin_abs=1,
                            vmax_abs=1000,
-                           vmin_diff=-1.0,
-                           vmax_diff=1.0,
+                           vmin_diff=-100.0,
+                           vmax_diff=100.0,
+                           change_metric='percent',
                            fname=None):
     """
     Create a 4-panel comparison figure showing return periods for all scenarios.
@@ -582,7 +583,13 @@ def plot_4panel_comparison(ssi_window=12,
     vmin_abs, vmax_abs : float
         Color scale limits for absolute return period (left panel)
     vmin_diff, vmax_diff : float
-        Color scale limits for log ratio difference (right panels)
+        Color scale limits for change metric (right panels)
+        For 'percent': -100 to 100 (%)
+        For 'log10': -1.0 to 1.0 (log10 ratio)
+    change_metric : str
+        Metric for showing change: 'percent' or 'log10'
+        'percent': (T_climate - T_stationary) / T_stationary * 100
+        'log10': log10(T_climate / T_stationary)
     fname : str
         Output filename (if None, will auto-generate)
     """
@@ -651,9 +658,9 @@ def plot_4panel_comparison(ssi_window=12,
     print("      E[L] = interarrival time, μ_mag/σ_mag = magnitude distribution parameters")
     print("")
 
-    # Calculate relative changes (log ratio) for climate scenarios
+    # Calculate relative changes for climate scenarios
     print(f"{'='*60}")
-    print("Calculating relative changes from stationary...")
+    print(f"Calculating relative changes from stationary (metric: {change_metric})...")
     print(f"{'='*60}")
 
     T_ref = all_results['stationary_ensemble']['return_period_matrix']
@@ -671,8 +678,15 @@ def plot_4panel_comparison(ssi_window=12,
         T_comp = all_results[dataset_id]['return_period_matrix']
         mask_climate = all_results[dataset_id]['data_mask']
 
-        # Calculate log ratio for all grid cells
-        log_ratio = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
+        # Calculate change metric based on user selection
+        if change_metric == 'percent':
+            # Percentage change: (T_climate - T_stationary) / T_stationary * 100
+            change_matrix = ((T_comp - T_ref) / np.maximum(T_ref, eps)) * 100.0
+        elif change_metric == 'log10':
+            # Log10 ratio (original approach)
+            change_matrix = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
+        else:
+            raise ValueError(f"Unknown change_metric: {change_metric}. Use 'percent' or 'log10'.")
 
         # Create three-way mask:
         # 1. Overlap: both stationary AND climate have data
@@ -683,8 +697,8 @@ def plot_4panel_comparison(ssi_window=12,
         mask_clim_only = (~mask_ref) & mask_climate
 
         # For plotting: set non-overlap regions to special values
-        log_ratio_plot = log_ratio.copy()
-        log_ratio_plot[~mask_overlap] = np.nan  # Will handle special regions separately
+        change_matrix_plot = change_matrix.copy()
+        change_matrix_plot[~mask_overlap] = np.nan  # Will handle special regions separately
 
         n_overlap = mask_overlap.sum()
         n_stat_only = mask_stat_only.sum()
@@ -696,7 +710,8 @@ def plot_4panel_comparison(ssi_window=12,
         print(f"  Climate-only: {n_clim_only} cells ({100*n_clim_only/n_total:.1f}%)")
 
         diff_results[dataset_id] = {
-            'log_ratio_matrix': log_ratio_plot,
+            'change_matrix': change_matrix_plot,
+            'change_metric': change_metric,
             'mask_overlap': mask_overlap,
             'mask_stat_only': mask_stat_only,
             'mask_clim_only': mask_clim_only,
@@ -770,10 +785,10 @@ def plot_4panel_comparison(ssi_window=12,
         else:  # Climate scenario panels (relative change with three regions)
             diff_res = diff_results[dataset_id]
 
-            # Plot main overlap region (colormap for log ratio)
+            # Plot main overlap region (colormap for change metric)
             pm_diff = _plot_single_heatmap_panel(
                 ax=ax,
-                data_matrix=diff_res['log_ratio_matrix'],
+                data_matrix=diff_res['change_matrix'],
                 x_grid=diff_res['x2_grid'],
                 y_grid=diff_res['x1_grid'],
                 cmap=cmap_diff,
@@ -791,7 +806,7 @@ def plot_4panel_comparison(ssi_window=12,
             # Overlay: Stationary-only regions (droughts that disappear under climate change)
             # Show as semi-transparent orange/brown
             if diff_res['mask_stat_only'].any():
-                stat_only_matrix = np.full_like(diff_res['log_ratio_matrix'], np.nan)
+                stat_only_matrix = np.full_like(diff_res['change_matrix'], np.nan)
                 stat_only_matrix[diff_res['mask_stat_only']] = 1.0  # Dummy value
                 x_edges = _grid_edges_from_centers(diff_res['x2_grid'])
                 y_edges = _grid_edges_from_centers(diff_res['x1_grid'])
@@ -804,7 +819,7 @@ def plot_4panel_comparison(ssi_window=12,
             # Overlay: Climate-only regions (new droughts emerging under climate change)
             # Show as semi-transparent purple/magenta
             if diff_res['mask_clim_only'].any():
-                clim_only_matrix = np.full_like(diff_res['log_ratio_matrix'], np.nan)
+                clim_only_matrix = np.full_like(diff_res['change_matrix'], np.nan)
                 clim_only_matrix[diff_res['mask_clim_only']] = 1.0  # Dummy value
                 x_edges = _grid_edges_from_centers(diff_res['x2_grid'])
                 y_edges = _grid_edges_from_centers(diff_res['x1_grid'])
@@ -852,12 +867,18 @@ def plot_4panel_comparison(ssi_window=12,
     # Right colorbar for relative change
     cbar_diff_ax = fig.add_axes([0.56, 0.04, 0.35, 0.02])  # [left, bottom, width, height]
     cbar_diff = fig.colorbar(pm_diff, cax=cbar_diff_ax, orientation='horizontal', extend='both')
-    cbar_diff.set_label('Change in Return Period (log₁₀ ratio)', fontsize=11, fontweight='bold')
 
-    # Set colorbar ticks for difference
-    diff_ticks = np.linspace(vmin_diff, vmax_diff, 9)
-    cbar_diff.set_ticks(diff_ticks)
-    cbar_diff.set_ticklabels([f"{t:.1f}" for t in diff_ticks], fontsize=9)
+    # Set label based on change metric
+    if change_metric == 'percent':
+        cbar_diff.set_label('Change in Return Period (%)', fontsize=11, fontweight='bold')
+        diff_ticks = np.linspace(vmin_diff, vmax_diff, 9)
+        cbar_diff.set_ticks(diff_ticks)
+        cbar_diff.set_ticklabels([f"{int(t)}" for t in diff_ticks], fontsize=9)
+    else:  # log10
+        cbar_diff.set_label('Change in Return Period (log₁₀ ratio)', fontsize=11, fontweight='bold')
+        diff_ticks = np.linspace(vmin_diff, vmax_diff, 9)
+        cbar_diff.set_ticks(diff_ticks)
+        cbar_diff.set_ticklabels([f"{t:.1f}" for t in diff_ticks], fontsize=9)
 
     # Add legend for observed droughts and special mask regions
     handles = [
