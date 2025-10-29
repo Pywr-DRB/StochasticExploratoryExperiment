@@ -1,8 +1,20 @@
-# Copula Methodology for Drought Return Period Analysis
+# StochasticExploratoryExperiment Methodology Documentation
+
+This directory contains methodological documentation for the StochasticExploratoryExperiment workflow.
+
+## Contents
+
+1. [Copula Methodology for Drought Return Period Analysis](#copula-methodology)
+2. [Streamflow Scenario Comparison](#streamflow-comparison)
+3. [Centralized Styling System](#styling-system)
+
+---
+
+# Copula Methodology for Drought Return Period Analysis {#copula-methodology}
 
 ## Overview
 
-This document explains the methodology used in `09_plot_drought_frequency.py` for calculating drought return periods under different climate scenarios using copula-based joint probability modeling.
+This section explains the methodology used in `09_plot_drought_frequency.py` for calculating drought return periods under different climate scenarios using copula-based joint probability modeling.
 
 ## Question: Why Fit Separate Copulas for Each Dataset?
 
@@ -212,3 +224,230 @@ This methodology follows standard practices in:
 - **Non-stationary frequency analysis** (Salas & Obeysekera, 2014)
 - **Climate change impact assessment** (AghaKouchak et al., 2020)
 - **Copula-based drought analysis** (Serinaldi et al., 2009)
+
+---
+
+# Streamflow Scenario Comparison {#streamflow-comparison}
+
+## Overview
+
+Script `10_plot_streamflow_scenario_comparison.py` creates a 3-panel comparison figure showing how streamflow distributions change across climate scenarios.
+
+## Figure Layout
+
+### Panel 1: Annual Flow Distributions (KDE)
+- **Purpose**: Compare probability density of annual total flows
+- **Method**: Kernel density estimation (Gaussian kernel)
+- **Visualization**:
+  - Historic data: Black line (linewidth=2.5)
+  - Ensemble scenarios: Colored lines (linewidth=2.5)
+  - **No fill** under curves (changed from original filled version for clarity)
+
+**Interpretation**:
+- **Peak position**: Where distribution centers (mean/median annual flow)
+- **Peak height**: Concentration of probability (narrow = consistent, wide = variable)
+- **Tail shape**: Frequency of extreme wet/dry years
+
+**Expected climate scenario effects**:
+- Climate Low (Dry): Peak shifts left (lower flows), potentially wider spread
+- Climate High (Wet): Peak shifts right (higher flows)
+
+### Panel 2: Flow Duration Curves (FDC)
+- **Purpose**: Show flow magnitude vs. exceedance probability
+- **Method**: Sort daily flows, compute exceedance probabilities
+- **Visualization**:
+  - Historic data: Black line (no scatter points)
+  - Ensemble scenarios: Median line + shaded p10-p90 range
+  - **Linear y-axis** (not log scale)
+
+**Interpretation**:
+- **Left side (low exceedance)**: High flows (rare events)
+- **Right side (high exceedance)**: Low flows (common events)
+- **Slope**: Variability (steep = highly variable, flat = consistent)
+
+**Reading the FDC**:
+- "Flow at 10% exceedance = 5000 MGD" means flow ≥ 5000 MGD occurs 10% of time
+- Comparison shows how entire flow regime shifts with climate
+
+### Panel 3: Weekly Streamflow Patterns
+- **Purpose**: Show seasonal flow patterns across the year
+- **Method**: Group by week-of-year, calculate percentiles across all realizations
+- **Visualization**:
+  - Historic: Black line + shaded p10-p90 range
+  - Ensemble scenarios: Colored median line + shaded ranges
+  - **Linear y-axis** (not log scale)
+  - Month labels on top axis for reference
+
+**Interpretation**:
+- **Seasonal patterns**: Spring snowmelt peak, summer low flows
+- **Range width**: Inter-annual variability
+- **Scenario differences**: How climate shifts seasonal timing/magnitude
+
+## Color Scheme
+
+Uses centralized colors from `methods/plotting/styles.py`:
+- **Historic**: Black (#000000)
+- **Stationary**: Blue (#1f77b4)
+- **Climate Low**: Red (#d62728) - Driest scenario
+- **Climate Medium**: Purple (#9467bd)
+- **Climate High**: Green (#2ca02c) - Wettest scenario
+
+## Design Choices
+
+### Why Linear Scale (not log)?
+- **Clarity**: Linear scales easier to interpret for general audiences
+- **Comparison focus**: Emphasis on absolute differences between scenarios
+- **Seasonal patterns**: Weekly panel shows seasonal variability more clearly on linear scale
+
+Log scales are better for:
+- Spanning multiple orders of magnitude (not the case here)
+- Emphasizing low-flow extremes (drought focus)
+
+Linear scales are better for:
+- Comparing absolute magnitudes
+- Showing proportional differences
+- General climate scenario communication
+
+### Why No Fill Under KDE Curves?
+- **Overlapping clarity**: Multiple overlapping filled areas create visual confusion
+- **Line focus**: Easier to trace individual scenario distributions
+- **Publication quality**: Cleaner appearance for papers
+
+### Why No Scatter on FDC?
+- **Data volume**: With 2000 realizations × 70 years, scatter is too dense
+- **Percentile ranges**: Shaded areas communicate uncertainty better than scatter
+- **Visual clarity**: Clean lines easier to compare across scenarios
+
+## Usage
+
+```bash
+# Generate comparison figure for delMontague
+python 10_plot_streamflow_scenario_comparison.py delMontague
+
+# Output
+figures/streamflow_scenario_comparison_delMontague.png
+```
+
+## Validation
+
+The figure demonstrates:
+1. ✅ Stationary ensemble envelops historic data (validation of KN generator)
+2. ✅ Climate scenarios shift distributions in expected directions
+3. ✅ Uncertainty ranges (p10-p90) show ensemble spread
+4. ✅ Seasonal patterns preserved across scenarios
+
+---
+
+# Centralized Styling System {#styling-system}
+
+## Overview
+
+The `methods/plotting/styles.py` module provides centralized styling for all visualization scripts, ensuring consistency across the entire analysis.
+
+## Key Components
+
+### 1. Dataset Colors
+```python
+DATASET_COLORS = {
+    'stationary_ensemble': '#1f77b4',           # Blue
+    'climate_adjusted_low': '#d62728',          # Red (Dry)
+    'climate_adjusted_medium': '#9467bd',       # Purple
+    'climate_adjusted_high': '#2ca02c',         # Green (Wet)
+}
+```
+
+**Color rationale**:
+- **Blue (Stationary)**: Neutral baseline color
+- **Red (Low/Dry)**: Warm color associated with drought/heat
+- **Green (High/Wet)**: Cool color associated with water/vegetation
+- **Purple (Medium)**: Intermediate between red and blue
+
+### 2. Dataset Labels
+```python
+DATASET_LABELS = {
+    'stationary_ensemble': 'Stationary',
+    'climate_adjusted_low': 'Climate Low',
+    'climate_adjusted_medium': 'Climate Medium',
+    'climate_adjusted_high': 'Climate High',
+}
+```
+
+Also available:
+- `DATASET_LABELS_SHORT`: Compact labels for tight layouts
+- `DATASET_LABELS_DESCRIPTIVE`: Full descriptions with scenario context
+
+### 3. Styling Parameters
+- **Alpha values**: Fill (0.3), Line (0.8), Scatter (0.7), Bar (0.8)
+- **Line widths**: Thin (1.0), Medium (2.0), Thick (2.5)
+- **Colormaps**: Sequential (viridis), Diverging (BrBG), Heatmap (magma)
+- **Figure sizes**: Single, Double, Triple, Quad, Large
+- **Font sizes**: Small (9), Medium (10), Large (11), Title (14), Suptitle (16)
+- **DPI**: Screen (100), Print (300), High (400)
+
+### 4. Helper Functions
+
+```python
+# Get color for a dataset
+color = get_dataset_color('stationary_ensemble')
+
+# Get all colors in order
+colors = get_all_dataset_colors()
+
+# Apply publication styling to matplotlib
+apply_publication_style()
+
+# Get complete style dictionary
+style = get_scenario_style('climate_adjusted_low')
+ax.plot(x, y, **style)  # Unpack directly
+```
+
+## Usage Pattern
+
+### Before (inconsistent):
+```python
+# In script A
+colors = {'stationary': '#1f77b4', ...}
+
+# In script B
+colors = {'stationary': 'blue', ...}  # Different!
+```
+
+### After (consistent):
+```python
+# All scripts
+from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS
+
+ax.plot(x, y, color=DATASET_COLORS['stationary_ensemble'],
+        label=DATASET_LABELS['stationary_ensemble'])
+```
+
+## Scripts Using Centralized Styling
+
+- ✅ `10_plot_streamflow_scenario_comparison.py`
+- ✅ `07_compare_copula_parameters.py`
+- 🔄 To be updated: `09_plot_*.py` scripts
+
+## Benefits
+
+1. **Consistency**: Same colors across all figures in publication
+2. **Maintainability**: Update colors in one place
+3. **Flexibility**: Easy to switch between color schemes (e.g., colorblind-friendly)
+4. **Documentation**: Central location for styling decisions
+5. **Quality**: Pre-defined publication-ready settings
+
+## Future Enhancements
+
+Potential additions:
+- Colorblind-friendly alternative palette
+- Grayscale-safe palette for print
+- Institution-specific color schemes
+- Interactive plot styling configuration
+
+---
+
+## Document History
+
+- **2025-01-XX**: Initial documentation
+  - Copula methodology explanation
+  - Streamflow comparison documentation
+  - Centralized styling system documentation

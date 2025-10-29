@@ -57,6 +57,7 @@ from scipy import stats
 import pywrdrb
 from methods.load import load_drb_reconstruction
 from config import *
+from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS, HISTORIC_COLOR, HISTORIC_LABEL
 
 
 def calculate_annual_totals(flow_data):
@@ -228,21 +229,15 @@ def plot_streamflow_comparison(site='delMontague',
 
     print(f"\nSuccessfully loaded {len(ensemble_data)} ensemble datasets")
 
-    ### Define publication-quality colors and labels
+    ### Use centralized colors and labels from styles.py
     colors = {
-        'historic': '#000000',  # Black
-        'stationary_ensemble': '#1f77b4',  # Blue
-        'climate_adjusted_low': '#d62728',  # Red (Dry)
-        'climate_adjusted_medium': '#9467bd',  # Purple (Medium)
-        'climate_adjusted_high': '#2ca02c',  # Green (Wet)
+        'historic': HISTORIC_COLOR,
+        **DATASET_COLORS
     }
 
     labels = {
-        'historic': 'Historic',
-        'stationary_ensemble': 'Stationary',
-        'climate_adjusted_low': 'Climate Low',
-        'climate_adjusted_medium': 'Climate Med',
-        'climate_adjusted_high': 'Climate High',
+        'historic': HISTORIC_LABEL,
+        **DATASET_LABELS
     }
 
     # Create figure with custom layout
@@ -270,15 +265,13 @@ def plot_streamflow_comparison(site='delMontague',
              color=colors['historic'], linewidth=2.5,
              label=labels['historic'], zorder=10)
 
-    # Plot ensemble distributions
+    # Plot ensemble distributions (KDE lines only, no fill)
     for dataset_id in ensemble_data.keys():
         annual_syn = calculate_annual_totals(ensemble_data[dataset_id])
         kde_syn = stats.gaussian_kde(annual_syn)
-        ax1.fill_between(x_range, 0, kde_syn(x_range),
-                        color=colors[dataset_id], alpha=0.4,
-                        label=labels[dataset_id])
         ax1.plot(x_range, kde_syn(x_range),
-                color=colors[dataset_id], linewidth=2, alpha=0.8)
+                color=colors[dataset_id], linewidth=2.5,
+                label=labels[dataset_id])
 
     ax1.set_xlabel('Annual Flow (MGD)', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Density', fontsize=12, fontweight='bold')
@@ -289,11 +282,11 @@ def plot_streamflow_comparison(site='delMontague',
     ### PANEL 2: Flow Duration Curves
     print("Generating Panel 2: Flow duration curves...")
 
-    # Calculate FDC for historic
+    # Calculate FDC for historic (line only, no scatter)
     exc_hist, flow_hist = calculate_flow_duration_curve(Q_hist_site)
-    ax2.scatter(exc_hist[::100], flow_hist[::100],
-               color=colors['historic'], s=50, alpha=0.7,
-               label=labels['historic'], zorder=10, marker='o')
+    ax2.plot(exc_hist, flow_hist,
+            color=colors['historic'], linewidth=2.5,
+            label=labels['historic'], zorder=10)
 
     # Plot ensemble FDCs with ranges
     for dataset_id in ensemble_data.keys():
@@ -317,14 +310,14 @@ def plot_streamflow_comparison(site='delMontague',
         ax2.fill_between(exc_common, p10, p90,
                         color=colors[dataset_id], alpha=0.3)
         ax2.plot(exc_common, p50,
-                color=colors[dataset_id], linewidth=2,
+                color=colors[dataset_id], linewidth=2.5,
                 label=labels[dataset_id])
 
     ax2.set_xlabel('Exceedance Probability', fontsize=12, fontweight='bold')
     ax2.set_ylabel('Flow (MGD)', fontsize=12, fontweight='bold')
     ax2.set_title('Annual Flow Duration Curves', fontsize=14, fontweight='bold', pad=10)
-    ax2.set_yscale('log')
-    ax2.grid(True, alpha=0.3, linestyle='--', which='both')
+    # Use linear scale instead of log
+    ax2.grid(True, alpha=0.3, linestyle='--')
     ax2.tick_params(labelsize=11)
 
     ### PANEL 3: Weekly Streamflow Ranges
@@ -346,15 +339,15 @@ def plot_streamflow_comparison(site='delMontague',
         ax3.fill_between(weeks, p10, p90,
                         color=colors[dataset_id], alpha=0.25)
         ax3.plot(weeks, med,
-                color=colors[dataset_id], linewidth=2,
+                color=colors[dataset_id], linewidth=2.5,
                 label=labels[dataset_id])
 
     ax3.set_xlabel('Week of Year', fontsize=12, fontweight='bold')
     ax3.set_ylabel('Flow (MGD)', fontsize=12, fontweight='bold')
     ax3.set_title('Weekly Streamflow Patterns', fontsize=14, fontweight='bold', pad=10)
     ax3.set_xlim(1, 52)
-    ax3.set_yscale('log')
-    ax3.grid(True, alpha=0.3, linestyle='--', which='both')
+    # Use linear scale instead of log
+    ax3.grid(True, alpha=0.3, linestyle='--')
     ax3.tick_params(labelsize=11)
 
     # Add monthly tick marks on top axis

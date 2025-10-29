@@ -126,6 +126,9 @@ def calculate_drought_frequency(
         'x2_metric': x2_metric,
         'total_years': denom_years,
         'interarrival_years': E_L_years,
+        'copula_rho': rho,
+        'severity_params': pars_x2,  # x2_metric is severity
+        'magnitude_params': pars_x1,  # x1_metric is magnitude
     }
 
 
@@ -431,7 +434,10 @@ def analyze_drought_frequency(dataset_id, ssi_window=12):
     print(f"  Max frequency: {result['frequency_matrix'].max():.4f}")
     print(f"  Max return period: {result['return_period_matrix'].max():.1f} years")
     print(f"  Mean interarrival time: {result['interarrival_years']:.2f} years")
-    
+    print(f"  Copula correlation (ρ): {result['copula_rho']:.4f}")
+    print(f"  Severity params (genexpon): {result['severity_params']}")
+    print(f"  Magnitude params (norm): μ={result['magnitude_params'][0]:.3f}, σ={result['magnitude_params'][1]:.3f}")
+
     return result, syn_droughts, obs_droughts
 
 
@@ -532,8 +538,23 @@ def plot_4panel_comparison(ssi_window=12,
     # Load observed droughts once
     obs_droughts = _load_observed_droughts(ssi_window)
 
-    # Calculate relative changes (log ratio) for climate scenarios
+    # Print comparison summary of copula parameters
     print(f"\n{'='*60}")
+    print("COPULA PARAMETER COMPARISON ACROSS DATASETS")
+    print(f"{'='*60}")
+    print(f"{'Dataset':<25} {'ρ':>8} {'E[L] (yr)':>12} {'μ_mag':>10} {'σ_mag':>10}")
+    print("-" * 75)
+    for dataset_id, label in datasets.items():
+        res = all_results[dataset_id]
+        print(f"{label:<25} {res['copula_rho']:>8.4f} {res['interarrival_years']:>12.2f} "
+              f"{res['magnitude_params'][0]:>10.3f} {res['magnitude_params'][1]:>10.3f}")
+    print("=" * 75)
+    print("Note: ρ = copula correlation, E[L] = interarrival time,")
+    print("      μ_mag/σ_mag = magnitude distribution parameters (log-normal)")
+    print("")
+
+    # Calculate relative changes (log ratio) for climate scenarios
+    print(f"{'='*60}")
     print("Calculating relative changes from stationary...")
     print(f"{'='*60}")
 
