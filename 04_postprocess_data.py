@@ -496,11 +496,20 @@ def process_dataset(dataset_id, recombine_sets=False):
     try:
         realizations = list(keep_data.shortage[dataset_id].keys())
         print(f"  Found {len(realizations)} realizations in {dataset_id}")
+
+        # Debug: Check what attributes are available
+        print(f"  Checking available data attributes...")
+        for attr in ['shortage', 'mrf_target', 'res_storage', 'ibt_diversions', 'ibt_demands', 'contribution']:
+            if hasattr(keep_data, attr):
+                attr_dict = getattr(keep_data, attr)
+                if dataset_id in attr_dict:
+                    print(f"    ✓ {attr}: {len(attr_dict[dataset_id])} realizations")
+                else:
+                    print(f"    ✗ {attr}: dataset_id not found (available: {list(attr_dict.keys())})")
+            else:
+                print(f"    ✗ {attr}: attribute not loaded")
+
         calculate_and_save_performance_metrics(keep_data, dataset_id, realizations)
-    except KeyError as e:
-        print(f"ERROR: Could not find dataset '{dataset_id}' in loaded data.")
-        print(f"  Available keys in shortage: {list(keep_data.shortage.keys())}")
-        return False
     except Exception as e:
         print(f"ERROR calculating metrics for {dataset_id}: {e}")
         import traceback
