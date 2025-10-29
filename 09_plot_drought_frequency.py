@@ -161,9 +161,28 @@ def calculate_drought_frequency(
     eps_plot = 1.0 / denom_years
     freq = np.maximum(freq, eps_plot)
 
+    # --- Create data mask based on synthetic drought dataset coverage ---
+    # Count drought events in each grid cell to identify data-supported regions
+    # This prevents extrapolation in regions with no synthetic drought events
+    x1_vals = df[x1_metric].values
+    x2_vals = df[x2_metric].values
+
+    # Count events in each grid cell
+    x1_edges = _grid_edges_from_centers(x1_grid)
+    x2_edges = _grid_edges_from_centers(x2_grid)
+
+    hist_counts, _, _ = np.histogram2d(
+        x1_vals, x2_vals,
+        bins=[x1_edges, x2_edges]
+    )
+
+    # Mask: True where we have synthetic drought events, False elsewhere
+    mask = hist_counts > 0
+
     return {
         'frequency_matrix': freq,
         'return_period_matrix': return_period,
+        'data_mask': mask,  # NEW: Boolean mask for data support
         'x1_grid': x1_grid,
         'x2_grid': x2_grid,
         'x1_metric': x1_metric,
@@ -640,18 +659,38 @@ def plot_4panel_comparison(ssi_window=12,
     T_ref = all_results['stationary_ensemble']['return_period_matrix']
     eps = 1e-8
 
+    # Combine masks from all datasets - only show regions where ALL datasets have data
+    print("Creating combined data mask...")
+    combined_mask = all_results['stationary_ensemble']['data_mask'].copy()
+    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+        combined_mask = combined_mask & all_results[dataset_id]['data_mask']
+
+    n_masked = (~combined_mask).sum()
+    n_total = combined_mask.size
+    pct_masked = 100 * n_masked / n_total
+    print(f"  Masking {n_masked}/{n_total} grid cells ({pct_masked:.1f}%) with insufficient data support")
+
     diff_results = {}
     for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
         T_comp = all_results[dataset_id]['return_period_matrix']
         log_ratio = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
 
+        # Apply mask: set masked regions to NaN
+        log_ratio_masked = log_ratio.copy()
+        log_ratio_masked[~combined_mask] = np.nan
+
         diff_results[dataset_id] = {
-            'log_ratio_matrix': log_ratio,
+            'log_ratio_matrix': log_ratio_masked,
             'x1_grid': all_results['stationary_ensemble']['x1_grid'],
             'x2_grid': all_results['stationary_ensemble']['x2_grid'],
             'x1_metric': all_results['stationary_ensemble']['x1_metric'],
             'x2_metric': all_results['stationary_ensemble']['x2_metric'],
         }
+
+    # Also apply mask to stationary return period for consistency
+    T_ref_masked = T_ref.copy()
+    T_ref_masked[~combined_mask] = np.nan
+    all_results['stationary_ensemble']['return_period_matrix'] = T_ref_masked
 
     print(f"\n{'='*60}")
     print("Creating multi-panel figure...")
