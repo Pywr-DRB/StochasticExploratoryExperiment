@@ -33,6 +33,50 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # Performance metrics directory
 PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 
+# ============================================================================
+# CONFIGURABLE METRICS
+# ============================================================================
+# Specify which metrics to plot and in what order
+# The order of this list determines the order of bars in the plot
+#
+# Available metrics (from 04_postprocess_data.py):
+#   - years_reliable: Years where Montague flow target met >90% of time
+#   - years_high_storage: Years where NYC storage >90% on June 1
+#   - years_above_20pct: Years where minimum NYC storage stays >20%
+#   - years_above_10pct: Years where minimum NYC storage stays >10%
+#   - mean_sept1_storage_pct: Average NYC storage on Sept 1 (%)
+#   - years_low_carryover: Years with <50% storage on Sept 1
+#   - years_trenton_reliable: Years where Trenton flow target met >90% of time
+#   - pct_days_nyc_diversion_shortage: % of days NYC fails to meet diversion demand
+#   - max_consecutive_drought_days: Longest drought period (days)
+#   - mean_annual_nyc_contribution_mg: Average annual NYC downstream release (MG)
+#   - max_annual_nyc_contribution_mg: Maximum annual NYC downstream release (MG)
+
+METRICS_TO_PLOT = [
+    'years_high_storage',     # Years NYC storage high on June 1
+    'years_above_20pct',      # Years min storage stays >20%
+    'years_reliable',         # Years Montague reliable
+]
+
+# Metric display names (for plot labels)
+METRIC_DISPLAY_NAMES = {
+    'years_reliable': 'Years Montague\nReliable',
+    'years_high_storage': 'Years NYC\nStorage High\non June 1',
+    'years_above_20pct': 'Years Min\nStorage >20%',
+    'years_above_10pct': 'Years Min\nStorage >10%',
+    'mean_sept1_storage_pct': 'Mean Sept 1\nStorage (%)',
+    'years_low_carryover': 'Years Low\nCarryover',
+    'years_trenton_reliable': 'Years Trenton\nReliable',
+    'pct_days_nyc_diversion_shortage': '% Days NYC\nDiversion Short',
+    'max_consecutive_drought_days': 'Max Consecutive\nDrought (days)',
+    'mean_annual_nyc_contribution_mg': 'Mean Annual NYC\nContribution (MG)',
+    'max_annual_nyc_contribution_mg': 'Max Annual NYC\nContribution (MG)',
+}
+
+# Color palettes for bars
+COLORS_ABSOLUTE = ['#A23B72', '#F18F01', '#2E86AB']  # Purple, Orange, Blue
+COLORS_CHANGE = ['#D4399B', '#C73E1D', '#06A77D']  # Magenta, Red, Teal
+
 
 def load_performance_metrics(dataset_id):
     """
@@ -60,22 +104,53 @@ def load_performance_metrics(dataset_id):
     return metrics_df
 
 
-def calculate_ensemble_percentiles(metrics_df):
+def validate_metrics(metrics_df, dataset_id):
+    """
+    Validate that all requested metrics exist in the DataFrame.
+
+    Parameters
+    ----------
+    metrics_df : pd.DataFrame
+        DataFrame with performance metrics
+    dataset_id : str
+        Dataset identifier (for error messages)
+
+    Raises
+    ------
+    ValueError
+        If any requested metrics are missing
+    """
+    available_metrics = set(metrics_df.columns)
+    requested_metrics = set(METRICS_TO_PLOT)
+    missing_metrics = requested_metrics - available_metrics
+
+    if missing_metrics:
+        raise ValueError(
+            f"ERROR: Dataset '{dataset_id}' is missing requested metrics: {missing_metrics}\n"
+            f"Available metrics: {sorted(available_metrics)}\n"
+            f"Requested metrics: {sorted(requested_metrics)}\n"
+            f"Please update METRICS_TO_PLOT or regenerate metrics CSV."
+        )
+
+
+def calculate_ensemble_percentiles(metrics_df, metrics_list):
     """
     Calculate p5, p50, p95 for each metric across realizations.
 
     Parameters
     ----------
     metrics_df : pd.DataFrame
-        DataFrame with columns ['years_reliable', 'years_high_storage', 'years_above_20pct']
+        DataFrame with performance metrics columns
+    metrics_list : list
+        List of metric column names to calculate percentiles for
 
     Returns
     -------
     percentiles : dict
-        {'years_reliable': [p5, p50, p95], ...}
+        {'metric_name': [p5, p50, p95], ...}
     """
     percentiles = {}
-    for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
+    for metric in metrics_list:
         p5 = metrics_df[metric].quantile(0.05)
         p50 = metrics_df[metric].quantile(0.50)
         p95 = metrics_df[metric].quantile(0.95)
@@ -93,9 +168,11 @@ def plot_4panel_performance_comparison():
     - Right panels (stacked): Low, Medium, High climate scenarios (% change)
     """
 
-    print("=" * 60)
+    print("=" * 80)
     print("CALCULATING PERFORMANCE METRICS")
-    print("=" * 60)
+    print("=" * 80)
+    print(f"Metrics to plot ({len(METRICS_TO_PLOT)}): {METRICS_TO_PLOT}")
+    print("=" * 80)
 
     # Load pre-calculated data for all datasets
     datasets = {
@@ -117,45 +194,52 @@ def plot_4panel_performance_comparison():
             print(f"ERROR: {e}")
             return None
 
-        # Calculate percentiles
-        percentiles = calculate_ensemble_percentiles(metrics_df)
+        # Validate that requested metrics exist
+        try:
+            validate_metrics(metrics_df, dataset_id)
+        except ValueError as e:
+            print(str(e))
+            return None
+
+        # Calculate percentiles for requested metrics only
+        percentiles = calculate_ensemble_percentiles(metrics_df, METRICS_TO_PLOT)
         all_percentiles[dataset_id] = percentiles
 
-        print(f"  Years Montague reliable: p5={percentiles['years_reliable'][0]:.1f}, "
-              f"p50={percentiles['years_reliable'][1]:.1f}, p95={percentiles['years_reliable'][2]:.1f}")
-        print(f"  Years NYC storage high: p5={percentiles['years_high_storage'][0]:.1f}, "
-              f"p50={percentiles['years_high_storage'][1]:.1f}, p95={percentiles['years_high_storage'][2]:.1f}")
-        print(f"  Years min storage >20%: p5={percentiles['years_above_20pct'][0]:.1f}, "
-              f"p50={percentiles['years_above_20pct'][1]:.1f}, p95={percentiles['years_above_20pct'][2]:.1f}")
+        # Print summary for requested metrics
+        for metric in METRICS_TO_PLOT:
+            p5, p50, p95 = percentiles[metric]
+            print(f"  {metric:40s}: p5={p5:6.1f}, p50={p50:6.1f}, p95={p95:6.1f}")
 
     # Load historic (reconstruction) metrics for comparison
     print(f"\nLoading historic (reconstruction) metrics...")
     try:
         historic_metrics_df = load_performance_metrics('reconstruction')
-        historic_values = {
-            'years_reliable': historic_metrics_df['years_reliable'].iloc[0],
-            'years_high_storage': historic_metrics_df['years_high_storage'].iloc[0],
-            'years_above_20pct': historic_metrics_df['years_above_20pct'].iloc[0]
-        }
-        print(f"  Historic years Montague reliable: {historic_values['years_reliable']:.1f}")
-        print(f"  Historic years NYC storage high: {historic_values['years_high_storage']:.1f}")
-        print(f"  Historic years min storage >20%: {historic_values['years_above_20pct']:.1f}")
+        historic_values = {}
+        for metric in METRICS_TO_PLOT:
+            if metric in historic_metrics_df.columns:
+                historic_values[metric] = historic_metrics_df[metric].iloc[0]
+                print(f"  Historic {metric}: {historic_values[metric]:.1f}")
+            else:
+                print(f"  WARNING: Historic metric '{metric}' not found")
+
+        if not historic_values:
+            historic_values = None
     except FileNotFoundError as e:
         print(f"WARNING: {e}")
         print("Historic values will not be shown on plot.")
         historic_values = None
 
     # Calculate percentage changes from stationary
-    print(f"\n{'='*60}")
+    print(f"\n{'='*80}")
     print("Calculating percentage changes from stationary...")
-    print(f"{'='*60}")
+    print(f"{'='*80}")
 
     stat_perc = all_percentiles['stationary_ensemble']
     pct_changes = {}
 
     for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
         pct_change = {}
-        for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
+        for metric in METRICS_TO_PLOT:
             # Calculate % change at each percentile
             eps = 1e-8
             pct_change[metric] = [
@@ -185,11 +269,15 @@ def plot_4panel_performance_comparison():
     dataset_list = list(datasets.keys())
     panel_labels = ['(a)', '(b)', '(c)', '(d)']
 
-    # Metric info - REORDERED: [years_high_storage, years_above_20pct, years_reliable]
-    metric_names = ['Years NYC\nStorage High\non June 1', 'Years Min\nStorage >20%', 'Years Montague\nReliable']
-    metric_keys = ['years_high_storage', 'years_above_20pct', 'years_reliable']
-    colors_abs = ['#A23B72', '#F18F01', '#2E86AB']  # Purple, Orange, Blue
-    colors_diff = ['#D4399B', '#C73E1D', '#06A77D']  # Magenta, Red, Teal
+    # Use configured metrics
+    metric_keys = METRICS_TO_PLOT
+    metric_names = [METRIC_DISPLAY_NAMES.get(m, m) for m in metric_keys]
+    n_metrics = len(metric_keys)
+
+    # Generate colors dynamically based on number of metrics
+    # Cycle through color palettes if more than 3 metrics
+    colors_abs = (COLORS_ABSOLUTE * ((n_metrics // len(COLORS_ABSOLUTE)) + 1))[:n_metrics]
+    colors_diff = (COLORS_CHANGE * ((n_metrics // len(COLORS_CHANGE)) + 1))[:n_metrics]
 
     # Calculate y-axis range for right panels (shared across all 3 climate scenarios)
     all_pct_values = []
@@ -210,14 +298,14 @@ def plot_4panel_performance_comparison():
 
         if idx == 0:  # Stationary panel (absolute values)
             # Plot bars for each metric
-            x_pos = np.arange(3)
+            x_pos = np.arange(n_metrics)
             p50_values = [stat_perc[m][1] for m in metric_keys]
             p5_values = [stat_perc[m][0] for m in metric_keys]
             p95_values = [stat_perc[m][2] for m in metric_keys]
 
             # Error bars (p5 to p95 range)
-            yerr_low = [p50_values[i] - p5_values[i] for i in range(3)]
-            yerr_high = [p95_values[i] - p50_values[i] for i in range(3)]
+            yerr_low = [p50_values[i] - p5_values[i] for i in range(n_metrics)]
+            yerr_high = [p95_values[i] - p50_values[i] for i in range(n_metrics)]
 
             bars = ax.bar(x_pos, p50_values, color=colors_abs, alpha=0.8,
                          yerr=[yerr_low, yerr_high], capsize=5,
@@ -225,7 +313,7 @@ def plot_4panel_performance_comparison():
 
             # Add historic values as scatter points (if available)
             if historic_values is not None:
-                historic_scatter_values = [historic_values[m] for m in metric_keys]
+                historic_scatter_values = [historic_values.get(m, np.nan) for m in metric_keys]
                 ax.scatter(x_pos, historic_scatter_values, color='red', s=100,
                           marker='D', edgecolors='darkred', linewidths=2, zorder=10,
                           label='Historic')
@@ -245,7 +333,7 @@ def plot_4panel_performance_comparison():
             pct_change = pct_changes[dataset_id]
 
             # Plot bars for each metric (median percentage change only)
-            x_pos = np.arange(3)
+            x_pos = np.arange(n_metrics)
             p50_values = [pct_change[m][1] for m in metric_keys]
 
             bars = ax.bar(x_pos, p50_values, color=colors_diff, alpha=0.8)
