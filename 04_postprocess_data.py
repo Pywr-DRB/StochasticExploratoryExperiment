@@ -481,19 +481,46 @@ def process_dataset(dataset_id, recombine_sets=False):
         # Load existing combined data (fast)
         print(f"\nrecombine_sets=False. Loading existing combined data from:")
         print(f"  {fname}")
+
+        # Load only the results_sets needed for metric calculations
+        required_results_sets = ['shortage', 'mrf_target', 'res_storage',
+                                 'ibt_diversions', 'ibt_demands', 'contribution']
+
         keep_data = pywrdrb.Data()
-        keep_data.load_from_export(fname)
+        keep_data.load_from_export(fname, results_sets=required_results_sets)
         print(f"Successfully loaded combined data for {dataset_id}!")
+        print(f"  Loaded results_sets: {required_results_sets}")
 
     # Calculate and save performance metrics
     print(f"\nCalculating performance metrics for {dataset_id}...")
-    realizations = list(keep_data.shortage[dataset_id].keys())
-    calculate_and_save_performance_metrics(keep_data, dataset_id, realizations)
+    try:
+        realizations = list(keep_data.shortage[dataset_id].keys())
+        print(f"  Found {len(realizations)} realizations in {dataset_id}")
+        calculate_and_save_performance_metrics(keep_data, dataset_id, realizations)
+    except KeyError as e:
+        print(f"ERROR: Could not find dataset '{dataset_id}' in loaded data.")
+        print(f"  Available keys in shortage: {list(keep_data.shortage.keys())}")
+        return False
+    except Exception as e:
+        print(f"ERROR calculating metrics for {dataset_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
     # Also calculate historic (reconstruction) metrics for comparison
     print(f"\nCalculating historic (reconstruction) performance metrics...")
-    reconstruction_realizations = list(keep_data.shortage['reconstruction'].keys())
-    calculate_and_save_performance_metrics(keep_data, 'reconstruction', reconstruction_realizations)
+    try:
+        reconstruction_realizations = list(keep_data.shortage['reconstruction'].keys())
+        print(f"  Found {len(reconstruction_realizations)} realizations in reconstruction")
+        calculate_and_save_performance_metrics(keep_data, 'reconstruction', reconstruction_realizations)
+    except KeyError as e:
+        print(f"WARNING: Could not find 'reconstruction' data in loaded file.")
+        print(f"  Available keys in shortage: {list(keep_data.shortage.keys())}")
+        print(f"  Skipping historic metrics calculation.")
+    except Exception as e:
+        print(f"WARNING: Error calculating historic metrics: {e}")
+        import traceback
+        traceback.print_exc()
 
     return True
 
