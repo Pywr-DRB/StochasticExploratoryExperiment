@@ -7,7 +7,7 @@ validate the choice of marginal distributions and copula structure.
 
 The methodology matches exactly what is used in 09_plot_drought_frequency.py:
 - Marginal distributions configured in config.DROUGHT_MARGINAL_DISTRIBUTIONS
-- Copula: Gaussian copula with correlation parameter estimated from normal scores
+- Copula type configured in config.DROUGHT_COPULA_TYPE ('gaussian' or 't_copula')
 
 Diagnostic plots include:
 1. Joint scatter plots with marginal distributions
@@ -42,6 +42,8 @@ from methods.copula import (
     load_drought_events,
     fit_marginal_distributions,
     fit_gaussian_copula,
+    fit_t_copula,
+    transform_to_uniform,
     check_tail_dependence,
     calculate_tail_dependence_curves,
     calculate_interarrival_time,
@@ -83,14 +85,34 @@ def run_copula_diagnostics(dataset_id, ssi_window):
     # Fit marginal distributions (using config)
     print("Fitting marginal distributions...")
     marginals = fit_marginal_distributions(df)
-    print(f"  Severity: {marginals['severity_dist'].name}")
-    print(f"  Magnitude: {marginals['magnitude_dist'].name}")
+    sev_dist_name = marginals['severity_dist'].name if hasattr(marginals['severity_dist'], 'name') else 'truncnorm_0'
+    mag_dist_name = marginals['magnitude_dist'].name if hasattr(marginals['magnitude_dist'], 'name') else 'truncnorm_0'
+    print(f"  Severity: {sev_dist_name}")
+    print(f"  Magnitude: {mag_dist_name}")
 
-    # Fit Gaussian copula
-    print("Fitting Gaussian copula...")
-    copula = fit_gaussian_copula(df, marginals)
-    print(f"  Correlation (ρ): {copula['rho']:.4f}")
-    print(f"  Log-likelihood: {copula['loglik']:.2f}")
+    # Transform to uniform marginals
+    print("Transforming to uniform marginals...")
+    U = transform_to_uniform(df, marginals)
+
+    # Fit copula based on config
+    print(f"Fitting {DROUGHT_COPULA_TYPE} copula...")
+    if DROUGHT_COPULA_TYPE == 't_copula':
+        copula_params = fit_t_copula(U)
+        copula = {
+            'rho': copula_params['rho'],
+            'nu': copula_params['nu'],
+            'loglik': copula_params['loglik'],
+            'U': U,
+            'type': 't_copula'
+        }
+        print(f"  Correlation (ρ): {copula['rho']:.4f}")
+        print(f"  Degrees of freedom (ν): {copula['nu']:.2f}")
+        print(f"  Log-likelihood: {copula['loglik']:.2f}")
+    else:
+        copula = fit_gaussian_copula(df, marginals)
+        copula['type'] = 'gaussian'
+        print(f"  Correlation (ρ): {copula['rho']:.4f}")
+        print(f"  Log-likelihood: {copula['loglik']:.2f}")
 
     # Check tail dependence
     print("Checking tail dependence...")

@@ -84,6 +84,9 @@ def get_marginal_distribution(metric_name, distribution_config=None):
     # Get distribution from scipy.stats
     if dist_name == 'genexpon':
         return stats.genexpon
+    elif dist_name == 'truncnorm_0':
+        # Return marker for special handling
+        return 'truncnorm_0'
     elif dist_name == 'norm':
         return stats.norm
     elif dist_name == 'lognorm':
@@ -128,14 +131,34 @@ def fit_marginal_distributions(df, distribution_config=None):
     # Fit severity
     severity_data = df['severity'].values
     severity_data = severity_data[np.isfinite(severity_data) & (severity_data > 0)]
-    severity_dist = get_marginal_distribution('severity', distribution_config)
-    severity_params = severity_dist.fit(severity_data)
+    severity_dist_obj = get_marginal_distribution('severity', distribution_config)
+
+    if severity_dist_obj == 'truncnorm_0':
+        # Fit normal, then create truncated version
+        mu, sigma = stats.norm.fit(severity_data)
+        a = (0 - mu) / sigma
+        b = np.inf
+        severity_params = (a, b, mu, sigma)
+        severity_dist = stats.truncnorm(a, b, loc=mu, scale=sigma)
+    else:
+        severity_dist = severity_dist_obj
+        severity_params = severity_dist.fit(severity_data)
 
     # Fit magnitude
     magnitude_data = df['magnitude'].values
     magnitude_data = magnitude_data[np.isfinite(magnitude_data) & (magnitude_data > 0)]
-    magnitude_dist = get_marginal_distribution('magnitude', distribution_config)
-    magnitude_params = magnitude_dist.fit(magnitude_data)
+    magnitude_dist_obj = get_marginal_distribution('magnitude', distribution_config)
+
+    if magnitude_dist_obj == 'truncnorm_0':
+        # Fit normal, then create truncated version
+        mu, sigma = stats.norm.fit(magnitude_data)
+        a = (0 - mu) / sigma
+        b = np.inf
+        magnitude_params = (a, b, mu, sigma)
+        magnitude_dist = stats.truncnorm(a, b, loc=mu, scale=sigma)
+    else:
+        magnitude_dist = magnitude_dist_obj
+        magnitude_params = magnitude_dist.fit(magnitude_data)
 
     return {
         'severity_dist': severity_dist,

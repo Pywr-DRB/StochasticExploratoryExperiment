@@ -25,7 +25,12 @@ def calculate_drought_frequency(
 ):
     """
     Efficient joint frequency calculation using copula-based approach.
-    P(X1 >= x1 & X2 >= x2) per year, with Gaussian copula and marginal fits.
+    P(X1 >= x1 & X2 >= x2) per year, with copula (Gaussian or Student-t) and marginal fits.
+
+    Uses distributions and copula type specified in config:
+    - Severity: DROUGHT_MARGINAL_DISTRIBUTIONS['severity']
+    - Magnitude: DROUGHT_MARGINAL_DISTRIBUTIONS['magnitude']
+    - Copula: DROUGHT_COPULA_TYPE ('gaussian' or 't_copula')
     """
     # Validate
     required_cols = ['start', 'end', 'realization_id', x1_metric, x2_metric]
@@ -39,33 +44,45 @@ def calculate_drought_frequency(
     df['start'] = pd.to_datetime(df['start'])
     df['end'] = pd.to_datetime(df['end'])
 
-    # --- Fit marginals on original scale (positive support) ---
-    def fit_marginal(varname, data):
-        data = np.asarray(data, dtype=float)
-        data = data[np.isfinite(data) & (data > 0)]
-        if varname.lower() == 'severity':
-            dist = stats.genexpon
-            params = dist.fit(data)
-        elif varname.lower() == 'magnitude':
-            dist = stats.norm
-            params = dist.fit(data)
-        else:
-            raise ValueError("Unsupported metric for copula-based calculation "
-                             "(use 'severity' or 'magnitude').")
-        return dist, params
+    # --- Fit marginals using config-based distributions ---
+    from methods.copula import fit_marginal_distributions, fit_t_copula
+    from config import DROUGHT_COPULA_TYPE
 
-    dist_x1, pars_x1 = fit_marginal(x1_metric, df[x1_metric])
-    dist_x2, pars_x2 = fit_marginal(x2_metric, df[x2_metric])
+    # Create temporary dataframe for fitting
+    df_temp = pd.DataFrame({
+        x1_metric: df[x1_metric],
+        x2_metric: df[x2_metric]
+    })
 
-    # --- Gaussian copula parameter via normal-scores correlation ---
+    # Rename to severity/magnitude for compatibility with fit function
+    df_temp = df_temp.rename(columns={x1_metric: 'magnitude', x2_metric: 'severity'})
+
+    # Fit marginals
+    marginals = fit_marginal_distributions(df_temp)
+    dist_x1 = marginals['magnitude_dist']
+    pars_x1 = marginals['magnitude_params']
+    dist_x2 = marginals['severity_dist']
+    pars_x2 = marginals['severity_params']
+
+    # --- Transform to uniform and fit copula ---
     eps = 1e-12
     u1_data = np.clip(dist_x1.cdf(df[x1_metric].to_numpy(float), *pars_x1), eps, 1 - eps)
     u2_data = np.clip(dist_x2.cdf(df[x2_metric].to_numpy(float), *pars_x2), eps, 1 - eps)
-    z1 = stats.norm.ppf(u1_data)
-    z2 = stats.norm.ppf(u2_data)
-    rho = float(np.corrcoef(z1, z2)[0, 1])
-    rho = float(np.clip(rho, -0.999, 0.999))
-    cov = np.array([[1.0, rho], [rho, 1.0]])
+    U = np.column_stack([u1_data, u2_data])
+
+    # Fit copula based on config
+    if DROUGHT_COPULA_TYPE == 't_copula':
+        # Fit Student-t copula
+        copula_params = fit_t_copula(U)
+        rho = copula_params['rho']
+        nu = copula_params['nu']
+    else:
+        # Default to Gaussian copula
+        z1 = stats.norm.ppf(u1_data)
+        z2 = stats.norm.ppf(u2_data)
+        rho = float(np.corrcoef(z1, z2)[0, 1])
+        rho = float(np.clip(rho, -0.999, 0.999))
+        nu = None
 
     # --- Expected interarrival time (years), start-to-start by realization ---
     df_sorted = df.sort_values(['realization_id', 'start'])
@@ -91,14 +108,29 @@ def calculate_drought_frequency(
     U1 = np.clip(dist_x1.cdf(x1_grid, *pars_x1), eps, 1 - eps)  # F_X1(x1)
     U2 = np.clip(dist_x2.cdf(x2_grid, *pars_x2), eps, 1 - eps)  # F_X2(x2)
 
-    # Build full (ngrid x ngrid) grid of (z1,z2) pairs and evaluate C(u,v)
-    Z1v = stats.norm.ppf(U1)            # shape (ngrid,)
-    Z2v = stats.norm.ppf(U2)            # shape (ngrid,)
-    Z1g, Z2g = np.meshgrid(Z1v, Z2v, indexing='ij')
-    pts = np.column_stack([Z1g.ravel(), Z2g.ravel()])
+    # Build full (ngrid x ngrid) grid and evaluate copula C(u,v)
+    if DROUGHT_COPULA_TYPE == 't_copula':
+        # Student-t copula: transform to t-quantiles
+        T1v = stats.t.ppf(U1, df=nu)       # shape (ngrid,)
+        T2v = stats.t.ppf(U2, df=nu)       # shape (ngrid,)
+        T1g, T2g = np.meshgrid(T1v, T2v, indexing='ij')
+        pts = np.column_stack([T1g.ravel(), T2g.ravel()])
 
-    mvn = stats.multivariate_normal(mean=[0.0, 0.0], cov=cov)
-    C_uv = np.array([mvn.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
+        # Evaluate multivariate t CDF with correlation rho
+        cov_t = np.array([[1.0, rho], [rho, 1.0]])
+        mvt = stats.multivariate_t(loc=[0.0, 0.0], shape=cov_t, df=nu)
+        C_uv = np.array([mvt.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
+    else:
+        # Gaussian copula: transform to normal quantiles
+        Z1v = stats.norm.ppf(U1)            # shape (ngrid,)
+        Z2v = stats.norm.ppf(U2)            # shape (ngrid,)
+        Z1g, Z2g = np.meshgrid(Z1v, Z2v, indexing='ij')
+        pts = np.column_stack([Z1g.ravel(), Z2g.ravel()])
+
+        # Evaluate multivariate normal CDF with correlation rho
+        cov = np.array([[1.0, rho], [rho, 1.0]])
+        mvn = stats.multivariate_normal(mean=[0.0, 0.0], cov=cov)
+        C_uv = np.array([mvn.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
     
     # Joint exceedance p = 1 - u - v + C(u,v)
     U1m = U1[:, None]
@@ -126,7 +158,9 @@ def calculate_drought_frequency(
         'x2_metric': x2_metric,
         'total_years': denom_years,
         'interarrival_years': E_L_years,
+        'copula_type': DROUGHT_COPULA_TYPE,
         'copula_rho': rho,
+        'copula_nu': nu if DROUGHT_COPULA_TYPE == 't_copula' else None,
         'severity_params': pars_x2,  # x2_metric is severity
         'magnitude_params': pars_x1,  # x1_metric is magnitude
     }
@@ -434,9 +468,19 @@ def analyze_drought_frequency(dataset_id, ssi_window=12):
     print(f"  Max frequency: {result['frequency_matrix'].max():.4f}")
     print(f"  Max return period: {result['return_period_matrix'].max():.1f} years")
     print(f"  Mean interarrival time: {result['interarrival_years']:.2f} years")
+    print(f"  Copula type: {result['copula_type']}")
     print(f"  Copula correlation (ρ): {result['copula_rho']:.4f}")
+    if result['copula_nu'] is not None:
+        print(f"  Copula degrees of freedom (ν): {result['copula_nu']:.2f}")
     print(f"  Severity params (genexpon): {result['severity_params']}")
-    print(f"  Magnitude params (norm): μ={result['magnitude_params'][0]:.3f}, σ={result['magnitude_params'][1]:.3f}")
+    # Magnitude params depend on distribution type
+    mag_params = result['magnitude_params']
+    if len(mag_params) == 4:  # truncnorm_0: (a, b, mu, sigma)
+        print(f"  Magnitude params (truncnorm_0): μ={mag_params[2]:.3f}, σ={mag_params[3]:.3f}")
+    elif len(mag_params) == 2:  # normal: (mu, sigma)
+        print(f"  Magnitude params (norm): μ={mag_params[0]:.3f}, σ={mag_params[1]:.3f}")
+    else:
+        print(f"  Magnitude params: {mag_params}")
 
     return result, syn_droughts, obs_droughts
 
@@ -539,18 +583,41 @@ def plot_4panel_comparison(ssi_window=12,
     obs_droughts = _load_observed_droughts(ssi_window)
 
     # Print comparison summary of copula parameters
-    print(f"\n{'='*60}")
+    print(f"\n{'='*80}")
     print("COPULA PARAMETER COMPARISON ACROSS DATASETS")
-    print(f"{'='*60}")
-    print(f"{'Dataset':<25} {'ρ':>8} {'E[L] (yr)':>12} {'μ_mag':>10} {'σ_mag':>10}")
-    print("-" * 75)
-    for dataset_id, label in datasets.items():
-        res = all_results[dataset_id]
-        print(f"{label:<25} {res['copula_rho']:>8.4f} {res['interarrival_years']:>12.2f} "
-              f"{res['magnitude_params'][0]:>10.3f} {res['magnitude_params'][1]:>10.3f}")
-    print("=" * 75)
-    print("Note: ρ = copula correlation, E[L] = interarrival time,")
-    print("      μ_mag/σ_mag = magnitude distribution parameters (log-normal)")
+    print(f"{'='*80}")
+
+    # Check if using t-copula (from first result)
+    first_result = list(all_results.values())[0]
+    has_nu = first_result['copula_nu'] is not None
+
+    if has_nu:
+        print(f"{'Dataset':<25} {'ρ':>8} {'ν':>8} {'E[L] (yr)':>12} {'μ_mag':>10} {'σ_mag':>10}")
+        print("-" * 80)
+        for dataset_id, label in datasets.items():
+            res = all_results[dataset_id]
+            mag_params = res['magnitude_params']
+            # Extract mu and sigma (handle both normal and truncnorm_0)
+            mu = mag_params[2] if len(mag_params) == 4 else mag_params[0]
+            sigma = mag_params[3] if len(mag_params) == 4 else mag_params[1]
+            print(f"{label:<25} {res['copula_rho']:>8.4f} {res['copula_nu']:>8.2f} "
+                  f"{res['interarrival_years']:>12.2f} {mu:>10.3f} {sigma:>10.3f}")
+        print("=" * 80)
+        print("Note: ρ = copula correlation, ν = degrees of freedom (Student-t),")
+    else:
+        print(f"{'Dataset':<25} {'ρ':>8} {'E[L] (yr)':>12} {'μ_mag':>10} {'σ_mag':>10}")
+        print("-" * 75)
+        for dataset_id, label in datasets.items():
+            res = all_results[dataset_id]
+            mag_params = res['magnitude_params']
+            mu = mag_params[2] if len(mag_params) == 4 else mag_params[0]
+            sigma = mag_params[3] if len(mag_params) == 4 else mag_params[1]
+            print(f"{label:<25} {res['copula_rho']:>8.4f} {res['interarrival_years']:>12.2f} "
+                  f"{mu:>10.3f} {sigma:>10.3f}")
+        print("=" * 75)
+        print("Note: ρ = copula correlation (Gaussian),")
+
+    print("      E[L] = interarrival time, μ_mag/σ_mag = magnitude distribution parameters")
     print("")
 
     # Calculate relative changes (log ratio) for climate scenarios
