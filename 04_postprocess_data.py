@@ -185,34 +185,28 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
     return metrics_df
 
 
-def process_dataset(dataset_id):
+def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     """
-    Process and combine all ensemble sets for a given dataset
+    Combine all ensemble sets and calculate derived metrics (shortage, contributions).
+    This is the most time-intensive part of postprocessing.
 
     Parameters:
     -----------
     dataset_id : str
         Dataset identifier to process
+
+    Returns:
+    --------
+    keep_data : pywrdrb.Data
+        Combined data object with all metrics
     """
 
-    print(f"Processing dataset: {dataset_id}")
+    print(f"\n{'='*80}")
+    print(f"COMBINING ENSEMBLE SETS AND CALCULATING METRICS: {dataset_id}")
+    print(f"{'='*80}")
 
     dataset_config = DATASET_CONFIGS[dataset_id]
-    dataset_type = dataset_config['type']
-
-    # Get ensemble set specs for this dataset
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
-
-    # Check if all sets have been simulated
-    missing_sets = []
-    for spec in ensemble_set_specs:
-        if not os.path.exists(spec.output_file):
-            missing_sets.append(spec.set_id + 1)
-
-    if missing_sets:
-        print(f"WARNING: Missing output files for sets: {missing_sets}")
-        print("Run simulations first!")
-        return False
 
     ### Load data through pywrdrb API #######################################
     print(f"Loading data for postprocessing...")
@@ -429,7 +423,67 @@ def process_dataset(dataset_id):
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     print(f"Exporting combined data to {fname}...")
     keep_data.export(fname)
-    print(f"Successfully processed and saved data for {dataset_id}!")
+    print(f"Successfully combined and exported data for {dataset_id}!")
+
+    return keep_data
+
+
+def process_dataset(dataset_id, recombine_sets=False):
+    """
+    Process and combine all ensemble sets for a given dataset, then calculate performance metrics.
+
+    Parameters:
+    -----------
+    dataset_id : str
+        Dataset identifier to process
+    recombine_sets : bool, optional
+        If True, recombine all ensemble sets from scratch (time-intensive).
+        If False, load existing combined data from HDF5 (much faster).
+        Default: False
+
+    Returns:
+    --------
+    success : bool
+        True if processing completed successfully
+    """
+
+    print(f"\n{'='*80}")
+    print(f"PROCESSING DATASET: {dataset_id}")
+    print(f"{'='*80}")
+
+    dataset_config = DATASET_CONFIGS[dataset_id]
+    ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
+
+    # Check if all sets have been simulated
+    missing_sets = []
+    for spec in ensemble_set_specs:
+        if not os.path.exists(spec.output_file):
+            missing_sets.append(spec.set_id + 1)
+
+    if missing_sets:
+        print(f"WARNING: Missing output files for sets: {missing_sets}")
+        print("Run simulations first!")
+        return False
+
+    # Determine whether to recombine or load existing data
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+
+    if recombine_sets or not os.path.exists(fname):
+        if not os.path.exists(fname):
+            print(f"Combined data file not found. Will recombine ensemble sets.")
+        else:
+            print(f"recombine_sets=True. Will recombine ensemble sets from scratch.")
+
+        # Recombine all ensemble sets (time-intensive)
+        keep_data = combine_ensemble_sets_and_calculate_metrics(dataset_id)
+
+    else:
+        # Load existing combined data (fast)
+        print(f"\nrecombine_sets=False. Loading existing combined data from:")
+        print(f"  {fname}")
+        keep_data = pywrdrb.Data()
+        keep_data.load_from_export(fname)
+        print(f"Successfully loaded combined data for {dataset_id}!")
 
     # Calculate and save performance metrics
     print(f"\nCalculating performance metrics for {dataset_id}...")
@@ -497,12 +551,23 @@ def verify_postprocessing_output(dataset_id):
         return False
 
 
-def main(dataset_id):
-    """Main function"""
+def main(dataset_id, recombine_sets=False):
+    """
+    Main function for postprocessing ensemble data.
 
-    print("=" * 60)
-    print(f"POSTPROCESSING ENSEMBLE DATA: {dataset_id} (SERIAL)")
-    print("=" * 60)
+    Parameters:
+    -----------
+    dataset_id : str
+        Dataset identifier to process
+    recombine_sets : bool, optional
+        If True, recombine all ensemble sets from scratch (time-intensive).
+        If False, load existing combined data from HDF5 (much faster).
+        Default: False
+    """
+
+    print("=" * 80)
+    print(f"POSTPROCESSING ENSEMBLE DATA: {dataset_id}")
+    print("=" * 80)
 
     # Verify dataset
     verify_dataset_id(dataset_id)
@@ -512,28 +577,47 @@ def main(dataset_id):
     print(f"Description: {dataset_config['description']}")
     print(f"Total realizations: {TOTAL_REALIZATIONS}")
     print(f"Ensemble sets: {N_ENSEMBLE_SETS}")
-    print("=" * 60)
+    print(f"Recombine sets: {recombine_sets}")
+    print("=" * 80)
 
     # Process the dataset
-    success = process_dataset(dataset_id)
+    success = process_dataset(dataset_id, recombine_sets=recombine_sets)
 
     if success:
         # Verify output
         verify_postprocessing_output(dataset_id)
 
-    print("=" * 60)
+    print("=" * 80)
     print(f"Postprocessing {'completed successfully' if success else 'failed'}!")
 
 
 if __name__ == "__main__":
 
-    # Get the dataset_id from command line arguments
-    if len(sys.argv) != 2:
-        print("Usage: python 04_postprocess_data_serial.py <dataset_id>")
+    # Get the dataset_id and optional recombine_sets flag from command line arguments
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: python 04_postprocess_data.py <dataset_id> [--recombine]")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
+        print()
+        print("Options:")
+        print("  --recombine    Recombine ensemble sets from scratch (slow, default: False)")
+        print("                 If omitted, will load existing combined data (fast)")
+        print()
+        print("Examples:")
+        print("  python 04_postprocess_data.py stationary_ensemble")
+        print("  python 04_postprocess_data.py stationary_ensemble --recombine")
         sys.exit(1)
 
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
 
-    main(dataset_id)
+    # Check for --recombine flag
+    recombine_sets = False
+    if len(sys.argv) == 3:
+        if sys.argv[2] == '--recombine':
+            recombine_sets = True
+        else:
+            print(f"ERROR: Unknown option '{sys.argv[2]}'")
+            print("Use --recombine to recombine ensemble sets from scratch")
+            sys.exit(1)
+
+    main(dataset_id, recombine_sets=recombine_sets)
