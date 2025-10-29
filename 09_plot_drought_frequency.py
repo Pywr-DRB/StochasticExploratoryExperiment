@@ -96,6 +96,7 @@ def calculate_drought_frequency(
     )
     if starts.size == 0:
         # Fallback: average years per event using counts
+        print("WARNING: No interarrival times found; using counts-based E[L] estimate.")
         counts = df_sorted.groupby('realization_id').size().to_numpy()
         counts = counts[counts > 0]
         if counts.size == 0:
@@ -1004,7 +1005,7 @@ def main(dataset_id):
 
     # Handle special 'comparison' dataset ID for 4-panel figure
     if dataset_id.lower() == 'comparison':
-        for ssi_win in [6, 12]:
+        for ssi_win in [3, 6, 12]:
             print(f"\nGenerating 4-panel comparison figure with SSI window {ssi_win}...")
             plot_4panel_comparison(ssi_window=ssi_win)
         print("=" * 60)

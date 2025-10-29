@@ -215,7 +215,7 @@ def main(dataset_id):
         os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
     
     # Calculate drought metrics (using default SSI windows)
-    success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[6,12])
+    success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3,6,12])
     
     if rank == 0:
         if success:
