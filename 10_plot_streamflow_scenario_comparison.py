@@ -84,26 +84,20 @@ def calculate_weekly_statistics(flow_data):
     Calculate weekly statistics (median, 10th, 90th percentiles) across all realizations.
     Returns week of year (1-52) and statistics.
     """
-    # Add week of year column
-    weekly = flow_data.copy()
-    weekly['week'] = weekly.index.isocalendar().week
-
     # Group by week and calculate statistics across all realizations
     if isinstance(flow_data, pd.DataFrame):
-        # Multiple realizations
-        weekly_stats = weekly.groupby('week').agg({
-            col: ['median', lambda x: np.percentile(x, 10), lambda x: np.percentile(x, 90)]
-            for col in flow_data.columns
-        })
-
+        # Multiple realizations - add week column to DataFrame
+        weekly = flow_data.copy()
+        weekly['week'] = weekly.index.isocalendar().week
+        
         # Aggregate across all realizations
         medians = []
         p10s = []
         p90s = []
         for week in range(1, 53):
-            if week in weekly_stats.index:
-                week_data = weekly[weekly['week'] == week].drop(columns=['week']).values.flatten()
-                week_data = week_data[~np.isnan(week_data)]
+            week_data = weekly[weekly['week'] == week].drop(columns=['week']).values.flatten()
+            week_data = week_data[~np.isnan(week_data)]
+            if len(week_data) > 0:
                 medians.append(np.median(week_data))
                 p10s.append(np.percentile(week_data, 10))
                 p90s.append(np.percentile(week_data, 90))
@@ -114,14 +108,22 @@ def calculate_weekly_statistics(flow_data):
 
         return np.arange(1, 53), np.array(p10s), np.array(medians), np.array(p90s)
     else:
-        # Single time series (historic)
-        weekly_stats = weekly.groupby('week').agg(['median',
-                                                     lambda x: np.percentile(x, 10),
-                                                     lambda x: np.percentile(x, 90)])
+        # Single time series (historic) - convert to DataFrame first
+        weekly_df = pd.DataFrame({'flow': flow_data})
+        weekly_df['week'] = weekly_df.index.isocalendar().week
+        
+        # Group by week and calculate statistics
+        weekly_stats = weekly_df.groupby('week')['flow'].agg([
+            'median',
+            lambda x: np.percentile(x, 10),
+            lambda x: np.percentile(x, 90)
+        ])
+        
         weeks = weekly_stats.index.values
-        p10 = weekly_stats.iloc[:, 1].values
-        median = weekly_stats.iloc[:, 0].values
-        p90 = weekly_stats.iloc[:, 2].values
+        median = weekly_stats['median'].values
+        p10 = weekly_stats['<lambda_0>'].values
+        p90 = weekly_stats['<lambda_1>'].values
+        
         return weeks, p10, median, p90
 
 

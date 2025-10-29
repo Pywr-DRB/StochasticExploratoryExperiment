@@ -5,7 +5,6 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=0
-#SBATCH --exclusive
 
 # Load modules and environment
 module load python/3.11.5

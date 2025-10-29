@@ -60,18 +60,38 @@ def generate_ensemble_set(set_id, dataset_id):
     # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
         Q = load_drb_reconstruction(gage_flow=True)
+        Q_full_reconstruction = Q.copy()
+
         Q_inflow = load_drb_reconstruction(gage_flow=False)
-        Q_all = Q.copy()
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
+        
+        ## Trim Q to be 1980-2019 to match CMIP baseline period
+        # Q = Q.loc['1980-01-01':'2019-12-31', :]
+        # Q_inflow = Q_inflow.loc['1980-01-01':'2019-12-31', :]
+        
         print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
+    
+        # Fit a single KN model to the baseline period (1980-2019)
+        # to get the 'baseline' monthly means
+        # kn_gen = KirschNowakGenerator(Q, debug=False)
+        # kn_gen.preprocessing()
+        # kn_gen.fit()
+        
+        # baseline_mean_month = kn_gen.mean_month.copy()
+        # baseline_std_month = kn_gen.std_month.copy()
+        
     else:
         Q = None
         Q_inflow = None
-        Q_all = None
+        Q_full_reconstruction = None
+        # baseline_mean_month = None
+        # baseline_std_month = None
     
     Q = comm.bcast(Q, root=0)
     Q_inflow = comm.bcast(Q_inflow, root=0)
-    Q_all = comm.bcast(Q_all, root=0)
+    Q_full_reconstruction = comm.bcast(Q_full_reconstruction, root=0)
+    # baseline_mean_month = comm.bcast(baseline_mean_month, root=0)
+    # baseline_std_month = comm.bcast(baseline_std_month, root=0)
     
     # Fit KN generator (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
     if rank == 0:
@@ -96,6 +116,7 @@ def generate_ensemble_set(set_id, dataset_id):
 
         for i, site in enumerate(new_mean_month):
             # Convert from log scale, apply percentage change, convert back
+            # The kn_gen stores means in log scale
             new_mean_month.loc[:, site] = np.exp(prior_mean_month.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
 
         # Convert back to log scale

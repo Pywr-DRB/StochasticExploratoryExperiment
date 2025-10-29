@@ -16,6 +16,13 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # make directories
 mkdir -p logs figures
 
+# SSI copula diagnostic figures (for Supplementary Information)
+python3 07_compare_copula_parameters.py
+
+
+# SSI copula diagnostic figures (for Supplementary Information)
+# python3 09_plot_ssi_copula_diagnostics.py
+
 # Ensemble diagnostic plots for delMontague
 # python3 10_plot_streamflow_scenario_comparison.py delMontague
 
@@ -26,18 +33,8 @@ mkdir -p logs figures
 # python3 09_plot_reservoir_storage_zone_probabilities.py comparison
 
 # # 4-panel performance outcome comparison
-python3 09_plot_performance_outcome_bars.py
+# python3 09_plot_performance_outcome_bars.py
 
 # python3 09_plot_satisficing_scatter.py --all
 
 
-
-
-### OLD
-# python3 09_plot_drought_frequency.py "stationary_ensemble"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_min"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_max"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp245_median"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_min"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_max"
-# python3 09_plot_drought_frequency.py "climate_adjusted_ssp370_median"
