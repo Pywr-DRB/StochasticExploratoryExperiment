@@ -141,8 +141,9 @@ def fit_marginal_distributions(df, distribution_config=None):
         severity_params = (a, b, mu, sigma)
         severity_dist = stats.truncnorm(a, b, loc=mu, scale=sigma)
     else:
-        severity_dist = severity_dist_obj
-        severity_params = severity_dist.fit(severity_data)
+        # Fit parameters and create frozen distribution
+        severity_params = severity_dist_obj.fit(severity_data)
+        severity_dist = severity_dist_obj(*severity_params)
 
     # Fit magnitude
     magnitude_data = df['magnitude'].values
@@ -157,8 +158,9 @@ def fit_marginal_distributions(df, distribution_config=None):
         magnitude_params = (a, b, mu, sigma)
         magnitude_dist = stats.truncnorm(a, b, loc=mu, scale=sigma)
     else:
-        magnitude_dist = magnitude_dist_obj
-        magnitude_params = magnitude_dist.fit(magnitude_data)
+        # Fit parameters and create frozen distribution
+        magnitude_params = magnitude_dist_obj.fit(magnitude_data)
+        magnitude_dist = magnitude_dist_obj(*magnitude_params)
 
     return {
         'severity_dist': severity_dist,
@@ -186,15 +188,9 @@ def transform_to_uniform(df, marginals):
     """
     eps = 1e-12
 
-    # Transform to uniform using fitted marginals
-    u1 = marginals['severity_dist'].cdf(
-        df['severity'].to_numpy(float),
-        *marginals['severity_params']
-    )
-    u2 = marginals['magnitude_dist'].cdf(
-        df['magnitude'].to_numpy(float),
-        *marginals['magnitude_params']
-    )
+    # Transform to uniform using fitted marginals (frozen distributions)
+    u1 = marginals['severity_dist'].cdf(df['severity'].to_numpy(float))
+    u2 = marginals['magnitude_dist'].cdf(df['magnitude'].to_numpy(float))
 
     # Clip to avoid numerical issues
     u1 = np.clip(u1, eps, 1 - eps)

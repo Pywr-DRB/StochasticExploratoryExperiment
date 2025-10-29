@@ -85,9 +85,11 @@ def plot_marginal_fits(df, marginals, ssi_window, dataset_id, output_dir):
     x_sev = np.linspace(0, df['severity'].max(), 1000)
     ax1.hist(df['severity'], bins=200, density=True, alpha=0.7,
             color='skyblue', label='Empirical')
+    # Get distribution name (handle truncnorm_0 special case)
+    sev_dist_name = marginals['severity_dist'].name if hasattr(marginals['severity_dist'], 'name') else 'truncnorm'
     ax1.plot(x_sev,
-            marginals['severity_dist'].pdf(x_sev, *marginals['severity_params']),
-            'r-', lw=2, label=f"{marginals['severity_dist'].name.title()}")
+            marginals['severity_dist'].pdf(x_sev),
+            'r-', lw=2, label=f"{sev_dist_name.title()}")
     ax1.set_xlabel('Severity (log)', fontsize=12, fontweight='bold')
     ax1.set_ylabel('Density', fontsize=12, fontweight='bold')
     ax1.set_title('Severity Marginal Distribution', fontsize=13, fontweight='bold')
@@ -98,9 +100,11 @@ def plot_marginal_fits(df, marginals, ssi_window, dataset_id, output_dir):
     x_mag = np.linspace(0, df['magnitude'].max(), 1000)
     ax2.hist(df['magnitude'], bins=100, density=True, alpha=0.7,
             color='lightcoral', label='Empirical')
+    # Get distribution name (handle truncnorm_0 special case)
+    mag_dist_name = marginals['magnitude_dist'].name if hasattr(marginals['magnitude_dist'], 'name') else 'truncnorm'
     ax2.plot(x_mag,
-            marginals['magnitude_dist'].pdf(x_mag, *marginals['magnitude_params']),
-            'r-', lw=2, label=f"{marginals['magnitude_dist'].name.title()}")
+            marginals['magnitude_dist'].pdf(x_mag),
+            'r-', lw=2, label=f"{mag_dist_name.title()}")
     ax2.set_xlabel('Magnitude (log)', fontsize=12, fontweight='bold')
     ax2.set_ylabel('Density', fontsize=12, fontweight='bold')
     ax2.set_title('Magnitude Marginal Distribution', fontsize=13, fontweight='bold')

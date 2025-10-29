@@ -66,8 +66,9 @@ def calculate_drought_frequency(
 
     # --- Transform to uniform and fit copula ---
     eps = 1e-12
-    u1_data = np.clip(dist_x1.cdf(df[x1_metric].to_numpy(float), *pars_x1), eps, 1 - eps)
-    u2_data = np.clip(dist_x2.cdf(df[x2_metric].to_numpy(float), *pars_x2), eps, 1 - eps)
+    # Distributions are now frozen (parameters already embedded)
+    u1_data = np.clip(dist_x1.cdf(df[x1_metric].to_numpy(float)), eps, 1 - eps)
+    u2_data = np.clip(dist_x2.cdf(df[x2_metric].to_numpy(float)), eps, 1 - eps)
     U = np.column_stack([u1_data, u2_data])
 
     # Fit copula based on config
@@ -105,8 +106,9 @@ def calculate_drought_frequency(
     x1_grid = np.linspace(x1_range[0], x1_range[1], ngrid)
     x2_grid = np.linspace(x2_range[0], x2_range[1], ngrid)
 
-    U1 = np.clip(dist_x1.cdf(x1_grid, *pars_x1), eps, 1 - eps)  # F_X1(x1)
-    U2 = np.clip(dist_x2.cdf(x2_grid, *pars_x2), eps, 1 - eps)  # F_X2(x2)
+    # Distributions are frozen (parameters already embedded)
+    U1 = np.clip(dist_x1.cdf(x1_grid), eps, 1 - eps)  # F_X1(x1)
+    U2 = np.clip(dist_x2.cdf(x2_grid), eps, 1 - eps)  # F_X2(x2)
 
     # Build full (ngrid x ngrid) grid and evaluate copula C(u,v)
     if DROUGHT_COPULA_TYPE == 't_copula':
