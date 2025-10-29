@@ -196,21 +196,19 @@ def plot_qq_plots(df, marginals, ssi_window, dataset_id, output_dir):
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Severity Q-Q plot
+    # Severity Q-Q plot (distributions are now frozen, no sparams needed)
     stats.probplot(
         df['severity'],
         dist=marginals['severity_dist'],
-        sparams=marginals['severity_params'],
         plot=ax1
     )
     ax1.set_title('Severity Q-Q Plot', fontsize=13, fontweight='bold')
     ax1.grid(True, alpha=0.3)
 
-    # Magnitude Q-Q plot
+    # Magnitude Q-Q plot (distributions are now frozen, no sparams needed)
     stats.probplot(
         df['magnitude'],
         dist=marginals['magnitude_dist'],
-        sparams=marginals['magnitude_params'],
         plot=ax2
     )
     ax2.set_title('Magnitude Q-Q Plot', fontsize=13, fontweight='bold')
@@ -314,21 +312,19 @@ def plot_copula_diagnostics(df, marginals, copula, tail, ssi_window, dataset_id,
     """
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
 
-    # Severity Q-Q plot
+    # Severity Q-Q plot (distributions are now frozen, no sparams needed)
     stats.probplot(
         df['severity'],
         dist=marginals['severity_dist'],
-        sparams=marginals['severity_params'],
         plot=ax1
     )
     ax1.set_title('Severity Q-Q Plot', fontsize=13, fontweight='bold')
     ax1.grid(True, alpha=0.3)
 
-    # Magnitude Q-Q plot
+    # Magnitude Q-Q plot (distributions are now frozen, no sparams needed)
     stats.probplot(
         df['magnitude'],
         dist=marginals['magnitude_dist'],
-        sparams=marginals['magnitude_params'],
         plot=ax2
     )
     ax2.set_title('Magnitude Q-Q Plot', fontsize=13, fontweight='bold')
