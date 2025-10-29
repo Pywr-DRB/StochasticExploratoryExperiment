@@ -279,13 +279,20 @@ def fit_t_copula(U, rho_init=None):
         a, b = params
         rho_t = np.tanh(a)
         nu_t = np.exp(b) + 2.0
+
+        # Clip rho to ensure positive definite covariance
+        rho_t = np.clip(rho_t, -0.999, 0.999)
+
         z = stats.t.ppf(U_eps, df=nu_t)
-        ll2 = multivariate_t.logpdf(
-            z,
-            loc=np.zeros(2),
-            shape=np.array([[1.0, rho_t], [rho_t, 1.0]]),
-            df=nu_t
-        )
+
+        # Create covariance matrix with regularization if needed
+        cov_t = np.array([[1.0, rho_t], [rho_t, 1.0]], dtype=float)
+        if np.linalg.det(cov_t) < 1e-10:
+            cov_t += np.eye(2) * 1e-8
+
+        # Create frozen distribution and compute log-likelihood
+        mvt = stats.multivariate_t(loc=np.zeros(2), shape=cov_t, df=nu_t)
+        ll2 = mvt.logpdf(z)
         ll1 = stats.t.logpdf(z[:, 0], df=nu_t) + stats.t.logpdf(z[:, 1], df=nu_t)
         return -(np.sum(ll2 - ll1))
 
