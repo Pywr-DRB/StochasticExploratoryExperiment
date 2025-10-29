@@ -89,7 +89,7 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
         # Filter for June 1 dates
         june1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 6) &
                                         (nyc_storage_pct.index.day == 1)]
-        n_years_high_storage = (june1_storage > 90).sum()
+        n_years_high_storage = (june1_storage >= 95).sum()
 
         # Metric 3: Number of years where minimum NYC storage remains >20% throughout year
         min_annual_storage = nyc_storage_pct.resample('YS').min()
