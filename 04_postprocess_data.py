@@ -98,11 +98,54 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
         # Alternative threshold at 10%
         n_years_above_10pct = (min_annual_storage > 10).sum()
 
+        # Metric 4: NYC Reservoir System Carryover Storage (September 1)
+        sept1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 9) &
+                                         (nyc_storage_pct.index.day == 1)]
+        mean_sept1_storage_pct = sept1_storage.mean()
+        n_years_low_carryover = (sept1_storage < 50).sum()
+
+        # Metric 5: Trenton Flow Target Reliability
+        trenton_shortage = data.shortage[dataset_id][r]['delTrenton']
+        trenton_target = data.mrf_target[dataset_id][r]['delTrenton']
+        annual_trenton_shortage = trenton_shortage.resample('YS').sum()
+        annual_trenton_target = trenton_target.resample('YS').sum()
+        trenton_reliability = 1 - (annual_trenton_shortage / annual_trenton_target)
+        trenton_reliability = trenton_reliability.clip(0, 1)
+        n_years_trenton_reliable = (trenton_reliability > 0.90).sum()
+
+        # Metric 6: NYC Diversion Shortage Frequency
+        nyc_diversion_actual = data.ibt_diversions[dataset_id][r]['nyc']
+        nyc_diversion_demand = data.ibt_demands[dataset_id][r]['nyc']
+        nyc_diversion_shortage = nyc_diversion_demand - nyc_diversion_actual
+        nyc_diversion_shortage[nyc_diversion_shortage < 0] = 0
+        n_days_diversion_shortage = (nyc_diversion_shortage > 0).sum()
+        pct_days_diversion_shortage = 100.0 * n_days_diversion_shortage / len(nyc_diversion_shortage)
+
+        # Metric 7: Maximum Consecutive Days in Drought (Montague shortage)
+        montague_shortage_binary = (montague_shortage > 0).astype(int)
+        # Find consecutive stretches
+        drought_events = montague_shortage_binary.groupby(
+            (montague_shortage_binary != montague_shortage_binary.shift()).cumsum()
+        ).sum()
+        max_consecutive_shortage_days = drought_events.max() if len(drought_events[drought_events > 0]) > 0 else 0
+
+        # Metric 8: Combined NYC Release for Downstream Targets (Mean Annual)
+        total_nyc_contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+        mean_annual_nyc_contribution_mg = total_nyc_contribution.resample('YS').sum().mean()
+        max_annual_nyc_contribution_mg = total_nyc_contribution.resample('YS').sum().max()
+
         metrics[r] = {
             'years_reliable': n_years_reliable,
             'years_high_storage': n_years_high_storage,
             'years_above_20pct': n_years_above_20pct,
-            'years_above_10pct': n_years_above_10pct
+            'years_above_10pct': n_years_above_10pct,
+            'mean_sept1_storage_pct': mean_sept1_storage_pct,
+            'years_low_carryover': n_years_low_carryover,
+            'years_trenton_reliable': n_years_trenton_reliable,
+            'pct_days_nyc_diversion_shortage': pct_days_diversion_shortage,
+            'max_consecutive_drought_days': max_consecutive_shortage_days,
+            'mean_annual_nyc_contribution_mg': mean_annual_nyc_contribution_mg,
+            'max_annual_nyc_contribution_mg': max_annual_nyc_contribution_mg
         }
 
     # Convert to DataFrame
@@ -114,12 +157,30 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
     metrics_df.to_csv(csv_file)
     print(f"  Saved performance metrics to: {csv_file}")
 
-    # Calculate and print percentiles
-    for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
+    # Calculate and print percentiles for key metrics
+    print(f"\n  Key Performance Metrics Summary:")
+    print(f"  {'='*60}")
+
+    count_metrics = ['years_reliable', 'years_high_storage', 'years_above_20pct',
+                     'years_low_carryover', 'years_trenton_reliable']
+    for metric in count_metrics:
         p5 = metrics_df[metric].quantile(0.05)
         p50 = metrics_df[metric].quantile(0.50)
         p95 = metrics_df[metric].quantile(0.95)
-        print(f"    {metric}: p5={p5:.1f}, p50={p50:.1f}, p95={p95:.1f}")
+        print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
+
+    print(f"\n  Other Metrics Summary:")
+    print(f"  {'='*60}")
+    other_metrics = ['pct_days_nyc_diversion_shortage', 'max_consecutive_drought_days',
+                     'mean_sept1_storage_pct', 'mean_annual_nyc_contribution_mg']
+    for metric in other_metrics:
+        p5 = metrics_df[metric].quantile(0.05)
+        p50 = metrics_df[metric].quantile(0.50)
+        p95 = metrics_df[metric].quantile(0.95)
+        if 'pct' in metric or 'storage' in metric:
+            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
+        else:
+            print(f"    {metric:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
 
     return metrics_df
 
