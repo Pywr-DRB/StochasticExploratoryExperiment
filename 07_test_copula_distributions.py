@@ -9,6 +9,12 @@ This script systematically evaluates:
 
 Tests are performed for all SSI windows [3, 6, 12] and datasets.
 
+IMPORTANT: Data is already log-transformed in load_drought_events(), so:
+- severity = log(abs(severity)) → always positive
+- magnitude = log(abs(magnitude)) → always positive
+
+All candidate distributions must support positive-only values (x > 0).
+
 The goal is to determine the optimal statistical model for joint
 severity-magnitude drought probability modeling.
 
@@ -56,19 +62,21 @@ from methods.copula import load_drought_events
 # CANDIDATE DISTRIBUTIONS
 # =============================================================================
 
-# Candidate distributions for severity (log-transformed, positive support)
+# Candidate distributions for severity (log-transformed, positive support only)
+# All these distributions naturally support only positive values
 SEVERITY_CANDIDATES = {
     'genexpon': stats.genexpon,
     'gamma': stats.gamma,
     'weibull': stats.weibull_min,
     'lognorm': stats.lognorm,
     'expon': stats.expon,
+    'truncnorm_0': 'truncnorm',  # Truncated normal at 0 for comparison
 }
 
 # Candidate distributions for magnitude (log-transformed, positive support)
 MAGNITUDE_CANDIDATES = {
     'norm': stats.norm,
-    'truncnorm_0': lambda: stats.truncnorm(0, np.inf, loc=0, scale=1),  # Truncated at 0
+    'truncnorm_0': 'truncnorm',  # Special handling - will be truncated at 0
     'gamma': stats.gamma,
     'lognorm': stats.lognorm,
 }
@@ -85,16 +93,26 @@ def fit_and_test_distribution(data, dist, dist_name):
     Parameters
     ----------
     data : np.ndarray
-        Data to fit (positive values)
+        Data to fit (must be positive, x > 0)
     dist : scipy.stats distribution
-        Distribution to fit
+        Distribution to fit (must support positive values)
     dist_name : str
-        Distribution name
+        Distribution name (use 'truncnorm_0' for truncated normal at 0)
 
     Returns
     -------
     dict
-        Dictionary with fit results and test statistics
+        Dictionary with fit results and test statistics including:
+        - params: fitted parameters
+        - aic, bic: information criteria
+        - ks_stat, ks_pvalue: Kolmogorov-Smirnov test
+        - ad_stat: Anderson-Darling test (when available)
+        - fitted_dist: the fitted distribution object
+
+    Notes
+    -----
+    Special handling for 'truncnorm_0': fits normal distribution,
+    then creates truncated version with lower bound at 0.
     """
     data = data[np.isfinite(data) & (data > 0)]
 
@@ -659,25 +677,27 @@ def analyze_distributions_for_ssi_window(dataset_id, ssi_window, output_dir):
     # Test all candidate distributions for severity
     print("\nTesting severity marginal distributions...")
     severity_fits = []
-    for name, dist in SEVERITY_CANDIDATES.items():
+    for name, dist_obj in SEVERITY_CANDIDATES.items():
         print(f"  Testing {name}...")
-        fit = fit_and_test_distribution(df['severity'].values, dist, name)
+        if name == 'truncnorm_0':
+            # Handle truncnorm specially
+            fit = fit_and_test_distribution(df['severity'].values,
+                                           stats.truncnorm, name)
+        else:
+            fit = fit_and_test_distribution(df['severity'].values, dist_obj, name)
         severity_fits.append(fit)
 
     # Test all candidate distributions for magnitude
     print("\nTesting magnitude marginal distributions...")
     magnitude_fits = []
-    for name, dist_or_func in MAGNITUDE_CANDIDATES.items():
+    for name, dist_obj in MAGNITUDE_CANDIDATES.items():
         print(f"  Testing {name}...")
-        if callable(dist_or_func) and name == 'truncnorm_0':
-            # Handle truncnorm specially
+        if name == 'truncnorm_0':
+            # Handle truncnorm specially - it needs special fitting
             fit = fit_and_test_distribution(df['magnitude'].values,
                                            stats.truncnorm, name)
-        elif callable(dist_or_func):
-            dist = dist_or_func()
-            fit = fit_and_test_distribution(df['magnitude'].values, dist, name)
         else:
-            fit = fit_and_test_distribution(df['magnitude'].values, dist_or_func, name)
+            fit = fit_and_test_distribution(df['magnitude'].values, dist_obj, name)
         magnitude_fits.append(fit)
 
     # Select best distributions (lowest AIC)
