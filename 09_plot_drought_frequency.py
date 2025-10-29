@@ -983,7 +983,7 @@ def main(dataset_id):
 
     # Handle special 'comparison' dataset ID for 4-panel figure
     if dataset_id.lower() == 'comparison':
-        for ssi_win in [6]:
+        for ssi_win in [6, 12]:
             print(f"\nGenerating 4-panel comparison figure with SSI window {ssi_win}...")
             plot_4panel_comparison(ssi_window=ssi_win)
         print("=" * 60)
