@@ -114,8 +114,8 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
         n_years_trenton_reliable = (trenton_reliability > 0.90).sum()
 
         # Metric 6: NYC Diversion Shortage Frequency
-        nyc_diversion_actual = data.ibt_diversions[dataset_id][r]['nyc']
-        nyc_diversion_demand = data.ibt_demands[dataset_id][r]['nyc']
+        nyc_diversion_actual = data.ibt_diversions[dataset_id][r]['delivery_nyc']
+        nyc_diversion_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
         nyc_diversion_shortage = nyc_diversion_demand - nyc_diversion_actual
         nyc_diversion_shortage[nyc_diversion_shortage < 0] = 0
         n_days_diversion_shortage = (nyc_diversion_shortage > 0).sum()
