@@ -153,7 +153,7 @@ def validate_metrics(metrics_df, dataset_id):
 
 def calculate_ensemble_percentiles(metrics_df, metrics_list):
     """
-    Calculate p5, p50, p95 for each metric across realizations.
+    Calculate p1, p50, p99 for each metric across realizations.
 
     Parameters
     ----------
@@ -165,14 +165,14 @@ def calculate_ensemble_percentiles(metrics_df, metrics_list):
     Returns
     -------
     percentiles : dict
-        {'metric_name': [p5, p50, p95], ...}
+        {'metric_name': [p1, p50, p99], ...}
     """
     percentiles = {}
     for metric in metrics_list:
-        p5 = metrics_df[metric].quantile(0.05)
+        p1 = metrics_df[metric].quantile(0.01)
         p50 = metrics_df[metric].quantile(0.50)
-        p95 = metrics_df[metric].quantile(0.95)
-        percentiles[metric] = [p5, p50, p95]
+        p99 = metrics_df[metric].quantile(0.99)
+        percentiles[metric] = [p1, p50, p99]
 
     return percentiles
 
@@ -225,8 +225,8 @@ def plot_4panel_performance_comparison():
 
         # Print summary for requested metrics
         for metric in METRICS_TO_PLOT:
-            p5, p50, p95 = percentiles[metric]
-            print(f"  {metric:40s}: p5={p5:6.1f}, p50={p50:6.1f}, p95={p95:6.1f}")
+            p1, p50, p99 = percentiles[metric]
+            print(f"  {metric:40s}: p1={p1:6.1f}, p50={p50:6.1f}, p99={p99:6.1f}")
 
     # Load historic (reconstruction) metrics for comparison
     print(f"\nLoading historic (reconstruction) metrics...")
@@ -328,12 +328,12 @@ def plot_4panel_performance_comparison():
             # Plot bars for each metric
             x_pos = np.arange(n_metrics)
             p50_values = [stat_perc[m][1] for m in metric_keys]
-            p5_values = [stat_perc[m][0] for m in metric_keys]
-            p95_values = [stat_perc[m][2] for m in metric_keys]
+            p1_values = [stat_perc[m][0] for m in metric_keys]
+            p99_values = [stat_perc[m][2] for m in metric_keys]
 
-            # Error bars (p5 to p95 range)
-            yerr_low = [p50_values[i] - p5_values[i] for i in range(n_metrics)]
-            yerr_high = [p95_values[i] - p50_values[i] for i in range(n_metrics)]
+            # Error bars (p1 to p99 range)
+            yerr_low = [p50_values[i] - p1_values[i] for i in range(n_metrics)]
+            yerr_high = [p99_values[i] - p50_values[i] for i in range(n_metrics)]
 
             bars = ax.bar(x_pos, p50_values, color=colors_abs, alpha=0.8,
                          yerr=[yerr_low, yerr_high], capsize=5,
@@ -390,7 +390,7 @@ def plot_4panel_performance_comparison():
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], marker='_', color='black', linewidth=2, markersize=10,
-               label='90% range (p5-p95)', linestyle='none'),
+               label='98% range (p1-p99)', linestyle='none'),
         Line2D([0], [0], marker='s', color='w', markerfacecolor='gray',
                markersize=10, label='Median (p50)', alpha=0.8)
     ]
