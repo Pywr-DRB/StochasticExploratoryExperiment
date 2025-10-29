@@ -77,6 +77,8 @@ def calculate_drought_frequency(
         copula_params = fit_t_copula(U)
         rho = copula_params['rho']
         nu = copula_params['nu']
+        # Clip rho to ensure positive definite covariance matrix
+        rho = float(np.clip(rho, -0.999, 0.999))
     else:
         # Default to Gaussian copula
         z1 = stats.norm.ppf(u1_data)
@@ -119,7 +121,11 @@ def calculate_drought_frequency(
         pts = np.column_stack([T1g.ravel(), T2g.ravel()])
 
         # Evaluate multivariate t CDF with correlation rho
-        cov_t = np.array([[1.0, rho], [rho, 1.0]])
+        # Ensure covariance matrix is symmetric and positive definite
+        cov_t = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
+        # Add small regularization if needed for numerical stability
+        if np.linalg.det(cov_t) < 1e-10:
+            cov_t += np.eye(2) * 1e-8
         mvt = stats.multivariate_t(loc=[0.0, 0.0], shape=cov_t, df=nu)
         C_uv = np.array([mvt.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
     else:
@@ -130,7 +136,11 @@ def calculate_drought_frequency(
         pts = np.column_stack([Z1g.ravel(), Z2g.ravel()])
 
         # Evaluate multivariate normal CDF with correlation rho
-        cov = np.array([[1.0, rho], [rho, 1.0]])
+        # Ensure covariance matrix is symmetric and positive definite
+        cov = np.array([[1.0, rho], [rho, 1.0]], dtype=float)
+        # Add small regularization if needed for numerical stability
+        if np.linalg.det(cov) < 1e-10:
+            cov += np.eye(2) * 1e-8
         mvn = stats.multivariate_normal(mean=[0.0, 0.0], cov=cov)
         C_uv = np.array([mvn.cdf(p) for p in pts], dtype=float).reshape(ngrid, ngrid)
     
