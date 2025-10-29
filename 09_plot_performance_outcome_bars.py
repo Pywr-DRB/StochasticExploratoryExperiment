@@ -77,6 +77,24 @@ METRIC_DISPLAY_NAMES = {
 COLORS_ABSOLUTE = ['#A23B72', '#F18F01', '#2E86AB']  # Purple, Orange, Blue
 COLORS_CHANGE = ['#D4399B', '#C73E1D', '#06A77D']  # Magenta, Red, Teal
 
+# Reconstruction scaling factor
+# Reconstruction has 79 years, ensembles have 70 years
+# Scale reconstruction metrics to be comparable
+RECONSTRUCTION_YEARS = 79
+ENSEMBLE_YEARS = 70
+RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS  # 70/79 ≈ 0.886
+
+# Metrics that should be scaled (count of years)
+# These metrics count years, so need to be scaled for comparison
+METRICS_TO_SCALE = [
+    'years_reliable',
+    'years_high_storage',
+    'years_above_20pct',
+    'years_above_10pct',
+    'years_low_carryover',
+    'years_trenton_reliable',
+]
+
 
 def load_performance_metrics(dataset_id):
     """
@@ -212,13 +230,23 @@ def plot_4panel_performance_comparison():
 
     # Load historic (reconstruction) metrics for comparison
     print(f"\nLoading historic (reconstruction) metrics...")
+    print(f"  Note: Reconstruction has {RECONSTRUCTION_YEARS} years, ensembles have {ENSEMBLE_YEARS} years")
+    print(f"  Scaling reconstruction year-count metrics by {RECONSTRUCTION_SCALE_FACTOR:.3f}")
     try:
         historic_metrics_df = load_performance_metrics('reconstruction')
         historic_values = {}
         for metric in METRICS_TO_PLOT:
             if metric in historic_metrics_df.columns:
-                historic_values[metric] = historic_metrics_df[metric].iloc[0]
-                print(f"  Historic {metric}: {historic_values[metric]:.1f}")
+                raw_value = historic_metrics_df[metric].iloc[0]
+
+                # Scale metrics that count years to make them comparable
+                if metric in METRICS_TO_SCALE:
+                    scaled_value = raw_value * RECONSTRUCTION_SCALE_FACTOR
+                    historic_values[metric] = scaled_value
+                    print(f"  Historic {metric}: {raw_value:.1f} → {scaled_value:.1f} (scaled)")
+                else:
+                    historic_values[metric] = raw_value
+                    print(f"  Historic {metric}: {raw_value:.1f}")
             else:
                 print(f"  WARNING: Historic metric '{metric}' not found")
 
