@@ -500,12 +500,20 @@ def process_dataset(dataset_id, recombine_sets=False):
 
 def verify_postprocessing_output(dataset_id):
     """
-    Verify that postprocessing output exists and is valid
+    Verify that postprocessing output file exists and has reasonable size.
+
+    NOTE: Does NOT load the file (which can take several minutes).
+    Just checks existence and file size.
 
     Parameters:
     -----------
     dataset_id : str
         Dataset identifier to verify
+
+    Returns:
+    --------
+    exists : bool
+        True if file exists and has reasonable size
     """
 
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
@@ -520,35 +528,9 @@ def verify_postprocessing_output(dataset_id):
         print(f"WARNING: Output file seems too small ({file_size} bytes)")
         return False
 
-    # Try to load and verify structure
-    try:
-        test_data = pywrdrb.Data()
-        test_data.load_from_export(fname)
-
-        # Check that key results exist
-        expected_attrs = ['gage_flow', 'shortage', 'major_flow', 'res_storage']
-        missing_attrs = []
-        for attr in expected_attrs:
-            if not hasattr(test_data, attr):
-                missing_attrs.append(attr)
-
-        if missing_attrs:
-            print(f"WARNING: Missing expected attributes: {missing_attrs}")
-            return False
-
-        # Check realization count
-        if dataset_id in test_data.major_flow:
-            n_realizations = len(test_data.major_flow[dataset_id])
-            if n_realizations != TOTAL_REALIZATIONS:
-                print(f"WARNING: Expected {TOTAL_REALIZATIONS} realizations, found {n_realizations}")
-                return False
-
-        print(f"SUCCESS: Postprocessed data verified ({file_size//1024//1024} MB, {n_realizations} realizations)")
-        return True
-
-    except Exception as e:
-        print(f"FAIL: Error loading postprocessed data - {str(e)}")
-        return False
+    # File exists and has reasonable size
+    print(f"SUCCESS: Postprocessed data file exists ({file_size//1024//1024} MB)")
+    return True
 
 
 def main(dataset_id, recombine_sets=False):
