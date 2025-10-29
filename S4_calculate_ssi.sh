@@ -2,10 +2,9 @@
 #SBATCH --job-name=ssi
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
-#SBATCH --nodes=3
-#SBATCH --ntasks-per-node=40
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=30
 #SBATCH --mem=0
-#SBATCH --exclusive
 
 # Load modules and environment
 module load python/3.11.5
