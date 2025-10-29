@@ -359,6 +359,10 @@ def plot_streamflow_comparison(site='delMontague',
     ax3_top.set_xticks(month_starts)
     ax3_top.set_xticklabels(month_labels, fontsize=10)
     ax3_top.tick_params(length=0)
+    
+    # Make ax 2 and 3 have log y-axis
+    ax2.set_yscale('log')
+    ax3.set_yscale('log')
 
     ### Create single legend at bottom
     handles, leg_labels = ax1.get_legend_handles_labels()
