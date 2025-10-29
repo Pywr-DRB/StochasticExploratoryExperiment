@@ -657,40 +657,54 @@ def plot_4panel_comparison(ssi_window=12,
     print(f"{'='*60}")
 
     T_ref = all_results['stationary_ensemble']['return_period_matrix']
+    mask_ref = all_results['stationary_ensemble']['data_mask']
     eps = 1e-8
 
-    # Combine masks from all datasets - only show regions where ALL datasets have data
-    print("Creating combined data mask...")
-    combined_mask = all_results['stationary_ensemble']['data_mask'].copy()
-    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
-        combined_mask = combined_mask & all_results[dataset_id]['data_mask']
+    # For left panel: mask stationary to only show where stationary has data
+    T_ref_masked = T_ref.copy()
+    T_ref_masked[~mask_ref] = np.nan
+    all_results['stationary_ensemble']['return_period_matrix'] = T_ref_masked
 
-    n_masked = (~combined_mask).sum()
-    n_total = combined_mask.size
-    pct_masked = 100 * n_masked / n_total
-    print(f"  Masking {n_masked}/{n_total} grid cells ({pct_masked:.1f}%) with insufficient data support")
-
+    # For right panels: create three-way classification for each climate scenario
     diff_results = {}
     for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
         T_comp = all_results[dataset_id]['return_period_matrix']
+        mask_climate = all_results[dataset_id]['data_mask']
+
+        # Calculate log ratio for all grid cells
         log_ratio = np.log10(np.maximum(T_comp, eps) / np.maximum(T_ref, eps))
 
-        # Apply mask: set masked regions to NaN
-        log_ratio_masked = log_ratio.copy()
-        log_ratio_masked[~combined_mask] = np.nan
+        # Create three-way mask:
+        # 1. Overlap: both stationary AND climate have data
+        mask_overlap = mask_ref & mask_climate
+        # 2. Stationary-only: data in stationary but NOT in climate
+        mask_stat_only = mask_ref & (~mask_climate)
+        # 3. Climate-only: data in climate but NOT in stationary
+        mask_clim_only = (~mask_ref) & mask_climate
+
+        # For plotting: set non-overlap regions to special values
+        log_ratio_plot = log_ratio.copy()
+        log_ratio_plot[~mask_overlap] = np.nan  # Will handle special regions separately
+
+        n_overlap = mask_overlap.sum()
+        n_stat_only = mask_stat_only.sum()
+        n_clim_only = mask_clim_only.sum()
+        n_total = mask_ref.size
+        print(f"\n{dataset_id}:")
+        print(f"  Overlap (both): {n_overlap} cells ({100*n_overlap/n_total:.1f}%)")
+        print(f"  Stationary-only: {n_stat_only} cells ({100*n_stat_only/n_total:.1f}%)")
+        print(f"  Climate-only: {n_clim_only} cells ({100*n_clim_only/n_total:.1f}%)")
 
         diff_results[dataset_id] = {
-            'log_ratio_matrix': log_ratio_masked,
+            'log_ratio_matrix': log_ratio_plot,
+            'mask_overlap': mask_overlap,
+            'mask_stat_only': mask_stat_only,
+            'mask_clim_only': mask_clim_only,
             'x1_grid': all_results['stationary_ensemble']['x1_grid'],
             'x2_grid': all_results['stationary_ensemble']['x2_grid'],
             'x1_metric': all_results['stationary_ensemble']['x1_metric'],
             'x2_metric': all_results['stationary_ensemble']['x2_metric'],
         }
-
-    # Also apply mask to stationary return period for consistency
-    T_ref_masked = T_ref.copy()
-    T_ref_masked[~combined_mask] = np.nan
-    all_results['stationary_ensemble']['return_period_matrix'] = T_ref_masked
 
     print(f"\n{'='*60}")
     print("Creating multi-panel figure...")
@@ -753,9 +767,10 @@ def plot_4panel_comparison(ssi_window=12,
                 show_grid=True
             )
 
-        else:  # Climate scenario panels (relative change)
+        else:  # Climate scenario panels (relative change with three regions)
             diff_res = diff_results[dataset_id]
 
+            # Plot main overlap region (colormap for log ratio)
             pm_diff = _plot_single_heatmap_panel(
                 ax=ax,
                 data_matrix=diff_res['log_ratio_matrix'],
@@ -772,6 +787,32 @@ def plot_4panel_comparison(ssi_window=12,
                 scatter_size=80,
                 show_grid=True
             )
+
+            # Overlay: Stationary-only regions (droughts that disappear under climate change)
+            # Show as semi-transparent orange/brown
+            if diff_res['mask_stat_only'].any():
+                stat_only_matrix = np.full_like(diff_res['log_ratio_matrix'], np.nan)
+                stat_only_matrix[diff_res['mask_stat_only']] = 1.0  # Dummy value
+                x_edges = _grid_edges_from_centers(diff_res['x2_grid'])
+                y_edges = _grid_edges_from_centers(diff_res['x1_grid'])
+                ax.pcolormesh(
+                    x_edges, y_edges, stat_only_matrix,
+                    cmap=colors.ListedColormap(['#D2691E']),  # Chocolate/brown
+                    alpha=0.7, zorder=2
+                )
+
+            # Overlay: Climate-only regions (new droughts emerging under climate change)
+            # Show as semi-transparent purple/magenta
+            if diff_res['mask_clim_only'].any():
+                clim_only_matrix = np.full_like(diff_res['log_ratio_matrix'], np.nan)
+                clim_only_matrix[diff_res['mask_clim_only']] = 1.0  # Dummy value
+                x_edges = _grid_edges_from_centers(diff_res['x2_grid'])
+                y_edges = _grid_edges_from_centers(diff_res['x1_grid'])
+                ax.pcolormesh(
+                    x_edges, y_edges, clim_only_matrix,
+                    cmap=colors.ListedColormap(['#8B008B']),  # Dark magenta
+                    alpha=0.7, zorder=2
+                )
 
         # Panel title
         title_text = datasets[dataset_id]
@@ -818,12 +859,18 @@ def plot_4panel_comparison(ssi_window=12,
     cbar_diff.set_ticks(diff_ticks)
     cbar_diff.set_ticklabels([f"{t:.1f}" for t in diff_ticks], fontsize=9)
 
-    # Add legend for observed droughts
-    handles = [plt.Line2D([0], [0], marker='^', color='w',
-                         markerfacecolor='black', markeredgecolor='white',
-                         markersize=10, label='Observed', linewidth=0)]
+    # Add legend for observed droughts and special mask regions
+    handles = [
+        plt.Line2D([0], [0], marker='^', color='w',
+                   markerfacecolor='black', markeredgecolor='white',
+                   markersize=10, label='Observed', linewidth=0),
+        plt.Rectangle((0, 0), 1, 1, fc='#D2691E', alpha=0.7, ec='none',
+                     label='Stationary-only'),
+        plt.Rectangle((0, 0), 1, 1, fc='#8B008B', alpha=0.7, ec='none',
+                     label='Climate-only')
+    ]
     fig.legend(handles=handles, loc='upper right', bbox_to_anchor=(0.97, 0.98),
-              fontsize=11, frameon=True, fancybox=True, shadow=True)
+              fontsize=10, frameon=True, fancybox=True, shadow=True)
 
     # Save figure
     if fname is None:
