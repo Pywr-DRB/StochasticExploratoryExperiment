@@ -67,7 +67,7 @@ def calculate_ensemble_percentiles(metrics_df):
     Parameters
     ----------
     metrics_df : pd.DataFrame
-        DataFrame with columns ['years_reliable', 'years_high_storage', 'max_shortage']
+        DataFrame with columns ['years_reliable', 'years_high_storage', 'years_above_20pct']
 
     Returns
     -------
@@ -75,7 +75,7 @@ def calculate_ensemble_percentiles(metrics_df):
         {'years_reliable': [p5, p50, p95], ...}
     """
     percentiles = {}
-    for metric in ['years_reliable', 'years_high_storage', 'max_shortage']:
+    for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
         p5 = metrics_df[metric].quantile(0.05)
         p50 = metrics_df[metric].quantile(0.50)
         p95 = metrics_df[metric].quantile(0.95)
@@ -125,8 +125,25 @@ def plot_4panel_performance_comparison():
               f"p50={percentiles['years_reliable'][1]:.1f}, p95={percentiles['years_reliable'][2]:.1f}")
         print(f"  Years NYC storage high: p5={percentiles['years_high_storage'][0]:.1f}, "
               f"p50={percentiles['years_high_storage'][1]:.1f}, p95={percentiles['years_high_storage'][2]:.1f}")
-        print(f"  Max shortage (MGD): p5={percentiles['max_shortage'][0]:.0f}, "
-              f"p50={percentiles['max_shortage'][1]:.0f}, p95={percentiles['max_shortage'][2]:.0f}")
+        print(f"  Years min storage >20%: p5={percentiles['years_above_20pct'][0]:.1f}, "
+              f"p50={percentiles['years_above_20pct'][1]:.1f}, p95={percentiles['years_above_20pct'][2]:.1f}")
+
+    # Load historic (reconstruction) metrics for comparison
+    print(f"\nLoading historic (reconstruction) metrics...")
+    try:
+        historic_metrics_df = load_performance_metrics('reconstruction')
+        historic_values = {
+            'years_reliable': historic_metrics_df['years_reliable'].iloc[0],
+            'years_high_storage': historic_metrics_df['years_high_storage'].iloc[0],
+            'years_above_20pct': historic_metrics_df['years_above_20pct'].iloc[0]
+        }
+        print(f"  Historic years Montague reliable: {historic_values['years_reliable']:.1f}")
+        print(f"  Historic years NYC storage high: {historic_values['years_high_storage']:.1f}")
+        print(f"  Historic years min storage >20%: {historic_values['years_above_20pct']:.1f}")
+    except FileNotFoundError as e:
+        print(f"WARNING: {e}")
+        print("Historic values will not be shown on plot.")
+        historic_values = None
 
     # Calculate percentage changes from stationary
     print(f"\n{'='*60}")
@@ -138,7 +155,7 @@ def plot_4panel_performance_comparison():
 
     for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
         pct_change = {}
-        for metric in ['years_reliable', 'years_high_storage', 'max_shortage']:
+        for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
             # Calculate % change at each percentile
             eps = 1e-8
             pct_change[metric] = [
@@ -168,11 +185,25 @@ def plot_4panel_performance_comparison():
     dataset_list = list(datasets.keys())
     panel_labels = ['(a)', '(b)', '(c)', '(d)']
 
-    # Metric info
-    metric_names = ['Years Montague\nReliable', 'Years NYC\nStorage High', 'Max Shortage\n(MGD)']
-    metric_keys = ['years_reliable', 'years_high_storage', 'max_shortage']
-    colors_abs = ['#2E86AB', '#A23B72', '#F18F01']  # Blue, Purple, Orange
-    colors_diff = ['#06A77D', '#D4399B', '#C73E1D']  # Teal, Magenta, Red
+    # Metric info - REORDERED: [years_high_storage, years_above_20pct, years_reliable]
+    metric_names = ['Years NYC\nStorage High\non June 1', 'Years Min\nStorage >20%', 'Years Montague\nReliable']
+    metric_keys = ['years_high_storage', 'years_above_20pct', 'years_reliable']
+    colors_abs = ['#A23B72', '#F18F01', '#2E86AB']  # Purple, Orange, Blue
+    colors_diff = ['#D4399B', '#C73E1D', '#06A77D']  # Magenta, Red, Teal
+
+    # Calculate y-axis range for right panels (shared across all 3 climate scenarios)
+    all_pct_values = []
+    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+        for metric in metric_keys:
+            all_pct_values.append(pct_changes[dataset_id][metric][1])  # p50 values
+
+    ymin_shared = min(all_pct_values) * 1.15  # 15% padding
+    ymax_shared = max(all_pct_values) * 1.15
+    # Make symmetric around 0 if it crosses zero
+    if ymin_shared < 0 and ymax_shared > 0:
+        y_abs_max = max(abs(ymin_shared), abs(ymax_shared))
+        ymin_shared = -y_abs_max
+        ymax_shared = y_abs_max
 
     # Plot each panel
     for idx, (ax, dataset_id, panel_label) in enumerate(zip(axes, dataset_list, panel_labels)):
@@ -192,22 +223,23 @@ def plot_4panel_performance_comparison():
                          yerr=[yerr_low, yerr_high], capsize=5,
                          error_kw={'linewidth': 2, 'ecolor': 'black', 'alpha': 0.6})
 
-            # Add value labels on bars
-            for i, (bar, val) in enumerate(zip(bars, p50_values)):
-                height = bar.get_height()
-                if metric_keys[i] == 'max_shortage':
-                    label = f'{val:.0f}'
-                else:
-                    label = f'{val:.0f}'
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       label, ha='center', va='bottom', fontweight='bold', fontsize=10)
+            # Add historic values as scatter points (if available)
+            if historic_values is not None:
+                historic_scatter_values = [historic_values[m] for m in metric_keys]
+                ax.scatter(x_pos, historic_scatter_values, color='red', s=100,
+                          marker='D', edgecolors='darkred', linewidths=2, zorder=10,
+                          label='Historic')
 
             ax.set_xticks(x_pos)
             ax.set_xticklabels(metric_names, fontsize=10)
-            ax.set_ylabel('Absolute Value', fontsize=12, fontweight='bold')
+            ax.set_ylabel('Number of Years (out of 70)', fontsize=12, fontweight='bold')
             ax.set_ylim(bottom=0)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
             ax.set_axisbelow(True)
+
+            # Add legend for historic points
+            if historic_values is not None:
+                ax.legend(loc='upper left', fontsize=9, frameon=True, fancybox=True)
 
         else:  # Climate scenario panels (percentage change)
             pct_change = pct_changes[dataset_id]
@@ -218,19 +250,11 @@ def plot_4panel_performance_comparison():
 
             bars = ax.bar(x_pos, p50_values, color=colors_diff, alpha=0.8)
 
-            # Add value labels on bars
-            for i, (bar, val) in enumerate(zip(bars, p50_values)):
-                height = bar.get_height()
-                offset = 2 if height >= 0 else -10
-                label = f'{val:+.0f}%'
-                ax.text(bar.get_x() + bar.get_width()/2., height + offset,
-                       label, ha='center', va='bottom' if height >= 0 else 'top',
-                       fontweight='bold', fontsize=9)
-
             ax.axhline(0, color='black', linewidth=1.5, linestyle='-', alpha=0.7)
             ax.set_xticks(x_pos)
             ax.set_xticklabels(metric_names, fontsize=10)
             ax.set_ylabel('% Change', fontsize=12, fontweight='bold')
+            ax.set_ylim(ymin_shared, ymax_shared)  # Shared y-axis range
             ax.grid(axis='y', alpha=0.3, linestyle='--')
             ax.set_axisbelow(True)
 

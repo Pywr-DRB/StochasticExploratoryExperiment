@@ -91,13 +91,18 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
                                         (nyc_storage_pct.index.day == 1)]
         n_years_high_storage = (june1_storage > 90).sum()
 
-        # Metric 3: Maximum daily shortage magnitude (MGD)
-        max_shortage = montague_shortage.max()
+        # Metric 3: Number of years where minimum NYC storage remains >20% throughout year
+        min_annual_storage = nyc_storage_pct.resample('YS').min()
+        n_years_above_20pct = (min_annual_storage > 20).sum()
+
+        # Alternative threshold at 10%
+        n_years_above_10pct = (min_annual_storage > 10).sum()
 
         metrics[r] = {
             'years_reliable': n_years_reliable,
             'years_high_storage': n_years_high_storage,
-            'max_shortage': max_shortage
+            'years_above_20pct': n_years_above_20pct,
+            'years_above_10pct': n_years_above_10pct
         }
 
     # Convert to DataFrame
@@ -110,7 +115,7 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations):
     print(f"  Saved performance metrics to: {csv_file}")
 
     # Calculate and print percentiles
-    for metric in ['years_reliable', 'years_high_storage', 'max_shortage']:
+    for metric in ['years_reliable', 'years_high_storage', 'years_above_20pct']:
         p5 = metrics_df[metric].quantile(0.05)
         p50 = metrics_df[metric].quantile(0.50)
         p95 = metrics_df[metric].quantile(0.95)
@@ -369,6 +374,11 @@ def process_dataset(dataset_id):
     print(f"\nCalculating performance metrics for {dataset_id}...")
     realizations = list(keep_data.shortage[dataset_id].keys())
     calculate_and_save_performance_metrics(keep_data, dataset_id, realizations)
+
+    # Also calculate historic (reconstruction) metrics for comparison
+    print(f"\nCalculating historic (reconstruction) performance metrics...")
+    reconstruction_realizations = list(keep_data.shortage['reconstruction'].keys())
+    calculate_and_save_performance_metrics(keep_data, 'reconstruction', reconstruction_realizations)
 
     return True
 
