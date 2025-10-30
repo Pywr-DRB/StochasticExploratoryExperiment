@@ -1,19 +1,16 @@
 """
-Multi-dataset drought metric comparison using hexbin classification.
+Multi-dataset drought metric comparison using 2D histogram classification.
 
 This script visualizes which datasets contain droughts in different regions
-of the drought metric space (e.g., severity vs magnitude). Instead of showing
-density via colormap, each hexbin is classified and colored based on which
-combination of datasets contain droughts in that region:
+of the drought metric space using a clean, gridded approach. Each grid cell
+is classified and colored based on which combination of datasets contain
+droughts in that region.
 
-- Grey: Droughts occur in ALL datasets
-- Dataset-specific colors: Droughts occur in ONLY that dataset
-- Mixed colors: Droughts occur in specific combinations of datasets
-
-This reveals how climate change affects the distribution of drought characteristics:
-- Which drought types emerge only under certain scenarios?
-- Which drought types disappear?
-- Which drought types persist across all scenarios?
+Classification scheme:
+- Grey: Droughts occur in ALL datasets (persistent)
+- Dataset-specific colors: Droughts occur ONLY in that dataset
+- Mixed colors: Droughts occur in specific combinations
+- White/light: No droughts or very few
 
 Usage:
   python 09_plot_drought_metric_comparison.py <ssi_window> <x_metric> <y_metric> [dataset_ids...]
@@ -38,9 +35,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.collections import PolyCollection
-from scipy.spatial import cKDTree
+from matplotlib.colors import ListedColormap
+import seaborn as sns
 import itertools
 import warnings
 warnings.filterwarnings("ignore")
@@ -119,119 +115,41 @@ def validate_metric(metric):
         raise ValueError(f"Invalid metric: {metric}. Must be one of: {VALID_METRICS}")
 
 
-def create_hexbin_grid(x_all, y_all, gridsize=30):
+def create_2d_histogram(x, y, bins=50, x_range=None, y_range=None):
     """
-    Create hexagonal grid covering the data range.
+    Create 2D histogram of data points.
 
     Parameters:
     -----------
-    x_all : np.ndarray
-        All x-values from all datasets
-    y_all : np.ndarray
-        All y-values from all datasets
-    gridsize : int
-        Number of hexagons along x-axis
+    x, y : np.ndarray
+        Data coordinates
+    bins : int or tuple
+        Number of bins in each dimension
+    x_range, y_range : tuple
+        (min, max) for each dimension
 
     Returns:
     --------
-    hex_centers : np.ndarray
-        (N, 2) array of hexagon centers
-    hex_radius : float
-        Hexagon radius
+    H : np.ndarray
+        2D histogram (counts)
+    xedges, yedges : np.ndarray
+        Bin edges
     """
-    # Determine data range with padding
-    x_min, x_max = x_all.min(), x_all.max()
-    y_min, y_max = y_all.min(), y_all.max()
+    if isinstance(bins, int):
+        bins = (bins, bins)
 
-    x_range = x_max - x_min
-    y_range = y_max - y_min
+    H, xedges, yedges = np.histogram2d(
+        x, y,
+        bins=bins,
+        range=[x_range, y_range]
+    )
 
-    # Add 5% padding
-    x_min -= x_range * 0.05
-    x_max += x_range * 0.05
-    y_min -= y_range * 0.05
-    y_max += y_range * 0.05
-
-    # Calculate hexagon dimensions
-    hex_width = (x_max - x_min) / gridsize
-    hex_height = hex_width * np.sqrt(3) / 2  # Regular hexagon height
-
-    # Generate hexagon centers
-    hex_centers = []
-    y_gridsize = int((y_max - y_min) / hex_height) + 1
-
-    for row in range(y_gridsize):
-        y_center = y_min + row * hex_height
-        x_offset = hex_width / 2 if row % 2 == 1 else 0
-
-        for col in range(gridsize + 2):  # +2 to cover edges
-            x_center = x_min + col * hex_width + x_offset
-            hex_centers.append([x_center, y_center])
-
-    hex_centers = np.array(hex_centers)
-    hex_radius = hex_width / 2
-
-    return hex_centers, hex_radius
-
-
-def classify_hexbins(hex_centers, hex_radius, datasets_data, dataset_ids):
-    """
-    Classify each hexbin by which datasets contain points in it.
-
-    Parameters:
-    -----------
-    hex_centers : np.ndarray
-        (N, 2) array of hexagon centers
-    hex_radius : float
-        Hexagon radius
-    datasets_data : dict
-        Dictionary mapping dataset_id to (x, y) tuples
-    dataset_ids : list
-        List of dataset identifiers
-
-    Returns:
-    --------
-    classifications : list
-        List of tuples indicating which datasets are present in each hex
-    """
-    n_datasets = len(dataset_ids)
-    n_hexbins = len(hex_centers)
-
-    # Build KDTree for each dataset for fast lookup
-    trees = {}
-    for dataset_id in dataset_ids:
-        x, y = datasets_data[dataset_id]
-        if len(x) > 0:
-            trees[dataset_id] = cKDTree(np.column_stack([x, y]))
-        else:
-            trees[dataset_id] = None
-
-    # Classify each hexbin
-    classifications = []
-    search_radius = hex_radius * 1.2  # Slightly larger to ensure coverage
-
-    for center in hex_centers:
-        present_datasets = []
-
-        for dataset_id in dataset_ids:
-            if trees[dataset_id] is None:
-                continue
-
-            # Query points within radius
-            indices = trees[dataset_id].query_ball_point(center, search_radius)
-
-            if len(indices) > 0:
-                present_datasets.append(dataset_id)
-
-        # Store as tuple (hashable for dictionary lookup)
-        classifications.append(tuple(sorted(present_datasets)))
-
-    return classifications
+    return H, xedges, yedges
 
 
 def get_classification_colors(dataset_ids):
     """
-    Generate colors for each possible combination of datasets.
+    Generate distinct colors for each possible combination of datasets.
 
     Parameters:
     -----------
@@ -241,7 +159,9 @@ def get_classification_colors(dataset_ids):
     Returns:
     --------
     color_map : dict
-        Maps classification tuple to RGB color
+        Maps classification code (integer) to RGB color
+    code_to_datasets : dict
+        Maps classification code to tuple of dataset_ids
     """
     n_datasets = len(dataset_ids)
 
@@ -249,37 +169,95 @@ def get_classification_colors(dataset_ids):
     base_colors = {}
     for dataset_id in dataset_ids:
         if dataset_id in DATASET_COLORS:
-            # Convert hex to RGB
             hex_color = DATASET_COLORS[dataset_id]
             rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (1, 3, 5))
             base_colors[dataset_id] = rgb
         else:
-            # Default color if not in config
             base_colors[dataset_id] = (0.5, 0.5, 0.5)
 
-    # Build color map for all combinations
-    color_map = {}
+    # Generate all possible combinations and assign codes
+    # Code 0 = empty (no datasets)
+    # Code 1 = all datasets
+    # Codes 2+ = specific combinations
 
-    # Empty (no datasets) -> white
-    color_map[()] = (1.0, 1.0, 1.0)
+    code_to_datasets = {0: ()}
+    datasets_to_code = {(): 0}
+    color_map = {0: (1.0, 1.0, 1.0, 0.0)}  # Transparent white for empty
+
+    code = 1
 
     # All datasets -> grey
     all_datasets = tuple(sorted(dataset_ids))
-    color_map[all_datasets] = (0.5, 0.5, 0.5)
+    code_to_datasets[code] = all_datasets
+    datasets_to_code[all_datasets] = code
+    color_map[code] = (0.6, 0.6, 0.6, 1.0)  # Grey
+    code += 1
 
-    # Single dataset -> use dataset color
-    for dataset_id in dataset_ids:
-        color_map[(dataset_id,)] = base_colors[dataset_id]
+    # Single datasets -> base colors
+    for dataset_id in sorted(dataset_ids):
+        combo = (dataset_id,)
+        code_to_datasets[code] = combo
+        datasets_to_code[combo] = code
+        color_map[code] = base_colors[dataset_id] + (1.0,)  # Add alpha
+        code += 1
 
-    # Combinations of datasets -> blend colors
+    # Combinations of datasets -> blended colors
     for r in range(2, n_datasets):
         for combo in itertools.combinations(sorted(dataset_ids), r):
-            # Average the colors
+            code_to_datasets[code] = combo
+            datasets_to_code[combo] = code
+
+            # Blend colors
             colors_to_blend = [base_colors[did] for did in combo]
             blended = tuple(np.mean([c[i] for c in colors_to_blend]) for i in range(3))
-            color_map[combo] = blended
+            color_map[code] = blended + (1.0,)  # Add alpha
+            code += 1
 
-    return color_map
+    return color_map, code_to_datasets, datasets_to_code
+
+
+def classify_grid_cells(datasets_histograms, dataset_ids, min_count=1):
+    """
+    Classify each grid cell by which datasets have droughts in it.
+
+    Parameters:
+    -----------
+    datasets_histograms : dict
+        Maps dataset_id to 2D histogram array
+    dataset_ids : list
+        List of dataset identifiers
+    min_count : int
+        Minimum number of droughts to consider cell "occupied"
+
+    Returns:
+    --------
+    classification_grid : np.ndarray
+        2D array of classification codes
+    """
+    # Get grid shape from first histogram
+    grid_shape = list(datasets_histograms.values())[0].shape
+
+    # Initialize classification grid
+    classification_grid = np.zeros(grid_shape, dtype=int)
+
+    # Get color/code mapping
+    _, _, datasets_to_code = get_classification_colors(dataset_ids)
+
+    # Classify each cell
+    for i in range(grid_shape[0]):
+        for j in range(grid_shape[1]):
+            # Check which datasets have droughts in this cell
+            present_datasets = []
+
+            for dataset_id in sorted(dataset_ids):
+                if datasets_histograms[dataset_id][i, j] >= min_count:
+                    present_datasets.append(dataset_id)
+
+            # Get classification code
+            combo = tuple(sorted(present_datasets))
+            classification_grid[i, j] = datasets_to_code[combo]
+
+    return classification_grid
 
 
 def plot_drought_metric_comparison(
@@ -288,16 +266,17 @@ def plot_drought_metric_comparison(
     x_metric='severity',
     y_metric='magnitude',
     ssi_window=12,
-    gridsize=30,
+    bins=50,
     figsize=(12, 10),
     include_observed=True,
     obs_droughts=None,
     xlim=None,
     ylim=None,
+    min_count=1,
     fname=None
 ):
     """
-    Plot multi-dataset drought comparison using hexbin classification.
+    Plot multi-dataset drought comparison using 2D histogram classification.
 
     Parameters:
     -----------
@@ -311,18 +290,18 @@ def plot_drought_metric_comparison(
         Metric for y-axis
     ssi_window : int
         SSI window size
-    gridsize : int
-        Number of hexagons along x-axis
+    bins : int
+        Number of bins in each dimension
     figsize : tuple
         Figure size (width, height)
     include_observed : bool
         Whether to overlay observed droughts
     obs_droughts : pd.DataFrame
         Observed drought events
-    xlim : tuple or None
-        X-axis limits (xmin, xmax)
-    ylim : tuple or None
-        Y-axis limits (ymin, ymax)
+    xlim, ylim : tuple or None
+        Axis limits
+    min_count : int
+        Minimum drought count to consider cell occupied
     fname : str
         Output filename
 
@@ -334,9 +313,9 @@ def plot_drought_metric_comparison(
     validate_metric(y_metric)
 
     # Extract data for each dataset
-    datasets_data = {}
     all_x = []
     all_y = []
+    datasets_data = {}
 
     for dataset_id in dataset_ids:
         droughts = datasets_droughts[dataset_id]
@@ -349,81 +328,84 @@ def plot_drought_metric_comparison(
     all_x = np.array(all_x)
     all_y = np.array(all_y)
 
-    # Create hexbin grid
-    print(f"Creating hexagonal grid (gridsize={gridsize})...")
-    hex_centers, hex_radius = create_hexbin_grid(all_x, all_y, gridsize=gridsize)
-    print(f"  Generated {len(hex_centers)} hexagons")
+    # Determine data range
+    if xlim is None:
+        x_range = all_x.max() - all_x.min()
+        x_margin = x_range * 0.05
+        xlim = (all_x.min() - x_margin, all_x.max() + x_margin)
 
-    # Classify hexbins
-    print(f"Classifying hexbins by dataset presence...")
-    classifications = classify_hexbins(hex_centers, hex_radius, datasets_data, dataset_ids)
+    if ylim is None:
+        y_range = all_y.max() - all_y.min()
+        y_margin = y_range * 0.05
+        ylim = (all_y.min() - y_margin, all_y.max() + y_margin)
+
+    # Create 2D histograms for each dataset
+    print(f"Creating 2D histograms ({bins}x{bins} bins)...")
+    datasets_histograms = {}
+
+    for dataset_id in dataset_ids:
+        x, y = datasets_data[dataset_id]
+        H, xedges, yedges = create_2d_histogram(
+            x, y,
+            bins=bins,
+            x_range=xlim,
+            y_range=ylim
+        )
+        datasets_histograms[dataset_id] = H
+        print(f"  {DATASET_LABELS_SHORT.get(dataset_id, dataset_id)}: {len(x)} droughts")
+
+    # Classify grid cells
+    print(f"Classifying grid cells...")
+    classification_grid = classify_grid_cells(
+        datasets_histograms,
+        dataset_ids,
+        min_count=min_count
+    )
+
+    # Get colors
+    color_map, code_to_datasets, _ = get_classification_colors(dataset_ids)
 
     # Count classifications
     from collections import Counter
-    class_counts = Counter(classifications)
-    print(f"  Found {len(class_counts)} unique classifications:")
-    for classification, count in sorted(class_counts.items(), key=lambda x: -x[1])[:10]:
-        if len(classification) == 0:
-            label = "Empty"
-        elif len(classification) == len(dataset_ids):
-            label = "All datasets"
-        elif len(classification) == 1:
-            label = DATASET_LABELS_SHORT.get(classification[0], classification[0])
-        else:
-            labels = [DATASET_LABELS_SHORT.get(d, d) for d in classification]
-            label = " + ".join(labels)
-        print(f"    {label}: {count} hexbins")
+    unique, counts = np.unique(classification_grid, return_counts=True)
+    print(f"  Found {len(unique)} unique classifications:")
 
-    # Get colors for classifications
-    color_map = get_classification_colors(dataset_ids)
+    for code in sorted(unique, key=lambda c: -counts[list(unique).index(c)])[:10]:
+        combo = code_to_datasets[code]
+        count = counts[list(unique).index(code)]
+
+        if len(combo) == 0:
+            label = "Empty"
+        elif len(combo) == len(dataset_ids):
+            label = "All datasets"
+        elif len(combo) == 1:
+            label = DATASET_LABELS_SHORT.get(combo[0], combo[0])
+        else:
+            labels = [DATASET_LABELS_SHORT.get(d, d) for d in combo]
+            label = " + ".join(labels)
+
+        print(f"    {label}: {count} cells")
+
+    # Create colormap from classification codes
+    n_codes = len(color_map)
+    cmap_colors = [color_map.get(i, (1, 1, 1, 0)) for i in range(n_codes)]
+    cmap = ListedColormap(cmap_colors)
 
     # Create figure
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Plot hexagons
-    print(f"Plotting hexagons...")
-    hex_patches = []
-    hex_colors = []
-
-    for center, classification in zip(hex_centers, classifications):
-        # Skip empty hexbins
-        if len(classification) == 0:
-            continue
-
-        # Create hexagon polygon
-        angles = np.linspace(0, 2*np.pi, 7)
-        vertices = np.column_stack([
-            center[0] + hex_radius * np.cos(angles),
-            center[1] + hex_radius * np.sin(angles)
-        ])
-
-        hex_patches.append(vertices)
-        hex_colors.append(color_map[classification])
-
-    # Add hexagons to plot
-    poly_collection = PolyCollection(
-        hex_patches,
-        facecolors=hex_colors,
-        edgecolors='white',
-        linewidths=0.5,
-        alpha=0.8
+    # Plot using imshow (cleaner than pcolormesh)
+    im = ax.imshow(
+        classification_grid.T,
+        origin='lower',
+        extent=[xlim[0], xlim[1], ylim[0], ylim[1]],
+        cmap=cmap,
+        vmin=0,
+        vmax=n_codes-1,
+        aspect='auto',
+        interpolation='nearest',
+        alpha=0.9
     )
-    ax.add_collection(poly_collection)
-
-    # Set axis limits
-    if xlim is None or ylim is None:
-        x_range = all_x.max() - all_x.min()
-        y_range = all_y.max() - all_y.min()
-        x_margin = x_range * 0.05
-        y_margin = y_range * 0.05
-
-        if xlim is None:
-            xlim = (all_x.min() - x_margin, all_x.max() + x_margin)
-        if ylim is None:
-            ylim = (all_y.min() - y_margin, all_y.max() + y_margin)
-
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
 
     # Overlay observed droughts
     if include_observed and obs_droughts is not None and len(obs_droughts) > 0:
@@ -431,7 +413,7 @@ def plot_drought_metric_comparison(
         y_obs = obs_droughts[y_metric].values
         ax.scatter(
             x_obs, y_obs,
-            s=100,
+            s=120,
             marker='^',
             c='black',
             edgecolors='white',
@@ -451,55 +433,64 @@ def plot_drought_metric_comparison(
     title = f"Drought Distribution Comparison: SSI-{ssi_window}\n{y_metric.title()} vs {x_metric.title()}"
     ax.set_title(title, fontsize=14, fontweight='bold', pad=15)
 
+    # Set limits
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+
     # Grid
-    ax.grid(which='both', color='gray', alpha=0.2, linewidth=0.5, linestyle='--')
+    ax.grid(which='both', color='white', alpha=0.3, linewidth=0.5, linestyle='--', zorder=1)
     ax.set_axisbelow(True)
 
     # Create legend
     legend_handles = []
 
-    # All datasets (grey)
-    if len(dataset_ids) > 1:
-        all_patch = mpatches.Patch(
-            facecolor=(0.5, 0.5, 0.5),
-            edgecolor='white',
-            linewidth=0.5,
+    # Collect classifications that actually appear in the grid
+    present_codes = set(unique)
+
+    # Add legend entries in priority order:
+    # 1. All datasets (if present)
+    all_code = 1
+    if all_code in present_codes and len(dataset_ids) > 1:
+        patch = mpatches.Patch(
+            facecolor=color_map[all_code][:3],
+            edgecolor='none',
             label='All datasets'
         )
-        legend_handles.append(all_patch)
+        legend_handles.append(patch)
 
-    # Individual datasets
-    for dataset_id in dataset_ids:
-        if (dataset_id,) in color_map:
+    # 2. Individual datasets (always show)
+    for i, dataset_id in enumerate(sorted(dataset_ids)):
+        code = 2 + i  # Individual dataset codes start at 2
+        if code in present_codes:
             patch = mpatches.Patch(
-                facecolor=color_map[(dataset_id,)],
-                edgecolor='white',
-                linewidth=0.5,
+                facecolor=color_map[code][:3],
+                edgecolor='none',
                 label=f"{DATASET_LABELS_SHORT.get(dataset_id, dataset_id)} only"
             )
             legend_handles.append(patch)
 
-    # Combinations (show most common ones)
-    combo_counts = {k: v for k, v in class_counts.items()
-                    if len(k) > 1 and len(k) < len(dataset_ids) and v > 5}
+    # 3. Most common combinations (show top 3-5)
+    combo_codes = [c for c in present_codes if c > 1 + len(dataset_ids)]  # Skip empty, all, and individuals
+    combo_counts = {c: counts[list(unique).index(c)] for c in combo_codes}
 
-    for combo in sorted(combo_counts.keys(), key=lambda x: -combo_counts[x])[:5]:
-        labels = [DATASET_LABELS_SHORT.get(d, d) for d in combo]
-        label = " + ".join(labels)
-        patch = mpatches.Patch(
-            facecolor=color_map[combo],
-            edgecolor='white',
-            linewidth=0.5,
-            label=label
-        )
-        legend_handles.append(patch)
+    for code in sorted(combo_counts.keys(), key=lambda c: -combo_counts[c])[:5]:
+        combo = code_to_datasets[code]
+        if len(combo) > 1 and len(combo) < len(dataset_ids):
+            labels = [DATASET_LABELS_SHORT.get(d, d) for d in combo]
+            label = " + ".join(labels)
+            patch = mpatches.Patch(
+                facecolor=color_map[code][:3],
+                edgecolor='none',
+                label=label
+            )
+            legend_handles.append(patch)
 
-    # Observed
+    # 4. Observed droughts
     if include_observed and obs_droughts is not None and len(obs_droughts) > 0:
         from matplotlib.lines import Line2D
         obs_handle = Line2D([0], [0], marker='^', color='w',
                            markerfacecolor='black', markeredgecolor='white',
-                           markersize=10, label='Observed', linewidth=0)
+                           markersize=11, label='Observed', linewidth=0)
         legend_handles.append(obs_handle)
 
     # Add legend
@@ -509,7 +500,8 @@ def plot_drought_metric_comparison(
         frameon=True,
         fancybox=True,
         shadow=True,
-        fontsize=10
+        fontsize=10,
+        framealpha=0.95
     )
 
     plt.tight_layout()
@@ -519,7 +511,7 @@ def plot_drought_metric_comparison(
         dataset_str = "_".join([did.replace('climate_adjusted_', '').replace('_ensemble', '')
                                 for did in dataset_ids])
         fname = (
-            f"{FIG_OUTPUT_DIR}/comparison_hexbin_ssi{ssi_window}_"
+            f"{FIG_OUTPUT_DIR}/comparison_grid_ssi{ssi_window}_"
             f"{x_metric}_vs_{y_metric}_{dataset_str}.png"
         )
 
@@ -539,7 +531,7 @@ def main():
     """Main execution function."""
 
     print("=" * 80)
-    print("MULTI-DATASET DROUGHT METRIC COMPARISON (HEXBIN CLASSIFICATION)")
+    print("MULTI-DATASET DROUGHT METRIC COMPARISON (GRID CLASSIFICATION)")
     print("=" * 80)
 
     # Parse command line arguments
@@ -607,7 +599,8 @@ def main():
         x_metric=x_metric,
         y_metric=y_metric,
         ssi_window=ssi_window,
-        gridsize=35,
+        bins=60,
+        min_count=1,
         include_observed=True,
         obs_droughts=obs_droughts
     )
