@@ -273,6 +273,7 @@ def plot_drought_metric_comparison(
     xlim=None,
     ylim=None,
     min_count=1,
+    annotate_extremes=True,
     fname=None
 ):
     """
@@ -302,6 +303,8 @@ def plot_drought_metric_comparison(
         Axis limits
     min_count : int
         Minimum drought count to consider cell occupied
+    annotate_extremes : bool
+        If True, annotate the observed droughts with largest magnitude and severity
     fname : str
         Output filename
 
@@ -423,6 +426,47 @@ def plot_drought_metric_comparison(
             zorder=10
         )
 
+        # Annotate extreme droughts
+        if annotate_extremes:
+            # Find drought with largest magnitude
+            idx_max_mag = obs_droughts['magnitude'].idxmax()
+            max_mag_drought = obs_droughts.loc[idx_max_mag]
+            max_mag_year = pd.to_datetime(max_mag_drought['start']).year
+
+            # Find drought with largest severity
+            idx_max_sev = obs_droughts['severity'].idxmax()
+            max_sev_drought = obs_droughts.loc[idx_max_sev]
+            max_sev_year = pd.to_datetime(max_sev_drought['start']).year
+
+            # Annotate largest magnitude
+            ax.annotate(
+                str(max_mag_year),
+                xy=(max_mag_drought[x_metric], max_mag_drought[y_metric]),
+                xytext=(10, 10),
+                textcoords='offset points',
+                fontsize=11,
+                fontweight='bold',
+                color='black',
+                bbox=dict(boxstyle='round,pad=0.4', facecolor='yellow', edgecolor='black', linewidth=1.5, alpha=0.9),
+                arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.3', color='black', linewidth=2),
+                zorder=11
+            )
+
+            # Annotate largest severity (only if different from largest magnitude)
+            if idx_max_sev != idx_max_mag:
+                ax.annotate(
+                    str(max_sev_year),
+                    xy=(max_sev_drought[x_metric], max_sev_drought[y_metric]),
+                    xytext=(10, -15),
+                    textcoords='offset points',
+                    fontsize=11,
+                    fontweight='bold',
+                    color='black',
+                    bbox=dict(boxstyle='round,pad=0.4', facecolor='orange', edgecolor='black', linewidth=1.5, alpha=0.9),
+                    arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=-0.3', color='black', linewidth=2),
+                    zorder=11
+                )
+
     # Labels and title
     x_label = METRIC_DISPLAY_NAMES.get(x_metric, x_metric)
     y_label = METRIC_DISPLAY_NAMES.get(y_metric, y_metric)
@@ -518,12 +562,6 @@ def plot_drought_metric_comparison(
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
-    # Also save vector version
-    base = fname.rsplit('.', 1)[0]
-    svg_fname = f"{base}.svg"
-    plt.savefig(svg_fname, bbox_inches='tight')
-    print(f"Saved: {svg_fname}")
-
     return fig, ax
 
 
@@ -599,10 +637,11 @@ def main():
         x_metric=x_metric,
         y_metric=y_metric,
         ssi_window=ssi_window,
-        bins=60,
+        bins=30,
         min_count=1,
         include_observed=True,
-        obs_droughts=obs_droughts
+        obs_droughts=obs_droughts,
+        annotate_extremes=True
     )
 
     print("\n" + "=" * 80)

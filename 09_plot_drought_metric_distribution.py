@@ -348,12 +348,6 @@ def plot_drought_metric_distribution(
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     print(f"Saved: {fname}")
 
-    # Also save vector version
-    base = fname.rsplit('.', 1)[0]
-    svg_fname = f"{base}.svg"
-    plt.savefig(svg_fname, bbox_inches='tight')
-    print(f"Saved: {svg_fname}")
-
     return fig, ax
 
 
