@@ -134,6 +134,9 @@ def plot_drought_metric_distribution(
     plot_type='contourf',
     log_transform=False,
     kde_bw_adjust=1.0,
+    kde_thresh=0.01,
+    xlim=None,
+    ylim=None,
     obs_marker='^',
     obs_color='red',
     obs_size=80,
@@ -170,6 +173,13 @@ def plot_drought_metric_distribution(
         If True, apply log transform to metrics before plotting
     kde_bw_adjust : float
         Bandwidth adjustment for KDE (higher = smoother)
+    kde_thresh : float
+        Minimum density threshold for KDE contours (0-1). Lower values show more sparse regions.
+        Default 0.01 (1% of max density). Use 0 to show all densities.
+    xlim : tuple or None
+        Manual x-axis limits (xmin, xmax). If None, auto-computed from data.
+    ylim : tuple or None
+        Manual y-axis limits (ymin, ymax). If None, auto-computed from data.
     obs_marker : str
         Marker style for observed droughts
     obs_color : str
@@ -241,7 +251,7 @@ def plot_drought_metric_distribution(
                 levels=levels,
                 cmap=cmap,
                 fill=True,
-                thresh=0.05,
+                thresh=kde_thresh,
                 bw_adjust=kde_bw_adjust,
                 alpha=0.8
             )
@@ -254,6 +264,7 @@ def plot_drought_metric_distribution(
                 color='white',
                 linewidths=0.8,
                 alpha=0.5,
+                thresh=kde_thresh,
                 bw_adjust=kde_bw_adjust
             )
 
@@ -268,6 +279,26 @@ def plot_drought_metric_distribution(
             print(f"Warning: KDE failed, falling back to hexbin: {e}")
             hb = ax.hexbin(x_syn, y_syn, gridsize=50, cmap=cmap, mincnt=1, bins='log')
             cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
+
+    # Set axis limits to include ALL data points (synthetic + observed)
+    if xlim is None or ylim is None:
+        # Combine synthetic and observed data to determine full range
+        all_x = np.concatenate([x_syn, x_obs]) if len(x_obs) > 0 else x_syn
+        all_y = np.concatenate([y_syn, y_obs]) if len(y_obs) > 0 else y_syn
+
+        # Add 5% padding on each side
+        x_range = all_x.max() - all_x.min()
+        y_range = all_y.max() - all_y.min()
+        x_margin = x_range * 0.05
+        y_margin = y_range * 0.05
+
+        if xlim is None:
+            xlim = (all_x.min() - x_margin, all_x.max() + x_margin)
+        if ylim is None:
+            ylim = (all_y.min() - y_margin, all_y.max() + y_margin)
+
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
 
     # Overlay observed droughts
     if len(x_obs) > 0:
