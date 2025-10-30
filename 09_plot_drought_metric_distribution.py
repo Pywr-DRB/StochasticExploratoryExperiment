@@ -33,7 +33,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib import colors
-from scipy import stats
 import warnings
 warnings.filterwarnings("ignore")
 

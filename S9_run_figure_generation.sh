@@ -31,6 +31,9 @@ mkdir -p logs figures
 # # 4-panel drought return period comparison
 python3 09_plot_drought_frequency.py comparison
 
+# Drought metric distribution plots
+python309_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
+
 # Ensemble diagnostic plots for delMontague
 # python3 10_plot_streamflow_scenario_comparison.py delMontague
 

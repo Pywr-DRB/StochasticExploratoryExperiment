@@ -492,7 +492,7 @@ def analyze_drought_frequency(dataset_id, ssi_window=12):
         x2_metric='severity',
         x1_range=[0, 5.0],
         x2_range=[0, 2.0],
-        ngrid=100,
+        ngrid=50,
         n_realizations=TOTAL_REALIZATIONS,
         n_years=N_YEARS
     )
