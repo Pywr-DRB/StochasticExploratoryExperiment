@@ -42,9 +42,9 @@ python3 09_plot_drought_metric_comparison.py 6 severity magnitude stationary_ens
 python3 09_plot_drought_metric_comparison.py 12 severity magnitude stationary_ensemble climate_adjusted_high
 
 
-python3 09_plot_drought_metric_distribution.py stationary_ensemble 3 severity magnitude
-python3 09_plot_drought_metric_distribution.py stationary_ensemble 6 severity magnitude
-python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 3 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 6 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
 
 # Ensemble diagnostic plots for delMontague
 # python3 10_plot_streamflow_scenario_comparison.py delMontague

@@ -641,7 +641,7 @@ def main():
         min_count=1,
         include_observed=True,
         obs_droughts=obs_droughts,
-        annotate_extremes=True
+        annotate_extremes=False
     )
 
     print("\n" + "=" * 80)
