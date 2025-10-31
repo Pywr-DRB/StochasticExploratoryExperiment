@@ -221,7 +221,7 @@ def plot_drought_metric_distribution(
     # Create joint plot based on type
     if plot_type == 'hexbin':
         # Hexagonal binning (good for very large datasets)
-        hb = ax.hexbin(x_syn, y_syn, gridsize=50, cmap=cmap, mincnt=1, bins='log')
+        hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
         cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
 
     elif plot_type == 'contour':
@@ -238,7 +238,7 @@ def plot_drought_metric_distribution(
             )
         except Exception as e:
             print(f"Warning: KDE failed, falling back to hexbin: {e}")
-            hb = ax.hexbin(x_syn, y_syn, gridsize=50, cmap=cmap, mincnt=1, bins='log')
+            hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
             cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
 
     else:  # 'contourf' (default)
@@ -277,7 +277,7 @@ def plot_drought_metric_distribution(
 
         except Exception as e:
             print(f"Warning: KDE failed, falling back to hexbin: {e}")
-            hb = ax.hexbin(x_syn, y_syn, gridsize=50, cmap=cmap, mincnt=1, bins='log')
+            hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
             cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
 
     # Set axis limits to include ALL data points (synthetic + observed)
@@ -464,7 +464,8 @@ def main():
             x_metric=x_metric,
             y_metric=y_metric,
             dataset_id=dataset_id,
-            ssi_window=ssi_window
+            ssi_window=ssi_window,
+            plot_type='hexbin',
         )
 
     else:
