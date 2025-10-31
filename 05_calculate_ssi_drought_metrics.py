@@ -74,6 +74,15 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         realization_ids = list(syn_ensemble.keys())
         n_realizations = len(realization_ids)
+
+        ## Calculate the nyc_aggregate flow as the sum of
+        nyc_gages = ["01425000", "01417000", "01436000"]
+        for real_id, df in syn_ensemble.items():
+            df['nyc_aggregate'] = df[nyc_gages].sum(axis=1)
+            
+            # add it back to the dict
+            syn_ensemble[real_id] = df
+        
     else:
         syn_ensemble = None
         realization_ids = None
@@ -110,7 +119,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         if rank == 0:
             print(f"\nProcessing SSI window: {ssi_window} months")
 
-        node = 'delMontague'
+        node = 'nyc_aggregate'
 
         # Initialize calculators
         drought_calculator = SSIDroughtMetrics()
