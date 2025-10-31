@@ -50,6 +50,11 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     Q = load_drb_reconstruction()
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
+
+    # Calculate nyc_aggregate for historical data
+    nyc_gages = ["01425000", "01417000", "01436000"]
+    Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
+
     Q_monthly = Q.resample('MS').sum()
 
     if rank == 0:
