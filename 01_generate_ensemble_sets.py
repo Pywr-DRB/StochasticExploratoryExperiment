@@ -20,7 +20,7 @@ from sglib.methods.nonparametric.kirsch_nowak import KirschNowakGenerator
 from sglib.utils.load import HDF5Manager
 
 from methods.load import load_drb_reconstruction
-from config import *
+from methods.config import *
 
 def generate_ensemble_set(set_id, dataset_id):
     """

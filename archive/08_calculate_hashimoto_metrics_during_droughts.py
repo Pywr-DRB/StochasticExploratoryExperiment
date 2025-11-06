@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 
-from config import *
+from methods.config import *
 
 
 def calculate_hashimoto_metrics_during_droughts(dataset_id, ssi_windows=[3, 6, 12]):

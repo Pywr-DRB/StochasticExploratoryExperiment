@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from config import *
+from methods.config import *
 from methods.load import load_ffmp_boundaries
 from methods.utils import calculate_water_year_period_index
 from methods.verification import verify_postprocessing_output

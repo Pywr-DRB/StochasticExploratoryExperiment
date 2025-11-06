@@ -10,7 +10,7 @@ from collections import defaultdict
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import *
+from methods.config import *
 
 
 def calculate_drought_frequency(
@@ -46,7 +46,7 @@ def calculate_drought_frequency(
 
     # --- Fit marginals using config-based distributions ---
     from methods.copula import fit_marginal_distributions, fit_t_copula
-    from config import DROUGHT_COPULA_TYPE
+    from methods.config import DROUGHT_COPULA_TYPE
 
     # Create temporary dataframe for fitting
     df_temp = pd.DataFrame({

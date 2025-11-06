@@ -23,7 +23,7 @@ from matplotlib.colors import TwoSlopeNorm
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import *
+from methods.config import *
 
 
 # Output directory

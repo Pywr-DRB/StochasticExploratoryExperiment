@@ -2,9 +2,9 @@ import os
 import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 
-from config import N_YEARS, N_REALIZATIONS 
-from config import START_DATE, END_DATE
-from config import OUTPUT_DIR
+from methods.config import N_YEARS, N_REALIZATIONS 
+from methods.config import START_DATE, END_DATE
+from methods.config import OUTPUT_DIR
 
 inflow_type = 'stationary_ensemble'
 ensemble_folder = "./pywrdrb/inputs/stationary_ensemble/" 

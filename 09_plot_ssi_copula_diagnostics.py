@@ -37,7 +37,7 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import *
+from methods.config import *
 from methods.copula import (
     load_drought_events,
     fit_marginal_distributions,

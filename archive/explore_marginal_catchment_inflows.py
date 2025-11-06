@@ -8,7 +8,7 @@ import pywrdrb
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 
 from methods.load import load_drb_reconstruction
-from config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
 
 #%% Load pywrdrb output
 

@@ -27,7 +27,7 @@ import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import *
+from methods.config import *
 
 # Output directory
 FIG_DIR_SATISFICING = f"{FIG_DIR}/satisficing_comparison"

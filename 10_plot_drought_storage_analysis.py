@@ -39,7 +39,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from config import *
+from methods.config import *
 from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS_SHORT
 
 # Output directory

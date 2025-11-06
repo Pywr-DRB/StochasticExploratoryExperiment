@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
-from config import STATIONARY_ENSEMBLE_SETS
+from methods.config import STATIONARY_ENSEMBLE_SETS
 
 
 ### Loading data

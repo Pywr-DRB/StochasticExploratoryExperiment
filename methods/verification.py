@@ -8,7 +8,7 @@ the workflow to ensure proper sequencing of operations.
 
 import os
 import sys
-from config import ROOT_DIR
+from methods.config import ROOT_DIR
 
 
 def verify_file_exists(filepath, error_message=None):

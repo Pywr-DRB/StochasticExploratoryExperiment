@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 
 
 from methods.plotting.drought import drought_metric_scatter_plot
-from config import verify_ensemble_type
-from config import FIG_DIR
+from methods.config import verify_ensemble_type
+from methods.config import FIG_DIR
 
 
 

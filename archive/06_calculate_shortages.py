@@ -19,9 +19,9 @@ from sglib import HDF5Manager
 
 from methods.utils import combine_multiple_ensemble_sets_in_data
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
-from config import RECONSTRUCTION_OUTPUT_FNAME
-from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
-from config import verify_ensemble_type
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME
+from methods.config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
+from methods.config import verify_ensemble_type
 
 if __name__ == "__main__":
     # Get ensemble type from command line arguments

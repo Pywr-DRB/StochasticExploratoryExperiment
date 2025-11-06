@@ -20,7 +20,7 @@ import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers, combine_batched_hdf5_outputs
 
 from methods.utils import get_parameter_subset_to_export
-from config import *
+from methods.config import *
 
 def run_ensemble_set_simulations(set_id, ensemble_type):
     """

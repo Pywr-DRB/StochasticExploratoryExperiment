@@ -29,7 +29,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from config import *
+from methods.config import *
 
 # Output directory
 FIG_DIR_SHORTAGE = f"{FIG_DIR}/shortage_occurrence"

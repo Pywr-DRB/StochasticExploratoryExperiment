@@ -74,7 +74,7 @@ def get_marginal_distribution(metric_name, distribution_config=None):
         Distribution object
     """
     if distribution_config is None:
-        from config import DROUGHT_MARGINAL_DISTRIBUTIONS
+        from methods.config import DROUGHT_MARGINAL_DISTRIBUTIONS
         distribution_config = DROUGHT_MARGINAL_DISTRIBUTIONS
 
     dist_name = distribution_config.get(metric_name)

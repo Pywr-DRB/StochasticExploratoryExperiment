@@ -30,7 +30,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from config import *
+from methods.config import *
 from methods.load import load_drought_events
 from methods.verification import verify_postprocessing_output
 from methods.metrics.satisficing import (

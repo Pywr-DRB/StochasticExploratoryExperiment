@@ -6,7 +6,7 @@ import pywrdrb
 from sglib import HDF5Manager
 
 from methods.utils import combine_multiple_ensemble_sets_in_data
-from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
+from methods.config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
 
 
 ensemble_type =  'stationary' # 'climate_adjusted'  # or 'stationary'

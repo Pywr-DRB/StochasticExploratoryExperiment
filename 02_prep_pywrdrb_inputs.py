@@ -17,7 +17,7 @@ from pywrdrb.pre import (
     PredictedDiversionEnsemblePreprocessor
 )
 
-from config import *
+from methods.config import *
 
 def prep_ensemble_set(set_id, dataset_id):
     """

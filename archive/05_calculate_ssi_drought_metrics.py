@@ -11,8 +11,8 @@ from sglib import Ensemble, HDF5Manager
 
 from methods.utils import combine_multiple_ensemble_sets_in_data
 from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
-from config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
-from config import verify_ensemble_type
+from methods.config import STATIONARY_ENSEMBLE_SETS, CLIMATE_ADJUSTED_ENSEMBLE_SETS
+from methods.config import verify_ensemble_type
 
 
 EXPORT_SSI_HDF5 = False

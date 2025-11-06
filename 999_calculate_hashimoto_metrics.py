@@ -9,9 +9,9 @@ import pywrdrb
 
 
 
-from config import verify_ensemble_type
+from methods.config import verify_ensemble_type
 from methods.metrics.shortfall import annual_max_positive_streak
-from config import FIG_DIR
+from methods.config import FIG_DIR
 
 ### Load pywrdrb output
 

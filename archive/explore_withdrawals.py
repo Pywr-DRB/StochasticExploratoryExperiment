@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 import pywrdrb
 
-from config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
 
 #%% Load pywrdrb output
 

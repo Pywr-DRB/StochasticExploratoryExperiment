@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-from config import RECONSTRUCTION_OUTPUT_FNAME
-from config import verify_ensemble_type
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME
+from methods.config import verify_ensemble_type
 
 # Get ensemble type from command line arguments
 ensemble_type = sys.argv[1]

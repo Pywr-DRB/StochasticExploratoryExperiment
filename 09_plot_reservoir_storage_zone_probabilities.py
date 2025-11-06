@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from config import *
+from methods.config import *
 
 
 # Input/output directories

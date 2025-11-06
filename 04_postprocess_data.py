@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
-from config import *
+from methods.config import *
 
 # Output directory for performance metrics
 PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"

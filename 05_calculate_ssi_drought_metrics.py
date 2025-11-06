@@ -14,7 +14,7 @@ from sglib import Ensemble, HDF5Manager
 from methods.load import load_drb_reconstruction
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
-from config import *
+from methods.config import *
 
 EXPORT_SSI_HDF5 = False
 

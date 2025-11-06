@@ -13,7 +13,7 @@ import pywrdrb
 from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 from pywrdrb.pre import PredictedInflowEnsemblePreprocessor
 
-from config import *
+from methods.config import *
 
 def prep_ensemble_set(set_id, ensemble_type):
     """

@@ -12,7 +12,7 @@ from methods.plotting.uh_drought import drought_metric_scatter_plot, drought_met
 
 
 from methods.metrics.shortfall import get_shortfall_metrics, calculate_hashimoto_metrics
-from config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME, STATIONARY_ENSEMBLE_OUTPUT_FNAME
 
 #%% Load data from export
 

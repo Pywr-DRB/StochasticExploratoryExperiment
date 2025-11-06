@@ -48,7 +48,7 @@ from sklearn.metrics import (
 from scipy.stats import f_oneway, kruskal
 from sklearn.metrics import pairwise_distances
 
-from config import *
+from methods.config import *
 from methods.load import load_drought_events
 
 # Output directories

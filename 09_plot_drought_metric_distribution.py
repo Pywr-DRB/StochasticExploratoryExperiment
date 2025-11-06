@@ -36,7 +36,7 @@ from matplotlib import colors
 import warnings
 warnings.filterwarnings("ignore")
 
-from config import *
+from methods.config import *
 
 
 # Output directory

@@ -56,7 +56,7 @@ from scipy import stats
 
 import pywrdrb
 from methods.load import load_drb_reconstruction
-from config import *
+from methods.config import *
 from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS, HISTORIC_COLOR, HISTORIC_LABEL
 
 

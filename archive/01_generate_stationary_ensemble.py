@@ -12,8 +12,8 @@ from sglib.methods.nonparametric.kirsch_nowak import KirschNowakGenerator
 from sglib.utils.load import HDF5Manager
 
 from methods.load import load_drb_reconstruction
-from config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
-from config import N_REALIZATIONS, N_YEARS
+from methods.config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
+from methods.config import N_REALIZATIONS, N_YEARS
 
 
 #%% Loading data ##################################

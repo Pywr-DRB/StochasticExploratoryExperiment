@@ -6,7 +6,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from sglib.utils.load import HDF5Manager
-from config import RECONSTRUCTION_OUTPUT_FNAME
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"

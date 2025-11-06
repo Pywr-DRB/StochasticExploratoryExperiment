@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 from sglib.utils.load import HDF5Manager
 from sglib.plotting.plot import plot_fdc_ranges
 from methods.load import load_drb_reconstruction
-from config import gage_flow_ensemble_fname, catchment_inflow_ensemble_fname
-from config import FIG_DIR
-from config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
+from methods.config import gage_flow_ensemble_fname, catchment_inflow_ensemble_fname
+from methods.config import FIG_DIR
+from methods.config import pywrdrb_nodes_to_generate, pywrdrb_nodes_to_regress
 
 ### Loading data
 ## Historic reconstruction data

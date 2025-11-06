@@ -54,7 +54,7 @@ from scipy.stats import (
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import *
+from methods.config import *
 from methods.copula import load_drought_events
 
 
