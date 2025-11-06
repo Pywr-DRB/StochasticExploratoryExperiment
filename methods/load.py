@@ -4,7 +4,9 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
+import pywrdrb
 from sglib.utils.load import HDF5Manager
+from config import RECONSTRUCTION_OUTPUT_FNAME
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
@@ -68,6 +70,34 @@ def load_drought_events(dataset_id, ssi_window):
     print(f"  Unique realizations: {df['realization_id'].nunique()}")
 
     return df
+
+
+def load_ffmp_boundaries():
+    """
+    Load FFMP level boundaries from reconstruction data.
+
+    This function uses a cache to avoid reloading the data multiple times
+    within a single script execution. The boundaries are converted from
+    fraction to percentage (0-100 scale).
+
+    Returns
+    -------
+    pd.DataFrame
+        FFMP level boundaries as percentages (0-100) for NYC reservoir system
+
+    Examples
+    --------
+    >>> boundaries = load_ffmp_boundaries()
+    >>> boundaries.columns
+    Index(['L1a', 'L1b', 'L2', 'L3', 'L4', 'L5', 'drought', 'normal'], dtype='object')
+    """
+    if not hasattr(load_ffmp_boundaries, '_cache'):
+        print("Loading FFMP level boundaries from reconstruction...")
+        ffmp_data = pywrdrb.Data(results_sets=["ffmp_level_boundaries"])
+        ffmp_data.load_output(output_filenames=[RECONSTRUCTION_OUTPUT_FNAME])
+        boundaries = ffmp_data.ffmp_level_boundaries['reconstruction'][0] * 100  # Convert to %
+        load_ffmp_boundaries._cache = boundaries
+    return load_ffmp_boundaries._cache
 
 
 def load_and_combine_ensemble_sets(ensemble_sets,

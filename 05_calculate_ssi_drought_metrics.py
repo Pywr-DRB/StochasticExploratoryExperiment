@@ -12,19 +12,11 @@ from sglib import Ensemble, HDF5Manager
 
 
 from methods.load import load_drb_reconstruction
+from methods.utils import distribute_realizations_across_ranks
+from methods.verification import verify_postprocessing_output
 from config import *
 
 EXPORT_SSI_HDF5 = False
-# Partition realizations (any deterministic scheme)
-def slice_for_rank(ids, r, p):
-    n = len(ids)
-    base = n // p
-    extra = n % p
-    if r < extra:
-        s = r * (base + 1); e = s + base + 1
-    else:
-        s = r * base + extra; e = s + base
-    return ids[s:e]
 
 
 def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
@@ -60,13 +52,19 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     if rank == 0:
         print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
 
+    # Verify postprocessed data exists
+    if rank == 0:
+        try:
+            verify_postprocessing_output(dataset_id)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}")
+            return False
+
+    # Wait for rank 0 verification
+    comm.barrier()
+
     # Load synthetic ensemble (on disk)
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-    if not os.path.exists(fname):
-        if rank == 0:
-            print(f"ERROR: Postprocessed data not found: {fname}")
-            print("Run postprocessing (04_postprocess_data.py) first!")
-        return False
 
     # --- Only rank 0 loads the export; others wait for metadata ---
     if rank == 0:
@@ -98,12 +96,12 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     realization_ids = comm.bcast(realization_ids, root=0)
 
     # Determine each rank's slice
-    my_realizations = slice_for_rank(realization_ids, rank, size)
+    my_realizations = distribute_realizations_across_ranks(realization_ids, rank, size)
 
     # --- Distribute only the needed realizations per rank (send/recv) ---
     if rank == 0:
         for r in range(size):
-            r_ids = slice_for_rank(realization_ids, r, size)
+            r_ids = distribute_realizations_across_ranks(realization_ids, r, size)
             small = {real_id: syn_ensemble[real_id] for real_id in r_ids}
             if r == 0:
                 local_syn_ensemble = small

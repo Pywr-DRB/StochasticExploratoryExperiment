@@ -35,14 +35,6 @@ from config import *
 PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 os.makedirs(PERFORMANCE_METRICS_DIR, exist_ok=True)
 
-# Storage capacities for NYC reservoirs (MG)
-NYC_STORAGE_CAPACITIES = {
-    'cannonsville': 95706,
-    'pepacton': 140190,
-    'neversink': 34941
-}
-NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())
-
 
 def calculate_and_save_performance_metrics(data, dataset_id, realizations):
     """

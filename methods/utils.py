@@ -1,6 +1,137 @@
 import pywrdrb
 import pandas as pd
+import numpy as np
 import sys
+
+
+def distribute_realizations_across_ranks(realization_ids, rank, num_ranks):
+    """
+    Distribute realizations across MPI ranks using deterministic slicing.
+
+    This function partitions a list of realization IDs across MPI ranks,
+    ensuring that each rank gets approximately equal work with the
+    remainder distributed among the first ranks.
+
+    Parameters
+    ----------
+    realization_ids : list
+        List of realization IDs to distribute
+    rank : int
+        Current MPI rank (0-indexed)
+    num_ranks : int
+        Total number of MPI ranks
+
+    Returns
+    -------
+    list
+        Subset of realization IDs assigned to this rank
+
+    Examples
+    --------
+    >>> ids = list(range(100))
+    >>> distribute_realizations_across_ranks(ids, 0, 4)  # Rank 0 gets IDs 0-24
+    >>> distribute_realizations_across_ranks(ids, 1, 4)  # Rank 1 gets IDs 25-49
+    """
+    n = len(realization_ids)
+    base = n // num_ranks
+    extra = n % num_ranks
+
+    if rank < extra:
+        start = rank * (base + 1)
+        end = start + base + 1
+    else:
+        start = rank * base + extra
+        end = start + base
+
+    return realization_ids[start:end]
+
+
+def calculate_water_year_period_index(dates, period='daily', origin='june1'):
+    """
+    Map dates to water year period index (1-based).
+
+    This function converts dates to period indices based on water year
+    starting from June 1. Supports daily (1-366), weekly (1-53), or
+    monthly (1-12) periods.
+
+    Parameters
+    ----------
+    dates : pd.DatetimeIndex
+        Dates to convert to period indices
+    period : str, default='daily'
+        Period type: 'daily', 'weekly', or 'monthly'
+    origin : str, default='june1'
+        Water year origin (currently only 'june1' supported)
+
+    Returns
+    -------
+    np.ndarray
+        Period indices (1-based) for each date
+
+    Examples
+    --------
+    >>> dates = pd.date_range('2020-06-01', '2020-06-07')
+    >>> calculate_water_year_period_index(dates, 'daily')
+    array([1, 2, 3, 4, 5, 6, 7])
+    >>> calculate_water_year_period_index(dates, 'weekly')
+    array([1, 1, 1, 1, 1, 1, 1])
+    """
+    dates = pd.DatetimeIndex(dates)
+
+    if period not in ('daily', 'weekly', 'monthly'):
+        raise ValueError("period must be one of {'daily','weekly','monthly'}")
+
+    # Calculate June 1 for current and previous year
+    june1_this_year = pd.to_datetime(dates.year.astype(str) + '-06-01')
+    is_after_june1 = dates >= june1_this_year
+    june1_prev_year = pd.to_datetime((dates.year - 1).astype(str) + '-06-01')
+
+    # Day of water year (1-based)
+    day_of_wy = np.where(
+        is_after_june1,
+        (dates - june1_this_year).days + 1,
+        (dates - june1_prev_year).days + 1
+    )
+
+    if period == 'daily':
+        return day_of_wy
+    elif period == 'weekly':
+        return ((day_of_wy - 1) // 7) + 1
+    else:  # monthly
+        wy_month = ((dates.month - 6) % 12) + 1
+        return wy_month
+
+
+def get_nyc_storage_capacities():
+    """
+    Get NYC reservoir storage capacities.
+
+    Returns
+    -------
+    dict
+        Storage capacities in million gallons for each NYC reservoir
+    dict
+        Contains 'capacities' (dict) and 'total' (float)
+
+    Examples
+    --------
+    >>> caps = get_nyc_storage_capacities()
+    >>> caps['capacities']['cannonsville']
+    95706
+    >>> caps['total']
+    270837
+    """
+    capacities = {
+        'cannonsville': 95706,
+        'pepacton': 140190,
+        'neversink': 34941
+    }
+
+    return {
+        'capacities': capacities,
+        'total': sum(capacities.values())
+    }
+
 
 def get_parameter_subset_to_export(all_parameter_names, results_set_subset):
     output_loader = pywrdrb.load.Output(output_filenames=[]) # empty dataloader to use methods

@@ -32,6 +32,7 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from config import *
 from methods.load import load_drought_events
+from methods.verification import verify_postprocessing_output
 from methods.metrics.satisficing import (
     calculate_satisficing_conditions,
     calculate_satisficing_during_droughts,
@@ -340,13 +341,11 @@ def main(dataset_id, ssi_window):
     print(f"SATISFICING ANALYSIS: {dataset_id}, SSI-{ssi_window}")
     print("=" * 80)
 
+    # Verify postprocessed data exists
+    verify_postprocessing_output(dataset_id)
+
     # Load postprocessed simulation data
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-    if not os.path.exists(fname):
-        print(f"\nERROR: Postprocessed data not found: {fname}")
-        print("Run postprocessing (04_postprocess_data.py) first!")
-        return
-
     print(f"\nLoading postprocessed data from: {fname}")
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'shortage', 'contribution'])

@@ -12,7 +12,7 @@ from sglib.plotting.drought import drought_metric_scatter_plot
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
 
-from config import *
+from methods.config import *
 
 
 def plot_ensemble_diagnostics(dataset_id):

@@ -243,6 +243,20 @@ SAVE_RESULTS_SETS = [
 RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
 
 # =============================================================================
+# NYC RESERVOIR STORAGE CAPACITIES
+# =============================================================================
+
+# Storage capacities for NYC reservoirs (million gallons)
+NYC_STORAGE_CAPACITIES = {
+    'cannonsville': 95706,
+    'pepacton': 140190,
+    'neversink': 34941
+}
+
+# Total NYC reservoir storage capacity (million gallons)
+NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,837 MG
+
+# =============================================================================
 # DROUGHT COPULA CONFIGURATION
 # =============================================================================
 

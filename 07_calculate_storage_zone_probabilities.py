@@ -21,45 +21,14 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from config import *
+from methods.load import load_ffmp_boundaries
+from methods.utils import calculate_water_year_period_index
+from methods.verification import verify_postprocessing_output
 
 
 # Output directory for zone probability CSVs
 ZONE_PROB_DIR = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
 os.makedirs(ZONE_PROB_DIR, exist_ok=True)
-
-
-def _period_index(dts: pd.DatetimeIndex, period: str = 'daily', origin: str = 'june1') -> np.ndarray:
-    """Map dates to generic-year period index (1-based)."""
-    dts = pd.DatetimeIndex(dts)
-    if period not in ('daily', 'weekly', 'monthly'):
-        raise ValueError("period must be one of {'daily','weekly','monthly'}")
-    
-    june1_this = pd.to_datetime(dts.year.astype(str) + '-06-01')
-    is_after = dts >= june1_this
-    june1_prev = pd.to_datetime((dts.year - 1).astype(str) + '-06-01')
-    
-    doy_wy = np.where(is_after,
-                      (dts - june1_this).days + 1,
-                      (dts - june1_prev).days + 1)
-    
-    if period == 'daily':
-        return doy_wy
-    elif period == 'weekly':
-        return ((doy_wy - 1) // 7) + 1
-    else:  # monthly
-        wy_month = ((dts.month - 6) % 12) + 1
-        return wy_month
-
-
-def load_ffmp_boundaries():
-    """Load FFMP level boundaries once (cached)."""
-    if not hasattr(load_ffmp_boundaries, '_cache'):
-        print("Loading FFMP level boundaries from reconstruction...")
-        ffmp_data = pywrdrb.Data(results_sets=["ffmp_level_boundaries"])
-        ffmp_data.load_output(output_filenames=[RECONSTRUCTION_OUTPUT_FNAME])
-        boundaries = ffmp_data.ffmp_level_boundaries['reconstruction'][0] * 100  # Convert to %
-        load_ffmp_boundaries._cache = boundaries
-    return load_ffmp_boundaries._cache
 
 
 def get_ordered_threshold_columns(ffmp_boundaries):
@@ -99,13 +68,12 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     ffmp_boundaries = load_ffmp_boundaries()
     thr_cols = get_ordered_threshold_columns(ffmp_boundaries)
     Z = len(thr_cols) + 1  # Number of zones
-    
+
+    # Verify postprocessed data exists
+    verify_postprocessing_output(dataset_id)
+
     # Load ensemble storage data (only res_storage for this dataset)
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-    if not os.path.exists(fname):
-        print(f"ERROR: File not found: {fname}")
-        return None
-    
     print(f"  Loading res_storage for {dataset_id}...")
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage'])
@@ -142,7 +110,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     B_vals = B[thr_cols].to_numpy()  # (N_dates, K)
     
     # Calculate period indices
-    p_idx = _period_index(common_idx, period=period, origin='june1')
+    p_idx = calculate_water_year_period_index(common_idx, period=period, origin='june1')
     periods_sorted = np.sort(np.unique(p_idx))
     P = periods_sorted.size
     period_to_pos = {p: i for i, p in enumerate(periods_sorted)}
@@ -171,7 +139,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
         if period != 'daily':
             nyc_total = nyc_total.resample(agg_period).min()
             # Recompute period indices for resampled dates
-            p_idx_real = _period_index(nyc_total.index, period=period, origin='june1')
+            p_idx_real = calculate_water_year_period_index(nyc_total.index, period=period, origin='june1')
             # Also need to resample FFMP boundaries
             B_real = B.resample(agg_period).median()
             B_vals_real = B_real[thr_cols].to_numpy()
