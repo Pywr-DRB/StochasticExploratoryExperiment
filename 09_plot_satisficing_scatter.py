@@ -38,9 +38,10 @@ from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS, DATASET_LABELS_SHORT,
     DATASET_ORDER, FIGSIZE_QUAD, DPI_HIGH
 )
+from methods.metrics.satisficing import calculate_satisficing_conditions
 
 
-def calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, violation_days=3):
+def _legacy_calculate_satisficing_conditions(data, dataset_id, storage_threshold=20.0, violation_days=3):
     """
     Calculate satisficing conditions for each (year, realization) pair using pre-calculated metrics.
 
@@ -387,8 +388,21 @@ def main():
         data = pywrdrb.Data()
         data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'shortage', 'contribution'])
 
-        # Calculate satisficing conditions
-        results = calculate_satisficing_conditions(data, dataset_id)
+        # Calculate satisficing conditions using new module
+        results = calculate_satisficing_conditions(
+            data, dataset_id,
+            period_type='year',
+            evaluate_all_years=True,
+            storage_threshold=20.0,
+            violation_days=3
+        )
+
+        # Rename columns to match expected format for plotting
+        results = results.rename(columns={
+            'nyc_inflow': 'nyc_inflow_jun_dec',
+            'montague_contrib': 'montague_contrib_jun_dec'
+        })
+
         all_results[dataset_id] = results
 
         # Quick summary
