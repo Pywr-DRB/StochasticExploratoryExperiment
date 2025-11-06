@@ -23,6 +23,17 @@ This repository implements a high-performance stochastic ensemble modeling frame
 - **Temporal Resolution**: Daily flows with monthly analysis
 - **Spatial Coverage**: Major DRB nodes and tributaries
 
+## File naming convention
+
+The `archive/` contains old scripts that are no long used and can be ignored. 
+
+- `S*.sh` scripts contain the bash job scripts used to run the full workflow.
+- `0*.py` sctipts are the main workflow running generation, simulation and post processing.
+- `F*.py` scripts are the final figure generation scripts used in the manuscript. 
+- `SI*.py` scripts contain analyses that are used for supporting information, but not part of the main manuscript results. 
+
+
+
 ## Workflow Structure
 
 ### Step 1: Ensemble Generation
