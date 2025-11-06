@@ -49,6 +49,7 @@ from scipy.stats import f_oneway, kruskal
 from sklearn.metrics import pairwise_distances
 
 from config import *
+from methods.load import load_drought_events
 
 # Output directories
 FIG_DIR_CLUSTER = f"{FIG_DIR}/clustering_analysis"
@@ -56,45 +57,6 @@ os.makedirs(FIG_DIR_CLUSTER, exist_ok=True)
 
 DATA_DIR_CLUSTER = f"{ROOT_DIR}/pywrdrb/drought_metrics/clustering_analysis"
 os.makedirs(DATA_DIR_CLUSTER, exist_ok=True)
-
-
-def load_drought_characteristics(dataset_id, ssi_window):
-    """
-    Load drought characteristic data for a given dataset and SSI window.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window (3, 6, or 12 months)
-
-    Returns
-    -------
-    pd.DataFrame
-        Drought characteristics with columns:
-        start, end, duration, magnitude, severity, max_severity_date, realization_id
-    """
-    verify_dataset_id(dataset_id)
-
-    fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(f"Drought metrics file not found: {fname}")
-
-    print(f"Loading drought characteristics from: {fname}")
-    df = pd.read_csv(fname)
-
-    # Convert date columns to datetime
-    date_cols = ['start', 'end', 'max_severity_date']
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col])
-
-    print(f"  Loaded {len(df)} drought events")
-    print(f"  Columns: {list(df.columns)}")
-
-    return df
 
 
 def prepare_features(df, feature_cols=None):
@@ -1051,7 +1013,7 @@ def main(dataset_id, ssi_window):
     print("=" * 80)
 
     # Step 1: Load drought characteristics
-    df = load_drought_characteristics(dataset_id, ssi_window)
+    df = load_drought_events(dataset_id, ssi_window)
 
     # Step 2: Prepare features (original)
     print("\n" + "=" * 80)

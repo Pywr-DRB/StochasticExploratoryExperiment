@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from config import *
+from methods.load import load_drought_events
 from methods.metrics.satisficing import (
     calculate_satisficing_conditions,
     calculate_satisficing_during_droughts,
@@ -40,42 +41,6 @@ from methods.metrics.satisficing import (
 # Output directory
 SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
 os.makedirs(SATISFICING_ANALYSIS_DIR, exist_ok=True)
-
-
-def load_drought_events(dataset_id, ssi_window):
-    """
-    Load drought events for a given dataset and SSI window.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window (3, 6, or 12 months)
-
-    Returns
-    -------
-    pd.DataFrame
-        Drought events
-    """
-    fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(f"Drought events file not found: {fname}")
-
-    print(f"Loading drought events from: {fname}")
-    df = pd.read_csv(fname)
-
-    # Convert date columns
-    date_cols = ['start', 'end', 'max_severity_date']
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col])
-
-    print(f"  Loaded {len(df)} drought events")
-    print(f"  Unique realizations: {df['realization_id'].nunique()}")
-
-    return df
 
 
 def print_summary_statistics(all_years_results, drought_results, non_drought_results,

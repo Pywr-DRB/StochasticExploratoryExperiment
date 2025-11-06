@@ -32,19 +32,57 @@ def load_drb_reconstruction(gage_flow=True):
     return Q
 
 
-def load_and_combine_ensemble_sets(ensemble_sets, 
+def load_drought_events(dataset_id, ssi_window):
+    """
+    Load drought events for a given dataset and SSI window.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    ssi_window : int
+        SSI window (3, 6, or 12 months)
+
+    Returns
+    -------
+    pd.DataFrame
+        Drought events with date columns converted to datetime
+    """
+    # Get the root directory (parent of methods/)
+    root_dir = os.path.dirname(file_dir)
+    fname = f"{root_dir}/pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(f"Drought events file not found: {fname}")
+
+    print(f"Loading drought events from: {fname}")
+    df = pd.read_csv(fname)
+
+    # Convert date columns
+    date_cols = ['start', 'end', 'max_severity_date']
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+
+    print(f"  Loaded {len(df)} drought events")
+    print(f"  Unique realizations: {df['realization_id'].nunique()}")
+
+    return df
+
+
+def load_and_combine_ensemble_sets(ensemble_sets,
                                    by_site = True):
     """
     Load and combine all ensemble set data into a single dictionary.
-    
-    WARNING: 
-    This should only be used when the realizations do NOT matter. 
-    In this function, all realizations are combined and renumbered 
+
+    WARNING:
+    This should only be used when the realizations do NOT matter.
+    In this function, all realizations are combined and renumbered
     without regard to their original set IDs.
-    
+
     Parameters:
     - ensemble_sets: List of ensemble set specifications.
-    
+
     Returns:
     - Combined dict.
     """
@@ -53,14 +91,14 @@ def load_and_combine_ensemble_sets(ensemble_sets,
     for i, set_spec in enumerate(ensemble_sets):
         gageflow_set_file = set_spec.files['gage_flow']
         set_realization_ids = set_spec.realization_ids
-        
+
         hdf_manager = HDF5Manager()
         ensemble_set_data = hdf_manager.load_ensemble(gageflow_set_file)
-        
+
         if by_site:
             # extract just the data by site
             Qs_gageflow = ensemble_set_data.data_by_site
-            
+
             # add to all_data
             for site in Qs_gageflow:
                 if site not in all_data:
@@ -68,17 +106,17 @@ def load_and_combine_ensemble_sets(ensemble_sets,
                 else:
                     # If site already exists, append the new data
                     all_data[site] = pd.concat([all_data[site], Qs_gageflow[site]], axis=1)
-                    
+
                 # reset columns to be realization integers 0, ... N
                 all_data[site].columns = np.arange(0, all_data[site].shape[1])
-        
+
         else:
             # extract just the data by realization
             Qs_gageflow = ensemble_set_data.data_by_realization
-            
+
             # add to all_data
             for real in Qs_gageflow:
                 all_data[realization_id] = Qs_gageflow[real]
                 realization_id += 1
-    
+
     return all_data
