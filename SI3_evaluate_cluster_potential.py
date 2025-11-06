@@ -107,7 +107,7 @@ def prepare_features(df, feature_cols=None):
         Drought characteristics
     feature_cols : list, optional
         List of columns to use as features. If None, uses all numeric columns
-        except realization_id
+        except realization_id, plus extracted temporal features
 
     Returns
     -------
@@ -118,10 +118,28 @@ def prepare_features(df, feature_cols=None):
     scaler : StandardScaler
         Fitted scaler object
     """
+    # Create a copy to avoid modifying original
+    df_features = df.copy()
+
+    # Extract temporal features from date columns
+    print(f"\nExtracting temporal features from date columns:")
+
+    if 'start' in df.columns:
+        df_features['start_month'] = pd.to_datetime(df['start']).dt.month
+        print(f"  Added: start_month (1-12)")
+
+    if 'end' in df.columns:
+        df_features['end_month'] = pd.to_datetime(df['end']).dt.month
+        print(f"  Added: end_month (1-12)")
+
+    if 'max_severity_date' in df.columns:
+        df_features['max_severity_month'] = pd.to_datetime(df['max_severity_date']).dt.month
+        print(f"  Added: max_severity_month (1-12)")
+
     # Select features
     if feature_cols is None:
         # Use all numeric columns except identifiers
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        numeric_cols = df_features.select_dtypes(include=[np.number]).columns.tolist()
         exclude_cols = ['realization_id', 'Unnamed: 0']
         feature_cols = [c for c in numeric_cols if c not in exclude_cols]
 
@@ -129,7 +147,7 @@ def prepare_features(df, feature_cols=None):
     print(f"  Selected features: {feature_cols}")
 
     # Extract features
-    X = df[feature_cols].values
+    X = df_features[feature_cols].values
 
     # Remove rows with any NaN values
     valid_mask = ~np.isnan(X).any(axis=1)
@@ -141,8 +159,8 @@ def prepare_features(df, feature_cols=None):
     X_scaled = scaler.fit_transform(X)
 
     print(f"  Feature matrix shape: {X_scaled.shape}")
-    print(f"  Feature means (after scaling): {X_scaled.mean(axis=0)}")
-    print(f"  Feature stds (after scaling): {X_scaled.std(axis=0)}")
+    print(f"  Feature means (after scaling): {X_scaled.mean(axis=0).round(4)}")
+    print(f"  Feature stds (after scaling): {X_scaled.std(axis=0).round(4)}")
 
     return X_scaled, feature_cols, scaler
 
@@ -778,24 +796,24 @@ def generate_summary_report(results_original, results_pca, validation_original,
 
     report.append(f"Original Features:")
     report.append(f"  Best Silhouette Score: {best_sil_orig:.4f} (k={int(best_k_orig)})")
-    report.append(f"  Interpretation: ", end="")
     if best_sil_orig > 0.5:
-        report.append("Strong clustering structure")
+        interpretation_orig = "Strong clustering structure"
     elif best_sil_orig > 0.25:
-        report.append("Moderate clustering structure")
+        interpretation_orig = "Moderate clustering structure"
     else:
-        report.append("Weak clustering structure")
+        interpretation_orig = "Weak clustering structure"
+    report.append(f"  Interpretation: {interpretation_orig}")
 
     report.append("")
     report.append(f"PCA Features:")
     report.append(f"  Best Silhouette Score: {best_sil_pca:.4f} (k={int(best_k_pca)})")
-    report.append(f"  Interpretation: ", end="")
     if best_sil_pca > 0.5:
-        report.append("Strong clustering structure")
+        interpretation_pca = "Strong clustering structure"
     elif best_sil_pca > 0.25:
-        report.append("Moderate clustering structure")
+        interpretation_pca = "Moderate clustering structure"
     else:
-        report.append("Weak clustering structure")
+        interpretation_pca = "Weak clustering structure"
+    report.append(f"  Interpretation: {interpretation_pca}")
 
     report.append("")
 
