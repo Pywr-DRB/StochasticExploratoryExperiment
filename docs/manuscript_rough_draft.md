@@ -2,6 +2,13 @@
 
 # Questions
 
+- What is the range of droughts that are possible? 
+- What SSI drought characterization, if any, is an indicator/classifier of performance outcome?
+- What is the range of performance across the ensemble? 
+- Can we distringuish different drought types using clustering? (ANSWERED BY CORINNE)
+- Does performance distribution change with respect to drought type? (ANSWERED BY CORINNE)
+
+
 ****
 # Abstract
 The Delaware River Basin (DRB) supplies water to over 14 million people, including New York City (NYC). The basin operates under a complex institutional framework designed to balance competing water use demands while maintaining United States Supreme Court-mandated streamflow targets designed to protect downstream users, water quality and ecosystems. During the 1960s drought of record, competing demands resulted in violations of both streamflow targets and diversion limits, creating significant tensions between the basin states. Since then, the DRB has not experienced comparable drought conditions, and mid-century climate projections indicate changes towards wetter on average annual streamflow conditions. However, the projected wetter annual trends do not account for the DRB’s internal variability or distinguish seasonal scale differences in how streamflows may change. These limitations raise two important questions: (1) what are the plausible future droughts that the DRB could confront? and (2) how vulnerable is the basin to those plausible future extremes? 
