@@ -31,6 +31,11 @@ mkdir -p logs figures
 # # 4-panel drought return period comparison
 # python3 09_plot_drought_frequency.py comparison
 
+# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 3
+# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 6
+# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 12
+
+
 # Drought metric distribution plots
 python3 09_plot_drought_metric_comparison.py 3 severity magnitude stationary_ensemble climate_adjusted_low
 python3 09_plot_drought_metric_comparison.py 6 severity magnitude stationary_ensemble climate_adjusted_low

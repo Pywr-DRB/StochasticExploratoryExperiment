@@ -97,6 +97,13 @@ def load_drought_events(dataset_id, ssi_window):
         subset=['severity', 'magnitude', 'duration']
     )
 
+    # Remove droughts with SSI abs(severity) > 6
+    n_before = len(droughts)
+    droughts = droughts[droughts['severity'] <= 6.0]
+    n_after = len(droughts)
+    if n_before > n_after:
+        print(f"    Removed {n_before - n_after} droughts with |severity| > 6.0")
+
     print(f"  Loaded {len(droughts):,} drought events")
     return droughts
 
