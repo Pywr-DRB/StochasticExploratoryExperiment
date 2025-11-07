@@ -5,11 +5,67 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
+from pywrdrb.path_manager import get_pn_object
 from sglib.utils.load import HDF5Manager
 from methods.config import RECONSTRUCTION_OUTPUT_FNAME
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
+
+
+def load_baseline_historical_flow(gage_flow=True, 
+                                  flowtype='pub_nhmv10_BC_withObsScaled'):
+    """
+    Load the baseline historical data.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the baseline historical data.
+    """
+    
+    flowtype_options = [
+        'pub_nhmv10_BC_withObsScaled',
+        'wrfaorc_withObsScaled'
+    ]
+    
+    if flowtype not in flowtype_options:
+        raise ValueError(f"Invalid flowtype: {flowtype}. Must be one of {flowtype_options}")
+    
+    # pywrdrb path manager object
+    pn = get_pn_object()
+    
+    if gage_flow:
+        fname = str(pn.sc.get(f"flows/{flowtype}") / "gage_flow_mgd.csv")
+    else:
+        fname = str(pn.sc.get(f"flows/{flowtype}") / "catchment_inflow_mgd.csv")
+    
+    Q = pd.read_csv(fname, index_col=0, parse_dates=True)
+    Q.index = pd.to_datetime(Q.index)
+    
+    # Baseline period is 1980-01-01 to 2019-12-31
+    Q = Q.loc['1980-01-01':'2019-12-31', :]
+    
+    return Q
+
+
+def load_observation_flow(gage_flow=True):
+    """
+    Load the observation flow data.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the observation flow data.
+    """
+    pn = get_pn_object()
+    
+    if gage_flow:
+        fname = pn.observations.get("gage_flow_mgd_csv")
+    else:
+        fname = pn.observations.get("catchment_inflow_mgd_csv")
+    
+    Q = pd.read_csv(fname, index_col=0, parse_dates=True)
+    Q.index = pd.to_datetime(Q.index)
+    
+    return Q
+
 
 def load_drb_reconstruction(gage_flow=True):
     """
@@ -150,3 +206,34 @@ def load_and_combine_ensemble_sets(ensemble_sets,
                 realization_id += 1
 
     return all_data
+
+
+
+def load_shortage_data(dataset_id):
+    """
+    Load pre-calculated shortage data from postprocessing.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    pywrdrb.Data
+        Data object with shortage, ibt_diversions, and ibt_demands
+    """
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Postprocessed data not found: {fname}\n"
+            "Run 04_postprocess_data.py first!"
+        )
+
+    print(f"Loading shortage data from: {fname}")
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=['shortage', 'ibt_diversions', 'ibt_demands'])
+    print("  Data loaded successfully")
+
+    return data
