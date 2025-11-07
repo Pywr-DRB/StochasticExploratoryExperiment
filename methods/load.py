@@ -54,48 +54,6 @@ def load_baseline_historical_flow(gage_flow=True,
     return Q
 
 
-def load_observation_flow(gage_flow=True):
-    """
-    Load the observation flow data.
-
-    Returns:
-        pd.DataFrame: DataFrame containing the observation flow data.
-    """
-    pn = get_pn_object()
-    
-    if gage_flow:
-        fname = pn.observations.get("gage_flow_mgd_csv")
-    else:
-        fname = pn.observations.get("catchment_inflow_mgd_csv")
-    
-    Q = pd.read_csv(fname, index_col=0, parse_dates=True)
-    Q.index = pd.to_datetime(Q.index)
-    
-    return Q
-
-
-def load_baseline_historical_flow(gage_flow=True):
-    """
-    Load the DRB reconstruction data.
-
-    Returns:
-        pd.DataFrame: DataFrame containing the DRB reconstruction data.
-    """
-    if gage_flow:
-        fname = 'gage_flow_obs_pub_nhmv10_BC_ObsScaled_median.csv'
-    else:
-        fname = 'catchment_inflow_obs_pub_nhmv10_BC_ObsScaled_median.csv'
-    
-    Q = pd.read_csv(f'{data_dir}/{fname}')
-    Q.drop(columns=['datetime'], inplace=True)  # Drop the first column if it's an index
-    
-    datetime = pd.date_range(start='1945-01-01', 
-                             periods=Q.shape[0], 
-                             freq='D')
-    
-    Q.index = datetime
-    return Q
-
 
 def load_drought_events(dataset_id, ssi_window):
     """
