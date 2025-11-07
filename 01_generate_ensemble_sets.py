@@ -59,15 +59,13 @@ def generate_ensemble_set(set_id, dataset_id):
     
     # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
-        Q = load_baseline_historical_flow(gage_flow=True)
-        Q_full_reconstruction = Q.copy()
+        Q = load_baseline_historical_flow(gage_flow=True, 
+                                          period='baseline')
+        Q_baseline = Q.copy()
 
-        Q_inflow = load_baseline_historical_flow(gage_flow=False)
+        Q_inflow = load_baseline_historical_flow(gage_flow=False,
+                                                 period='baseline')
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
-        
-        ## Trim Q to be 1980-2019 to match CMIP baseline period
-        # Q = Q.loc['1980-01-01':'2019-12-31', :]
-        # Q_inflow = Q_inflow.loc['1980-01-01':'2019-12-31', :]
         
         print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
     
@@ -83,13 +81,13 @@ def generate_ensemble_set(set_id, dataset_id):
     else:
         Q = None
         Q_inflow = None
-        Q_full_reconstruction = None
+        Q_baseline = None
         # baseline_mean_month = None
         # baseline_std_month = None
     
     Q = comm.bcast(Q, root=0)
     Q_inflow = comm.bcast(Q_inflow, root=0)
-    Q_full_reconstruction = comm.bcast(Q_full_reconstruction, root=0)
+    Q_baseline = comm.bcast(Q_baseline, root=0)
     # baseline_mean_month = comm.bcast(baseline_mean_month, root=0)
     # baseline_std_month = comm.bcast(baseline_std_month, root=0)
     
@@ -165,11 +163,13 @@ def generate_ensemble_set(set_id, dataset_id):
             ys = Q_inflow.loc[:, downstream]
             frac = ys / xs
             frac = frac[~np.isnan(frac)]
+            # filter infs
+            frac = frac[np.isfinite(frac)]
             
             # Fit KDE and extract parameters
             kde = stats.gaussian_kde(frac)
             kde_name = f"{upstream}_to_{downstream}"
-            # Store dataset and covariance factor for reconstruction
+            # Store dataset and covariance factor from baseline data
             kde_params[kde_name] = {
                 'dataset': kde.dataset,
                 'covariance_factor': kde.covariance_factor()
@@ -279,9 +279,15 @@ def generate_ensemble_set(set_id, dataset_id):
             Q_syn[site] = np.zeros((len(syn_datetime), n_realizations), dtype=np.float32)  # Use float32 to save memory
             Qs_inflows[site] = np.zeros((len(syn_datetime), n_realizations), dtype=np.float32)
             
+            # Trenton flows are the same as DRCanal location
+            if site == 'delTrenton':
+                use_site = 'delDRCanal'
+            else:
+                use_site = site
+            
             for i, global_real_id in enumerate(set_realization_ids):
-                Q_syn[site][:, i] = combined_syn_ensemble[global_real_id][site].values 
-                Qs_inflows[site][:, i] = combined_inflow_ensemble[global_real_id][site].values
+                Q_syn[site][:, i] = combined_syn_ensemble[global_real_id][use_site].values 
+                Qs_inflows[site][:, i] = combined_inflow_ensemble[global_real_id][use_site].values
             
             # Convert to DataFrame with realization IDs
             # IMPORTANT: Use set-specific realization IDs

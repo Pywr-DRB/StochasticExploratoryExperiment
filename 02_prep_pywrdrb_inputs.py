@@ -96,13 +96,33 @@ def prep_ensemble_set(set_id, dataset_id):
             print(f"Set {set_id + 1}: Predicted inflows complete.")
 
         # =====================================================================
-        # Step 2: Process NYC diversions ensemble
+        # Step 2: Process NJ diversions ensemble
+        # =====================================================================
+        if rank == 0:
+            print(f"Set {set_id + 1}: Processing NJ diversions ensemble...")
+        
+        # Use the gage_flow file as input for diversions
+        gage_flow_file = set_spec.files['gage_flow']
+
+        nj_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
+            loc="nj",
+            flow_type=f"{dataset_id}_set{set_id + 1}",
+            ensemble_hdf5_file=gage_flow_file,
+            realization_ids=realization_ids,
+            use_mpi=True
+        )
+        nj_extrapolator.load()
+        nj_extrapolator.process()
+        nj_extrapolator.save()
+
+        if rank == 0:
+            print(f"Set {set_id + 1}: NJ diversions ensemble complete.")
+
+        # =====================================================================
+        # Step 3: Process NYC diversions ensemble
         # =====================================================================
         if rank == 0:
             print(f"Set {set_id + 1}: Processing NYC diversions ensemble...")
-
-        # Use the gage_flow file as input for diversions
-        gage_flow_file = set_spec.files['gage_flow']
 
         nyc_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
             loc="nyc",
@@ -122,26 +142,6 @@ def prep_ensemble_set(set_id, dataset_id):
         if rank == 0:
             print(f"Set {set_id + 1}: NYC diversions ensemble complete.")
 
-        # =====================================================================
-        # Step 3: Process NJ diversions ensemble
-        # =====================================================================
-        if rank == 0:
-            print(f"Set {set_id + 1}: Processing NJ diversions ensemble...")
-
-        nj_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
-            loc="nj",
-            flow_type=f"{dataset_id}_set{set_id + 1}",
-            ensemble_hdf5_file=gage_flow_file,
-            realization_ids=realization_ids,
-            use_mpi=True
-        )
-
-        nj_extrapolator.load()
-        nj_extrapolator.process()
-        nj_extrapolator.save()
-
-        if rank == 0:
-            print(f"Set {set_id + 1}: NJ diversions ensemble complete.")
 
         # =====================================================================
         # Step 4: Process predicted diversions ensemble

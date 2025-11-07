@@ -16,8 +16,8 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
 GENERATE=${GENERATE:-false}
-PREP=${PREP:-false}
-SIMULATE=${SIMULATE:-false}
+PREP=${PREP:-true}
+SIMULATE=${SIMULATE:-true}
 
 # Create directories
 mkdir -p logs pywrdrb/{inputs,outputs,models} figures

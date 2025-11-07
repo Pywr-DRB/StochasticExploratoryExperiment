@@ -54,6 +54,29 @@ def load_baseline_historical_flow(gage_flow=True,
     return Q
 
 
+def load_wrf1960s_historical_flow(gage_flow=True):
+    """
+    Load the WRF 1960s historical data.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the WRF 1960s historical data.
+    """
+    flowtype = 'wrf1960s_calib_nlcd2016'
+    
+    # pywrdrb path manager object
+    pn = get_pn_object()
+    
+    if gage_flow:
+        fname = str(pn.sc.get(f"flows/{flowtype}") / "gage_flow_mgd.csv")
+    else:
+        fname = str(pn.sc.get(f"flows/{flowtype}") / "catchment_inflow_mgd.csv")
+    
+    Q = pd.read_csv(fname, index_col=0, parse_dates=True)
+    Q.index = pd.to_datetime(Q.index)
+    
+    return Q
+
+
 
 def load_drought_events(dataset_id, ssi_window):
     """

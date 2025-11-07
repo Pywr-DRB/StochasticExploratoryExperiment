@@ -11,7 +11,7 @@ from sglib import SSIDroughtMetrics, SSI
 from sglib import Ensemble, HDF5Manager
 
 
-from methods.load import load_baseline_historical_flow
+from methods.load import load_baseline_historical_flow, load_wrf1960s_historical_flow
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
 from methods.config import *
@@ -39,15 +39,24 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Using {size} MPI ranks")
 
     # Historic reconstruction data
-    Q = load_baseline_historical_flow()
+    Q = load_baseline_historical_flow(gage_flow=True, period='baseline')
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
+    
+    Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
+    Q_1960s.replace(0, np.nan, inplace=True)
+    Q_1960s.drop(columns=['delTrenton'], inplace=True)
 
     # Calculate nyc_aggregate for historical data
     nyc_gages = ["01425000", "01417000", "01436000"]
     Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
+    Q_1960s['nyc_aggregate'] = Q_1960s[nyc_gages].sum(axis=1)
 
     Q_monthly = Q.resample('MS').sum()
+    Q_1960s_monthly = Q_1960s.resample('MS').sum()
+    
+    # index wont match, but stack anyway
+    Q_full_monthly = pd.concat([Q_1960s_monthly, Q_monthly], axis=0)
 
     if rank == 0:
         print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
@@ -133,9 +142,10 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         # Calculate SSI for historical data (only rank 0)
         if rank == 0:
-            ssi_obs = ssi_calculator.transform(Q_monthly.loc[:, node])
+            # Use the full monthly data, with 1960s included
+            ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
             obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
-        
+
         print(f"  Rank {rank} processing {len(my_realizations)} realizations")
 
         # Process assigned realizations

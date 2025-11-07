@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Figs
-#SBATCH --output=./logs/fig_generation.out
-#SBATCH --error=./logs/fig_generation.err
+#SBATCH --job-name=SI
+#SBATCH --output=./logs/SI.out
+#SBATCH --error=./logs/SI.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=48:00:00

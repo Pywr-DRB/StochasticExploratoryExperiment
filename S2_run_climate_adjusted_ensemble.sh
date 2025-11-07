@@ -14,8 +14,8 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
-GENERATE=${GENERATE:-false}
-PREP=${PREP:-false}
+GENERATE=${GENERATE:-true}
+PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories
@@ -24,7 +24,6 @@ mkdir -p logs pywrdrb/{inputs,outputs,models} figures
 # Climate scenarios to process
 CLIMATE_SCENARIOS=(
     "climate_adjusted_low"
-    "climate_adjusted_medium"
     "climate_adjusted_high"
 )
 
