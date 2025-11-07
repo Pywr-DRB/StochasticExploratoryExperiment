@@ -11,7 +11,7 @@ from sglib import SSIDroughtMetrics, SSI
 from sglib import Ensemble, HDF5Manager
 
 
-from methods.load import load_drb_reconstruction
+from methods.load import load_baseline_historical_flow
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
 from methods.config import *
@@ -39,7 +39,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Using {size} MPI ranks")
 
     # Historic reconstruction data
-    Q = load_drb_reconstruction()
+    Q = load_baseline_historical_flow()
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
 

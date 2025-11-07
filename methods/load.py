@@ -14,13 +14,16 @@ data_dir = f"{file_dir}/../data"
 
 
 def load_baseline_historical_flow(gage_flow=True, 
-                                  flowtype='pub_nhmv10_BC_withObsScaled'):
+                                  period='baseline',
+                                  flowtype='wrfaorc_withObsScaled'):
     """
     Load the baseline historical data.
 
     Returns:
         pd.DataFrame: DataFrame containing the baseline historical data.
     """
+    
+    assert period in ['baseline', 'full'], "Period must be 'baseline' or 'full'"
     
     flowtype_options = [
         'pub_nhmv10_BC_withObsScaled',
@@ -41,8 +44,12 @@ def load_baseline_historical_flow(gage_flow=True,
     Q = pd.read_csv(fname, index_col=0, parse_dates=True)
     Q.index = pd.to_datetime(Q.index)
     
-    # Baseline period is 1980-01-01 to 2019-12-31
-    Q = Q.loc['1980-01-01':'2019-12-31', :]
+    if period == 'baseline':
+        # Baseline period is 1980-01-01 to 2019-12-31
+        Q = Q.loc['1980-01-01':'2019-12-31', :]
+    elif period == 'full':
+        # Full period is the entire available data
+        Q = Q.loc[:, :]
     
     return Q
 
@@ -67,7 +74,7 @@ def load_observation_flow(gage_flow=True):
     return Q
 
 
-def load_drb_reconstruction(gage_flow=True):
+def load_baseline_historical_flow(gage_flow=True):
     """
     Load the DRB reconstruction data.
 

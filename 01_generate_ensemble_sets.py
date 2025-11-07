@@ -19,7 +19,7 @@ from pywrdrb.pywr_drb_node_data import downstream_node_lags
 from sglib.methods.nonparametric.kirsch_nowak import KirschNowakGenerator
 from sglib.utils.load import HDF5Manager
 
-from methods.load import load_drb_reconstruction
+from methods.load import load_baseline_historical_flow
 from methods.config import *
 
 def generate_ensemble_set(set_id, dataset_id):
@@ -59,10 +59,10 @@ def generate_ensemble_set(set_id, dataset_id):
     
     # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
-        Q = load_drb_reconstruction(gage_flow=True)
+        Q = load_baseline_historical_flow(gage_flow=True)
         Q_full_reconstruction = Q.copy()
 
-        Q_inflow = load_drb_reconstruction(gage_flow=False)
+        Q_inflow = load_baseline_historical_flow(gage_flow=False)
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
         
         ## Trim Q to be 1980-2019 to match CMIP baseline period

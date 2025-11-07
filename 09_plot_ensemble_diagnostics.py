@@ -10,7 +10,7 @@ from sglib.plotting.plot import plot_correlation
 from sglib.plotting.drought import drought_metric_scatter_plot
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
-from methods.load import load_drb_reconstruction, load_and_combine_ensemble_sets
+from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 
 from methods.config import *
 
@@ -50,13 +50,13 @@ def plot_ensemble_diagnostics(dataset_id):
     ### Loading data
     ## Historic reconstruction data
     # Total flow
-    Q = load_drb_reconstruction()
+    Q = load_baseline_historical_flow()
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
     Q_monthly = Q.resample('MS').sum()
 
     # Catchment inflows
-    Q_inflows = load_drb_reconstruction(gage_flow=False)
+    Q_inflows = load_baseline_historical_flow(gage_flow=False)
     Q_inflows.replace(0, np.nan, inplace=True)
     Q_inflows.drop(columns=['delTrenton'], inplace=True)
 

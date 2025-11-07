@@ -55,7 +55,7 @@ import matplotlib.gridspec as gridspec
 from scipy import stats
 
 import pywrdrb
-from methods.load import load_drb_reconstruction
+from methods.load import load_baseline_historical_flow
 from methods.config import *
 from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS, HISTORIC_COLOR, HISTORIC_LABEL
 
@@ -163,7 +163,7 @@ def plot_streamflow_comparison(site='delMontague',
 
     ### Load historic reconstruction data
     print("Loading historic reconstruction data...")
-    Q_hist = load_drb_reconstruction()
+    Q_hist = load_baseline_historical_flow()
     Q_hist.replace(0, np.nan, inplace=True)
     Q_hist.drop(columns=['delTrenton'], inplace=True, errors='ignore')
 

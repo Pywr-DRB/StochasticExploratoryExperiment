@@ -21,8 +21,8 @@ N_REALIZATIONS_PER_PYWRDRB_BATCH = 10  # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
-N_YEARS = 70
-START_DATE = '1950-01-01'
+N_YEARS = 50
+START_DATE = '1980-01-01'
 END_DATE = '2019-12-31'
 
 # Validation checks
@@ -41,9 +41,14 @@ fname = "./data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv"
 monthly_shift_scenarios = pd.read_csv(fname, index_col=0)
 
 DATASET_CONFIGS = {
-    'stationary_ensemble': {
+    # 'stationary_ensemble': {
+    #     'type': 'stationary',
+    #     'description': 'Stationary ensemble (no climate adjustment)',
+    #     'monthly_prc_change': None
+    # },
+    'baseline': {
         'type': 'stationary',
-        'description': 'Stationary ensemble (no climate adjustment)',
+        'description': 'Baseline stationary ensemble (1980-2019; no climate adjustment)',
         'monthly_prc_change': None
     },
     'climate_adjusted_low': {
