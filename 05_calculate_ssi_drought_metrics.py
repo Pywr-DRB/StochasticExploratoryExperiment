@@ -2,6 +2,7 @@ import sys
 import os
 import numpy as np
 import pandas as pd
+import scipy.stats as scs
 from mpi4py import MPI
 import warnings
 warnings.filterwarnings("ignore")
@@ -39,7 +40,9 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Using {size} MPI ranks")
 
     # Historic reconstruction data
-    Q = load_baseline_historical_flow(gage_flow=True, period='baseline')
+    Q = load_baseline_historical_flow(gage_flow=True, 
+                                      period='full',
+                                      flowtype='pub_nhmv10_BC_withObsScaled')
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
     
@@ -56,7 +59,8 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     Q_1960s_monthly = Q_1960s.resample('MS').sum()
     
     # index wont match, but stack anyway
-    Q_full_monthly = pd.concat([Q_1960s_monthly, Q_monthly], axis=0)
+    # Q_full_monthly = pd.concat([Q_1960s_monthly, Q_monthly], axis=0)
+    Q_full_monthly = Q_monthly.copy()
 
     if rank == 0:
         print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
@@ -134,11 +138,13 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         node = 'nyc_aggregate'
 
         # Initialize calculators
+        ssi_dist = scs.gamma
         drought_calculator = SSIDroughtMetrics()
-        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
+        ssi_calculator = SSI(normal_scores_transform=True,
+                             timescale=ssi_window)
 
         # Fit SSI on historical data (same on all ranks)
-        ssi_calculator.fit(Q_monthly.loc['1980-01-01':'2019-12-31', node])
+        ssi_calculator.fit(Q_monthly.loc[:, node])
 
         # Calculate SSI for historical data (only rank 0)
         if rank == 0:

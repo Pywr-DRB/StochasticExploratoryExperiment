@@ -13,10 +13,9 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
 RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-false}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
-CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-true}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
-DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_medium" "climate_adjusted_high")
+DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")
 
 # make directories
 mkdir -p logs figures
@@ -33,15 +32,6 @@ if [ "$RUN_POSTPROCESSING" = true ]; then
     done
 fi
 
-
-if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
-    ################################################################################
-    echo "Calculating satisficing during droughts..."
-    ################################################################################
-    python3 06_calculate_satisficing_by_drought.py "stationary_ensemble" 3
-    python3 06_calculate_satisficing_by_drought.py "stationary_ensemble" 6
-    python3 06_calculate_satisficing_by_drought.py "stationary_ensemble" 12
-fi
 
 
 if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then

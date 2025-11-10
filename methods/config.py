@@ -41,11 +41,11 @@ fname = "./data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv"
 monthly_shift_scenarios = pd.read_csv(fname, index_col=0)
 
 DATASET_CONFIGS = {
-    # 'stationary_ensemble': {
-    #     'type': 'stationary',
-    #     'description': 'Stationary ensemble (no climate adjustment)',
-    #     'monthly_prc_change': None
-    # },
+    'stationary_ensemble': {
+        'type': 'stationary',
+        'description': 'Stationary ensemble (no climate adjustment)',
+        'monthly_prc_change': None
+    },
     'baseline': {
         'type': 'stationary',
         'description': 'Baseline stationary ensemble (1980-2019; no climate adjustment)',
@@ -56,11 +56,11 @@ DATASET_CONFIGS = {
         'description': 'Driest climate change',
         'monthly_prc_change': monthly_shift_scenarios.loc[:, 'low'].values
     },
-    'climate_adjusted_medium': {
-        'type': 'climate_adjusted', 
-        'description': 'Mid-range climate change',
-        'monthly_prc_change': monthly_shift_scenarios.loc[:, 'medium'].values
-    },
+    # 'climate_adjusted_medium': {
+    #     'type': 'climate_adjusted', 
+    #     'description': 'Mid-range climate change',
+    #     'monthly_prc_change': monthly_shift_scenarios.loc[:, 'medium'].values
+    # },
     'climate_adjusted_high': {
         'type': 'climate_adjusted',
         'description': 'Wettest climate change',
@@ -247,6 +247,8 @@ SAVE_RESULTS_SETS = [
 
 # Output files
 RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
+WRFAORC_OUTPUT_FNAME = f"{OUTPUT_DIR}/wrfaorc_withObsScaled.hdf5"
+WRF1960s_OUTPUT_FNAME = f"{OUTPUT_DIR}/wrf1960s_calib_nlcd2016.hdf5"
 
 # =============================================================================
 # NYC RESERVOIR STORAGE CAPACITIES

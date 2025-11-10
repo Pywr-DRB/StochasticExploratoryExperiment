@@ -243,6 +243,8 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
 
     output_filenames = [spec.output_file for spec in ensemble_set_specs]
     output_filenames.append(RECONSTRUCTION_OUTPUT_FNAME)
+    output_filenames.append(WRFAORC_OUTPUT_FNAME)
+    output_filenames.append(WRF1960s_OUTPUT_FNAME)
 
     results_sets = [
         "major_flow",
@@ -306,7 +308,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
 
     all_shortage_dict = {}
 
-    for model in ['reconstruction', dataset_id]:
+    for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         realizations = list(data.major_flow[model].keys())
 
         print(f"  Processing model: {model}")
@@ -361,7 +363,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
     all_contribution_dict = {}
 
-    for model in ['reconstruction', dataset_id]:
+    for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         contribution_dict = {}
         realizations = list(data.major_flow[model].keys())
 
@@ -374,7 +376,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     ### Calculate aggregate NYC inflow
     print('Calculating aggregate NYC inflow...')
 
-    for model in ['reconstruction', dataset_id]:
+    for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         realizations = list(data.inflow[model].keys())
         for r in realizations:
             data.inflow[model][r].loc[:, 'nyc'] = data.inflow[model][r].loc[:, nyc_reservoirs].sum(axis=1)
@@ -395,7 +397,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     ibt_demands_dict = {}
     mrf_target_dict = {}
 
-    for model in ['reconstruction', dataset_id]:
+    for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         if model in data.inflow:
             inflow_dict[model] = data.inflow[model]
             major_flow_dict[model] = data.major_flow[model]

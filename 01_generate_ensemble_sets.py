@@ -60,23 +60,17 @@ def generate_ensemble_set(set_id, dataset_id):
     # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
         Q = load_baseline_historical_flow(gage_flow=True, 
-                                          period='baseline')
+                                          period='full',
+                                          flowtype='pub_nhmv10_BC_withObsScaled')
         Q_baseline = Q.copy()
 
         Q_inflow = load_baseline_historical_flow(gage_flow=False,
-                                                 period='baseline')
+                                                 period='full',
+                                                 flowtype='pub_nhmv10_BC_withObsScaled')
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
         
         print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
-    
-        # Fit a single KN model to the baseline period (1980-2019)
-        # to get the 'baseline' monthly means
-        # kn_gen = KirschNowakGenerator(Q, debug=False)
-        # kn_gen.preprocessing()
-        # kn_gen.fit()
-        
-        # baseline_mean_month = kn_gen.mean_month.copy()
-        # baseline_std_month = kn_gen.std_month.copy()
+
         
     else:
         Q = None
