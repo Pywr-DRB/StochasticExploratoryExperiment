@@ -68,11 +68,16 @@ def plot_distribution_comparison(observed, ensemble_dict, loc, dataset_id):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
     ### Left panel: KDE plot
-    # Plot observed
+    # Plot observed (only if sufficient non-NaN data with variance)
     observed_clean = observed.dropna()
-    if len(observed_clean) > 0:
-        observed_clean.plot.kde(ax=ax1, color='#1f77b4', linewidth=2.5,
-                                label='Observed', zorder=3)
+    if len(observed_clean) > 1 and observed_clean.std() > 0:
+        try:
+            observed_clean.plot.kde(ax=ax1, color='#1f77b4', linewidth=2.5,
+                                    label='Observed', zorder=3)
+        except (ValueError, np.linalg.LinAlgError):
+            # KDE failed, fall back to histogram
+            ax1.hist(observed_clean, bins=50, color='#1f77b4', alpha=0.6,
+                    density=True, label='Observed', zorder=3)
 
     # Plot ensemble members (sample subset for clarity)
     n_to_plot = min(50, len(ensemble_dict))
@@ -80,9 +85,13 @@ def plot_distribution_comparison(observed, ensemble_dict, loc, dataset_id):
 
     for i, key in enumerate(sample_keys):
         ens_clean = ensemble_dict[key].dropna()
-        if len(ens_clean) > 0:
-            ens_clean.plot.kde(ax=ax1, color='#ff7f0e', alpha=0.15,
-                              linewidth=0.8, label='Ensemble' if i == 0 else None)
+        if len(ens_clean) > 1 and ens_clean.std() > 0:
+            try:
+                ens_clean.plot.kde(ax=ax1, color='#ff7f0e', alpha=0.15,
+                                  linewidth=0.8, label='Ensemble' if i == 0 else None)
+            except (ValueError, np.linalg.LinAlgError):
+                # KDE failed, skip this realization
+                continue
 
     ax1.set_xlabel(f'{location_name} Diversion (MGD)')
     ax1.set_ylabel('Probability Density')
@@ -92,17 +101,19 @@ def plot_distribution_comparison(observed, ensemble_dict, loc, dataset_id):
     ax1.set_xlim(left=0)
 
     ### Right panel: Box plot
-    # Prepare data for box plot
+    # Prepare data for box plot (keep zeros, only drop NaNs)
     box_data = []
     box_labels = []
 
-    # Add observed
-    box_data.append(observed_clean.values)
+    # Add observed (keep zeros and negative values)
+    observed_for_box = observed.dropna()
+    box_data.append(observed_for_box.values)
     box_labels.append('Observed')
 
-    # Add ensemble statistics (all realizations combined)
+    # Add ensemble statistics (all realizations combined, keep zeros)
     all_ensemble = pd.concat(ensemble_dict.values())
-    box_data.append(all_ensemble.dropna().values)
+    all_ensemble_for_box = all_ensemble.dropna()
+    box_data.append(all_ensemble_for_box.values)
     box_labels.append('Ensemble')
 
     bp = ax2.boxplot(box_data, labels=box_labels, patch_artist=True,
@@ -158,16 +169,17 @@ def plot_seasonal_patterns(observed, ensemble_dict, loc, dataset_id):
     positions_obs = np.arange(12) * 3 - 0.5
     positions_ens = np.arange(12) * 3 + 0.5
 
-    # Observed data by month
+    # Observed data by month (keep zeros and negative values, only drop NaNs)
     obs_data = [observed_monthly.get_group(m).dropna().values if m in observed_monthly.groups else []
                 for m in months]
 
-    # Ensemble data by month (combine all realizations)
+    # Ensemble data by month (combine all realizations, keep zeros)
     ens_data = []
     for m in months:
         month_vals = []
         for real_dict in ensemble_monthly.values():
             if m in real_dict.groups:
+                # Keep zeros and negative values, only drop NaNs
                 month_vals.extend(real_dict.get_group(m).dropna().values)
         ens_data.append(month_vals if month_vals else [])
 
