@@ -152,10 +152,8 @@ def plot_streamflow_comparison(site='delMontague',
 
     # Default to all datasets if not specified
     if dataset_ids is None:
-        dataset_ids = ['stationary_ensemble',
-                      'climate_adjusted_low',
-                      'climate_adjusted_medium',
-                      'climate_adjusted_high']
+        # Use all datasets from DATASET_CONFIGS
+        dataset_ids = list(DATASET_CONFIGS.keys())
 
     # Verify all datasets exist in config
     for dataset_id in dataset_ids:

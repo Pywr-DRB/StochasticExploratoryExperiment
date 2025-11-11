@@ -599,13 +599,20 @@ def plot_4panel_comparison(ssi_window=12,
     print("Creating 4-Panel Comparison Figure")
     print(f"{'='*60}")
 
-    # Define datasets to plot
-    datasets = {
-        'stationary_ensemble': 'Stationary',
-        'climate_adjusted_low': 'Low',
-        'climate_adjusted_medium': 'Medium',
-        'climate_adjusted_high': 'High'
-    }
+    # Define datasets to plot - use only those defined in config
+    datasets = {}
+    for dataset_id in DATASET_CONFIGS.keys():
+        if dataset_id == 'stationary_ensemble':
+            datasets[dataset_id] = 'Stationary'
+        elif dataset_id == 'climate_adjusted_low':
+            datasets[dataset_id] = 'Low'
+        elif dataset_id == 'climate_adjusted_medium':
+            datasets[dataset_id] = 'Medium'
+        elif dataset_id == 'climate_adjusted_high':
+            datasets[dataset_id] = 'High'
+        else:
+            # Use description from config for other datasets
+            datasets[dataset_id] = DATASET_CONFIGS[dataset_id]['description']
 
     # Calculate frequency for all datasets
     all_results = {}
@@ -675,7 +682,9 @@ def plot_4panel_comparison(ssi_window=12,
 
     # For right panels: create three-way classification for each climate scenario
     diff_results = {}
-    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+    # Use only climate-adjusted datasets that are defined in config
+    climate_datasets = [d for d in DATASET_CONFIGS.keys() if DATASET_CONFIGS[d]['type'] == 'climate_adjusted']
+    for dataset_id in climate_datasets:
         T_comp = all_results[dataset_id]['return_period_matrix']
         mask_climate = all_results[dataset_id]['data_mask']
 
