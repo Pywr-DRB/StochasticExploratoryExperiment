@@ -299,11 +299,15 @@ def load_ensemble_diversions(dataset_id, loc='nyc'):
     # Get ensemble set specs
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
 
-    # Determine HDF5 filename
+    # Determine HDF5 filename and column name
     if loc == 'nyc':
         diversion_key = 'diversion_nyc'
+        # NYC diversions use aggregate column (sum of pepacton, cannonsville, neversink)
+        diversion_column = 'aggregate'
     else:
         diversion_key = 'diversion_nj'
+        # NJ diversions use D_R_Canal column
+        diversion_column = 'D_R_Canal'
 
     # Load all ensemble sets
     ensemble_diversions = {}
@@ -330,13 +334,8 @@ def load_ensemble_diversions(dataset_id, loc='nyc'):
                     dates = datetime_data.tolist()
                 dates = pd.to_datetime(dates)
 
-                # Extract diversion column
-                if loc == 'nyc':
-                    # NYC diversions stored as 'diversion_nyc'
-                    div_data = real_group['diversion_nyc'][:]
-                else:
-                    # NJ diversions stored as 'diversion_nj'
-                    div_data = real_group['diversion_nj'][:]
+                # Extract diversion column based on location
+                div_data = real_group[diversion_column][:]
 
                 ensemble_diversions[int(realization_id)] = pd.Series(div_data, index=dates)
 
