@@ -2,21 +2,21 @@
 #SBATCH --job-name=SA
 #SBATCH --output=./logs/SA.out
 #SBATCH --error=./logs/SA.err
-#SBATCH --nodes=5
+#SBATCH --nodes=3
 #SBATCH --ntasks-per-node=40
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
 #SBATCH --exclusive
 
 # Setup
-DATASET_ID="${1:-baseline}"  # Default or pass as argument
+DATASET_ID="${1:-stationary_ensemble}"  # Default or pass as argument
 module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
 GENERATE=${GENERATE:-false}
-PREP=${PREP:-true}
+PREP=${PREP:-false}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories

@@ -76,6 +76,9 @@ def run_ensemble_set_simulations(set_id, dataset_id):
         # Get realization IDs for this ensemble set
         if rank == 0:
             realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
+            # Make sure they are all strings for consistency
+            realization_ids = [str(rid) for rid in realization_ids]
+            
             print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
         else:
             realization_ids = None
@@ -114,6 +117,7 @@ def run_ensemble_set_simulations(set_id, dataset_id):
             batch_start = i * N_REALIZATIONS_PER_PYWRDRB_BATCH
             batch_end = min((i + 1) * N_REALIZATIONS_PER_PYWRDRB_BATCH, n_rank_realizations)
             batched_indices[i] = rank_realization_ids[batch_start:batch_end]
+            batched_indices[i] = [str(rid) for rid in batched_indices[i]]  # for to be str 
         
         print(f"Set {set_id + 1}, Rank {rank}: Running {n_batches} batches")
         
@@ -125,6 +129,7 @@ def run_ensemble_set_simulations(set_id, dataset_id):
             # Model options for this batch
             model_options = {
                 "inflow_ensemble_indices": indices,
+                'nyc_nj_demand_source': 'custom',
             }
             
             # Add salinity LSTM options if enabled

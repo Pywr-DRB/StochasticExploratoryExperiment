@@ -41,7 +41,6 @@ mkdir -p logs figures
 
 ### Drought metric distribution plots
 
-
 # python3 09_plot_drought_metric_distribution.py stationary_ensemble 3 severity magnitude
 # python3 09_plot_drought_metric_distribution.py stationary_ensemble 6 severity magnitude
 # python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude

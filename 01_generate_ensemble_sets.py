@@ -22,6 +22,7 @@ from sglib.core.ensemble import Ensemble
 
 from methods.load import load_baseline_historical_flow
 from methods.config import *
+from methods.config import BASELINE_DATASET
 
 def generate_ensemble_set(set_id, dataset_id):
     """
@@ -62,12 +63,12 @@ def generate_ensemble_set(set_id, dataset_id):
     if rank == 0:
         Q = load_baseline_historical_flow(gage_flow=True, 
                                           period='full',
-                                          flowtype='pub_nhmv10_BC_withObsScaled')
+                                          flowtype=BASELINE_DATASET)
         Q_baseline = Q.copy()
 
         Q_inflow = load_baseline_historical_flow(gage_flow=False,
                                                  period='full',
-                                                 flowtype='pub_nhmv10_BC_withObsScaled')
+                                                 flowtype=BASELINE_DATASET)
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
 
         print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
