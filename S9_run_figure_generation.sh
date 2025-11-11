@@ -17,28 +17,23 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-ENSEMBLE_DIAGNOSTICS=${ENSEMBLE_DIAGNOSTICS:-true}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
+PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
 
 # Ensemble flow distribution and verification plots
-if [ "$ENSEMBLE_DIAGNOSTICS" = true ]; then
+if [ "$PLOT_ENSEMBLE_DIAGNOSTICS" = true ]; then
     python3 09_plot_ensemble_diagnostics.py stationary_ensemble
+fi
 
-    # Ensemble diagnotic plot
-    python3 10_plot_streamflow_scenario_comparison.py delMontague
+
+if [ "$PLOT_NYC_STORAGE_ZONES" = true ]; then
+    # NYC reservoir storage zone probability plots
+    # 4-panel storage zone probability comparison
+    python3 09_plot_reservoir_storage_zone_probabilities.py comparison
 fi
 
 
 
-
-# python3 10_plot_streamflow_scenario_comparison.py delMontague
-
-
-# SSI copula diagnostic figures (for Supplementary Information)
-# python3 07_compare_copula_parameters.py
-
-
-# SSI copula diagnostic figures (for Supplementary Information)
-# python3 09_plot_ssi_copula_diagnostics.py
 
 # # 4-panel drought return period comparison
 # python3 09_plot_drought_frequency.py comparison
@@ -76,13 +71,6 @@ fi
 # python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_high
 # python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_high
 
-# Ensemble diagnostic plots for delMontague
-# python3 10_plot_streamflow_scenario_comparison.py delMontague
-
-
-
-# # 4-panel storage zone probability comparison
-# python3 09_plot_reservoir_storage_zone_probabilities.py comparison
 
 # # 4-panel performance outcome comparison
 # python3 09_plot_performance_outcome_bars.py
