@@ -2,7 +2,6 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-import scipy.stats as scs
 from mpi4py import MPI
 import warnings
 warnings.filterwarnings("ignore")
@@ -19,9 +18,73 @@ from methods.config import *
 EXPORT_SSI_HDF5 = False
 
 
+def calculate_historic_observed_droughts(ssi_windows=[3, 6, 12]):
+    """
+    Calculate SSI-based drought metrics for historic observed data only.
+    This function can be run independently without MPI.
+    """
+    print("=" * 60)
+    print("CALCULATING HISTORIC OBSERVED DROUGHTS")
+    print("=" * 60)
+
+    # Load historic reconstruction data
+    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype='pub_nhmv10_BC_withObsScaled')
+    Q.replace(0, np.nan, inplace=True)
+    Q.drop(columns=['delTrenton'], inplace=True)
+
+    Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
+    Q_1960s.replace(0, np.nan, inplace=True)
+    Q_1960s.drop(columns=['delTrenton'], inplace=True)
+
+    # Calculate nyc_aggregate for historical data
+    nyc_gages = ["01425000", "01417000", "01436000"]
+    Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
+    Q_1960s['nyc_aggregate'] = Q_1960s[nyc_gages].sum(axis=1)
+
+    Q_monthly = Q.resample('MS').sum()
+    Q_1960s_monthly = Q_1960s.resample('MS').sum()
+
+    # Use the full monthly data
+    Q_full_monthly = Q_monthly.copy()
+
+    print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
+
+    # Create output directory if it doesn't exist
+    os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
+
+    node = 'nyc_aggregate'
+
+    # Process each SSI window
+    for ssi_window in ssi_windows:
+        print(f"\nProcessing SSI window: {ssi_window} months")
+
+        # Initialize calculators
+        drought_calculator = SSIDroughtMetrics()
+        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
+
+        # Fit SSI on historical data
+        ssi_calculator.fit(Q_monthly.loc[:, node])
+
+        # Calculate SSI for historical data
+        ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
+        obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
+
+        # Save observed drought metrics
+        obs_droughts.reset_index(inplace=True, drop=True)
+        obs_fname = f"./pywrdrb/drought_metrics/observed_ssi{ssi_window}_drought_events.csv"
+        obs_droughts.to_csv(obs_fname, index=False)
+        print(f"  Saved observed drought metrics: {obs_fname}")
+
+    print("\n" + "=" * 60)
+    print("Historic observed droughts calculation completed!")
+    print("=" * 60)
+    return True
+
+
 def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     """
-    Calculate SSI-based drought metrics for a dataset using MPI parallelization
+    Calculate SSI-based drought metrics for a dataset using MPI parallelization.
+    Note: Historic observed droughts are NOT calculated here - run with 'historic' argument separately.
     """
     # MPI setup
     comm = MPI.COMM_WORLD
@@ -38,29 +101,19 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"SSI windows: {ssi_windows}")
         print(f"Using {size} MPI ranks")
 
-    # Historic reconstruction data
+    # Historic reconstruction data (for fitting SSI only, not for calculating observed droughts)
     Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype='pub_nhmv10_BC_withObsScaled')
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
-    
-    Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
-    Q_1960s.replace(0, np.nan, inplace=True)
-    Q_1960s.drop(columns=['delTrenton'], inplace=True)
 
     # Calculate nyc_aggregate for historical data
     nyc_gages = ["01425000", "01417000", "01436000"]
     Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
-    Q_1960s['nyc_aggregate'] = Q_1960s[nyc_gages].sum(axis=1)
 
     Q_monthly = Q.resample('MS').sum()
-    Q_1960s_monthly = Q_1960s.resample('MS').sum()
-    
-    # index wont match, but stack anyway
-    # Q_full_monthly = pd.concat([Q_1960s_monthly, Q_monthly], axis=0)
-    Q_full_monthly = Q_monthly.copy()
 
     if rank == 0:
-        print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
+        print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites (for SSI fitting only).")
 
     # Verify postprocessed data exists
     if rank == 0:
@@ -135,20 +188,14 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         node = 'nyc_aggregate'
 
         # Initialize calculators
-        ssi_dist = scs.gamma
         drought_calculator = SSIDroughtMetrics()
         ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
 
         # Fit SSI on historical data (same on all ranks)
         ssi_calculator.fit(Q_monthly.loc[:, node])
 
-        # Calculate SSI for historical data (only rank 0)
         if rank == 0:
-            # Use the full monthly data, with 1960s included
-            ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
-            obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
-
-        print(f"  Rank {rank} processing {len(my_realizations)} realizations")
+            print(f"  Rank {rank} processing {len(my_realizations)} realizations")
 
         # Process assigned realizations
         local_ssi_data = {}
@@ -208,12 +255,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
                 for drought_df in rank_data:
                     syn_droughts = pd.concat([syn_droughts, drought_df], axis=0)
 
-            # Save drought metrics
-            obs_droughts.reset_index(inplace=True, drop=True)
-            obs_fname = f"./pywrdrb/drought_metrics/observed_ssi{ssi_window}_drought_events.csv"
-            obs_droughts.to_csv(obs_fname, index=False)
-            print(f"  Saved observed drought metrics: {obs_fname}")
-
+            # Save synthetic drought metrics
             syn_droughts.reset_index(inplace=True, drop=True)
             syn_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
             syn_droughts.to_csv(syn_fname, index=False)
@@ -227,22 +269,22 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
 
 def main(dataset_id):
-    """Main function"""
-    
+    """Main function for calculating synthetic drought metrics"""
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    
+
     if rank == 0:
         print("=" * 60)
         print(f"SSI DROUGHT METRICS CALCULATION: {dataset_id}")
         print("=" * 60)
-        
+
         # Create output directory if it doesn't exist
         os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
-    
+
     # Calculate drought metrics (using default SSI windows)
     success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3,6,12])
-    
+
     if rank == 0:
         if success:
             print("=" * 60)
@@ -254,14 +296,25 @@ def main(dataset_id):
 
 
 if __name__ == "__main__":
-    
-    # Get the dataset_id from command line arguments
-    if len(sys.argv) != 2:
-        print("Usage: mpirun -np N python 05_calculate_ssi_drought_metrics.py <dataset_id>")
-        print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
+
+    # Check for 'historic' mode
+    if len(sys.argv) == 2 and sys.argv[1].lower() == 'historic':
+        # Calculate historic observed droughts only (no MPI needed)
+        print("Running in HISTORIC mode - calculating observed droughts only")
+        success = calculate_historic_observed_droughts(ssi_windows=[3, 6, 12])
+        if not success:
+            sys.exit(1)
+    elif len(sys.argv) == 2:
+        # Normal mode - calculate synthetic droughts for a dataset
+        dataset_id = sys.argv[1]
+        verify_dataset_id(dataset_id)
+        main(dataset_id)
+    else:
+        print("Usage:")
+        print("  For historic observed droughts:")
+        print("    python 05_calculate_ssi_drought_metrics.py historic")
+        print()
+        print("  For synthetic ensemble droughts:")
+        print("    mpirun -np N python 05_calculate_ssi_drought_metrics.py <dataset_id>")
+        print(f"    Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)
-    
-    dataset_id = sys.argv[1]
-    verify_dataset_id(dataset_id)
-    
-    main(dataset_id)
