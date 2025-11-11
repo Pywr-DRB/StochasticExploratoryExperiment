@@ -1,4 +1,5 @@
 import os
+import h5py
 import numpy as np
 import pandas as pd
 import warnings
@@ -6,8 +7,9 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from pywrdrb.path_manager import get_pn_object
+from pywrdrb.utils.constants import cfs_to_mgd
 from sglib.core.ensemble import Ensemble
-from methods.config import RECONSTRUCTION_OUTPUT_FNAME
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
@@ -224,3 +226,118 @@ def load_shortage_data(dataset_id):
     print("  Data loaded successfully")
 
     return data
+
+
+def load_observed_diversions(loc='nyc'):
+    """
+    Load observed diversion data for training period.
+
+    Parameters
+    ----------
+    loc : str
+        Location identifier ('nyc' or 'nj')
+
+    Returns
+    -------
+    pd.Series
+        Observed diversions with datetime index
+    """
+    pn = get_pn_object()
+
+    if loc == 'nyc':
+        # Load NYC diversions from Excel file
+        fname = pn.observations.get_str("_raw", "Pep_Can_Nev_diversions_daily_2000-2021.xlsx")
+        diversion = pd.read_excel(fname, index_col=0)
+        diversion = diversion.iloc[:, :3]
+        diversion.index = pd.to_datetime(diversion.index)
+        diversion['aggregate'] = diversion.sum(axis=1)
+        diversion = diversion.loc[np.logical_not(np.isnan(diversion['aggregate']))]
+        # Convert CFS to MGD
+        diversion *= cfs_to_mgd
+        return diversion['aggregate']
+
+    elif loc == 'nj':
+        # Load NJ diversions from USGS gage flow (Delaware-Raritan Canal)
+        fname = pn.observations.get_str("_raw", "streamflow_daily_usgs_mgd.csv")
+        gage_flow = pd.read_csv(fname)
+        gage_flow.index = pd.DatetimeIndex(gage_flow['datetime']).date
+        gage_flow.index = pd.to_datetime(gage_flow.index)
+
+        # Convert gage ID to D_R_Canal
+        gage_flow['D_R_Canal'] = gage_flow['01460440']
+        diversion = gage_flow['D_R_Canal']
+
+        # Keep only after 1991
+        start_date = pd.Timestamp('1991-01-01')
+        diversion = diversion.loc[diversion.index >= start_date]
+
+        # Forward fill NA values
+        diversion = diversion.fillna(method='ffill')
+
+        # Set negative values to zero
+        diversion = diversion.clip(lower=0.0)
+
+        return diversion
+
+
+def load_ensemble_diversions(dataset_id, loc='nyc'):
+    """
+    Load ensemble diversion data from HDF5 file.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    loc : str
+        Location identifier ('nyc' or 'nj')
+
+    Returns
+    -------
+    dict
+        Dictionary of Series keyed by realization ID
+    """
+    # Get ensemble set specs
+    ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
+
+    # Determine HDF5 filename
+    if loc == 'nyc':
+        diversion_key = 'diversion_nyc'
+    else:
+        diversion_key = 'diversion_nj'
+
+    # Load all ensemble sets
+    ensemble_diversions = {}
+
+    for set_spec in ensemble_set_specs:
+        if diversion_key not in set_spec.files:
+            raise KeyError(f"Diversion file key '{diversion_key}' not found in ensemble set specification")
+
+        fname = set_spec.files[diversion_key]
+
+        if not os.path.exists(fname):
+            raise FileNotFoundError(f"Ensemble diversion file not found: {fname}")
+
+        # Load from HDF5
+        with h5py.File(fname, 'r') as hf:
+            for realization_id in hf.keys():
+                real_group = hf[realization_id]
+
+                # Extract datetime
+                datetime_data = real_group['datetime'][:]
+                if isinstance(datetime_data[0], bytes):
+                    dates = [d.decode('utf-8') for d in datetime_data]
+                else:
+                    dates = datetime_data.tolist()
+                dates = pd.to_datetime(dates)
+
+                # Extract diversion column
+                if loc == 'nyc':
+                    # NYC diversions stored as 'diversion_nyc'
+                    div_data = real_group['diversion_nyc'][:]
+                else:
+                    # NJ diversions stored as 'diversion_nj'
+                    div_data = real_group['diversion_nj'][:]
+
+                ensemble_diversions[int(realization_id)] = pd.Series(div_data, index=dates)
+
+    return ensemble_diversions
