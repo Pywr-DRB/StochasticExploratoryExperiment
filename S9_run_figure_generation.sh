@@ -42,19 +42,28 @@ mkdir -p logs figures
 ### Drought metric distribution plots
 
 
-python3 09_plot_drought_metric_distribution.py baseline 3 severity magnitude
-python3 09_plot_drought_metric_distribution.py baseline 6 severity magnitude
-python3 09_plot_drought_metric_distribution.py baseline 12 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 3 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 6 severity magnitude
+# python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
 
 
-python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_low
-python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_low
-python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_low
+python3 09_plot_drought_metric_distribution.py climate_adjusted_low 3 severity magnitude
+python3 09_plot_drought_metric_distribution.py climate_adjusted_low 6 severity magnitude
+python3 09_plot_drought_metric_distribution.py climate_adjusted_low 12 severity magnitude
+
+python3 09_plot_drought_metric_distribution.py climate_adjusted_high 3 severity magnitude
+python3 09_plot_drought_metric_distribution.py climate_adjusted_high 6 severity magnitude
+python3 09_plot_drought_metric_distribution.py climate_adjusted_high 12 severity magnitude
 
 
-python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_high
-python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_high
-python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_high
+# python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_low
+# python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_low
+# python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_low
+
+
+# python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_high
+# python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_high
+# python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_high
 
 # Ensemble diagnostic plots for delMontague
 # python3 10_plot_streamflow_scenario_comparison.py delMontague

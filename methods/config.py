@@ -46,11 +46,11 @@ DATASET_CONFIGS = {
         'description': 'Stationary ensemble (no climate adjustment)',
         'monthly_prc_change': None
     },
-    'baseline': {
-        'type': 'stationary',
-        'description': 'Baseline stationary ensemble (1980-2019; no climate adjustment)',
-        'monthly_prc_change': None
-    },
+    # 'baseline': {
+    #     'type': 'stationary',
+    #     'description': 'Baseline stationary ensemble (1980-2019; no climate adjustment)',
+    #     'monthly_prc_change': None
+    # },
     'climate_adjusted_low': {
         'type': 'climate_adjusted',
         'description': 'Driest climate change',
