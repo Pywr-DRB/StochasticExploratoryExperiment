@@ -85,9 +85,9 @@ def prep_ensemble_set(set_id, dataset_id):
             use_mpi=True  # Enable MPI within the preprocessor
         )
 
-        # inflow_preprocessor.load()
-        # inflow_preprocessor.process()
-        # inflow_preprocessor.save()
+        inflow_preprocessor.load()
+        inflow_preprocessor.process()
+        inflow_preprocessor.save()
         
         # Free up memory
         del inflow_preprocessor

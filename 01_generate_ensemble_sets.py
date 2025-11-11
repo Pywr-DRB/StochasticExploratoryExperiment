@@ -61,10 +61,14 @@ def generate_ensemble_set(set_id, dataset_id):
     
     # Load and broadcast data (optimized: only rank 0 loads)
     if rank == 0:
-        Q = load_baseline_historical_flow(gage_flow=True, 
-                                          period='full',
+        # Full Q is 1945-01-01 through 2023-12-31
+        Q = load_baseline_historical_flow(gage_flow=True, period='full',
                                           flowtype=BASELINE_DATASET)
-        Q_baseline = Q.copy()
+        ## Baseline flows
+        # Baseline is 1980-01-01 through 2019-12-31
+        Q_baseline = load_baseline_historical_flow(gage_flow=True, period='baseline', 
+                                                   flowtype=BASELINE_DATASET)
+        
 
         Q_inflow = load_baseline_historical_flow(gage_flow=False,
                                                  period='full',

@@ -16,8 +16,20 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # make directories
 mkdir -p logs figures
 
+# Workflow flags
+ENSEMBLE_DIAGNOSTICS=${ENSEMBLE_DIAGNOSTICS:-true}
 
-# Ensemble diagnotic plot
+# Ensemble flow distribution and verification plots
+if [ "$ENSEMBLE_DIAGNOSTICS" = true ]; then
+    python3 09_plot_ensemble_diagnostics.py stationary_ensemble
+
+    # Ensemble diagnotic plot
+    python3 10_plot_streamflow_scenario_comparison.py delMontague
+fi
+
+
+
+
 # python3 10_plot_streamflow_scenario_comparison.py delMontague
 
 
@@ -46,13 +58,13 @@ mkdir -p logs figures
 # python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
 
 
-python3 09_plot_drought_metric_distribution.py climate_adjusted_low 3 severity magnitude
-python3 09_plot_drought_metric_distribution.py climate_adjusted_low 6 severity magnitude
-python3 09_plot_drought_metric_distribution.py climate_adjusted_low 12 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_low 3 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_low 6 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_low 12 severity magnitude
 
-python3 09_plot_drought_metric_distribution.py climate_adjusted_high 3 severity magnitude
-python3 09_plot_drought_metric_distribution.py climate_adjusted_high 6 severity magnitude
-python3 09_plot_drought_metric_distribution.py climate_adjusted_high 12 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_high 3 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_high 6 severity magnitude
+# python3 09_plot_drought_metric_distribution.py climate_adjusted_high 12 severity magnitude
 
 
 # python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_low
