@@ -142,7 +142,13 @@ def plot_ensemble_diagnostics(dataset_id):
         # Q_syn[site] is a DataFrame with realizations as columns
         ensemble_dict = {}
         for col in Q_syn[site].columns:
-            real_id = int(col) if col.isdigit() else col
+            # Convert column to int if it's a string that represents an integer, otherwise use as-is
+            if isinstance(col, str) and col.isdigit():
+                real_id = int(col)
+            elif isinstance(col, (int, np.integer)):
+                real_id = int(col)
+            else:
+                real_id = col
             ensemble_dict[real_id] = pd.DataFrame({site: Q_syn[site][col]})
 
         ensemble = Ensemble(ensemble_dict)

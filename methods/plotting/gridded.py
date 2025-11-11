@@ -60,7 +60,14 @@ def plot_fdc_gridded(Qh, Qs,
         # Qs_trimmed is a DataFrame with realizations as columns
         ensemble_dict = {}
         for col in Qs_trimmed.columns:
-            ensemble_dict[int(col) if col.isdigit() else col] = pd.DataFrame({site: Qs_trimmed[col]})
+            # Convert column to int if it's a string that represents an integer, otherwise use as-is
+            if isinstance(col, str) and col.isdigit():
+                real_id = int(col)
+            elif isinstance(col, (int, np.integer)):
+                real_id = int(col)
+            else:
+                real_id = col
+            ensemble_dict[real_id] = pd.DataFrame({site: Qs_trimmed[col]})
 
         ensemble = Ensemble(ensemble_dict)
 
@@ -140,7 +147,14 @@ def plot_autocorrelation_gridded(Qh, Qs,
         # Qs[site] is a DataFrame with realizations as columns
         ensemble_dict = {}
         for col in Qs[site].columns:
-            ensemble_dict[int(col) if col.isdigit() else col] = pd.DataFrame({site: Qs[site][col]})
+            # Convert column to int if it's a string that represents an integer, otherwise use as-is
+            if isinstance(col, str) and col.isdigit():
+                real_id = int(col)
+            elif isinstance(col, (int, np.integer)):
+                real_id = int(col)
+            else:
+                real_id = col
+            ensemble_dict[real_id] = pd.DataFrame({site: Qs[site][col]})
 
         ensemble = Ensemble(ensemble_dict)
 
