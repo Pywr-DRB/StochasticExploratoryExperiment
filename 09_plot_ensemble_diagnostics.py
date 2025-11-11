@@ -5,7 +5,8 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from sglib.plotting import plot_validation_panel, plot_spatial_correlation, plot_drought_characteristics
+from sglib import Ensemble
+from sglib.plotting import plot_validation_panel, plot_spatial_correlation
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
@@ -77,26 +78,11 @@ def plot_ensemble_diagnostics(dataset_id):
         os.makedirs(f"{FIG_DIR}/{subdir}", exist_ok=True)
 
     ### Drought metric scatter plot (if drought metrics exist)
-    drought_metrics_file = f"./pywrdrb/drought_metrics/{dataset_id}_drought_events.csv"
-    if os.path.exists(drought_metrics_file):
-        print("Plotting drought metrics scatter...")
-        
-        obs_droughts = pd.read_csv(f"./pywrdrb/drought_metrics/observed_drought_events.csv")
-        syn_droughts = pd.read_csv(drought_metrics_file)
-
-        ## Plot scatter of drought metrics
-        fname = f"{dataset_id}_delMontague_drought_metrics_scatter.png"
-        fname = f"{FIG_DIR}/drought_metrics/{fname}"
-
-        plot_drought_characteristics(obs_droughts, 
-                                    syn_drought_metrics=syn_droughts, 
-                                    x_char='severity', 
-                                    y_char='magnitude', 
-                                    color_char='duration',
-                                    fname=fname)
-        print(f"  Saved: {fname}")
-    else:
-        print("Skipping drought metrics plot (file not found)")
+    # NOTE: Drought characteristics plotting requires ensemble data, not just metrics CSV
+    # The new SGLib API calculates drought metrics from flow data directly
+    # If you need this plot, create an Ensemble object and pass it to plot_drought_characteristics
+    # along with the observed data. The function will compute metrics internally.
+    print("Skipping drought metrics plot (requires Ensemble object input - see updated SGLib API)")
 
     ### Gridded FDCs and Autocorrelation plots
     for freq in ['daily', 'monthly']:
@@ -141,63 +127,103 @@ def plot_ensemble_diagnostics(dataset_id):
     validate_nodes = ['delMontague', 'cannonsville', 'pepacton', 'delLordville']
 
     for site in validate_nodes:
-        
+
         print(f"Plotting statistical validation for {site}...")
 
         if site == 'delTrenton':
             continue
-        
+
         logscale = False
-        
+
         fname = f"{dataset_id}_{site}_log.png" if logscale else f"{dataset_id}_{site}.png"
         fname = f"{FIG_DIR}/statistical_validation/{fname}"
 
-        plot_validation_panel(H_df=Q.loc[:, [site]], 
-                        S_df=Q_syn[site].loc[:'2019-12-31', :],
-                        scale='monthly',
-                        logspace=logscale,
-                        fname=fname,
-                        sitename=site)
+        # Convert synthetic data to Ensemble object
+        # Q_syn[site] is a DataFrame with realizations as columns
+        ensemble_dict = {}
+        for col in Q_syn[site].columns:
+            real_id = int(col) if col.isdigit() else col
+            ensemble_dict[real_id] = pd.DataFrame({site: Q_syn[site][col]})
+
+        ensemble = Ensemble(ensemble_dict)
+
+        # Use new SGLib API
+        plot_validation_panel(
+            ensemble=ensemble,
+            observed=Q.loc[:, site],
+            site=site,
+            timestep='monthly',
+            log_space=logscale,
+            filename=fname
+        )
 
     ### Spatial correlation plots
     print("\nGenerating spatial correlation plots...")
-    
+
     # Use first realization for correlation analysis
     Qs_df = syn_ensemble[realization_ids[0]].loc[:, Q.columns]
+
+    # Convert to Ensemble object for spatial correlation
+    # Create single-realization ensemble for first realization
+    ensemble_dict_single = {0: Qs_df}
+    ensemble_single = Ensemble(ensemble_dict_single)
 
     # Daily major nodes
     fname = f"{dataset_id}_daily_gage_flow_major_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_spatial_correlation(Q.loc[:, pywrdrb_nodes_to_generate], 
-                    Qs_df.loc[:, pywrdrb_nodes_to_generate],
-                    savefig=True,
-                    fname=fname)
+    plot_spatial_correlation(
+        ensemble_single,
+        observed=Q.loc[:, pywrdrb_nodes_to_generate],
+        realization=0,
+        timestep='daily',
+        method='pearson',
+        show_difference=False,
+        filename=fname
+    )
 
     # Monthly major nodes
     Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
     Qs_monthly_df = Qs_df.resample('MS').sum()
+    ensemble_dict_monthly = {0: Qs_monthly_df}
+    ensemble_monthly = Ensemble(ensemble_dict_monthly)
+
     fname = f"{dataset_id}_monthly_gage_flow_major_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_spatial_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate], 
-                    Qs_monthly_df.loc[:, pywrdrb_nodes_to_generate],
-                    savefig=True,
-                    fname=fname)
+    plot_spatial_correlation(
+        ensemble_monthly,
+        observed=Q_monthly_df.loc[:, pywrdrb_nodes_to_generate],
+        realization=0,
+        timestep='monthly',
+        method='pearson',
+        show_difference=False,
+        filename=fname
+    )
 
     # Daily minor nodes
     fname = f"{dataset_id}_daily_gage_flow_minor_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_spatial_correlation(Q.loc[:, pywrdrb_nodes_to_regress], 
-                    Qs_df.loc[:, pywrdrb_nodes_to_regress],
-                    savefig=True,
-                    fname=fname)
+    plot_spatial_correlation(
+        ensemble_single,
+        observed=Q.loc[:, pywrdrb_nodes_to_regress],
+        realization=0,
+        timestep='daily',
+        method='pearson',
+        show_difference=False,
+        filename=fname
+    )
 
     # Monthly minor nodes
     fname = f"{dataset_id}_monthly_gage_flow_minor_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_spatial_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_regress], 
-                    Qs_monthly_df.loc[:, pywrdrb_nodes_to_regress],
-                    savefig=True,
-                    fname=fname)
+    plot_spatial_correlation(
+        ensemble_monthly,
+        observed=Q_monthly_df.loc[:, pywrdrb_nodes_to_regress],
+        realization=0,
+        timestep='monthly',
+        method='pearson',
+        show_difference=False,
+        filename=fname
+    )
 
     print(f"\nAll diagnostic plots saved for {dataset_id}!")
     return True
