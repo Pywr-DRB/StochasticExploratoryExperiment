@@ -62,15 +62,23 @@ def plot_ensemble_diagnostics(dataset_id):
     print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
 
     ## Synthetic ensemble
+    print("Loading ensemble data (by_site=True)...")
     Q_syn = load_and_combine_ensemble_sets(ensemble_set_specs, by_site=True)
+
+    print("Loading ensemble data (by_site=False)...")
     syn_ensemble = load_and_combine_ensemble_sets(ensemble_set_specs, by_site=False)
 
-    Q_syn_monthly = {k: v.resample('MS').sum() for k, v in Q_syn.items()}
-
+    # Get realization IDs and count
     realization_ids = list(syn_ensemble.keys())
     n_realizations = len(realization_ids)
-
     print(f"Loaded synthetic ensemble with {n_realizations} realizations for {len(Q_syn)} sites.")
+
+    # Lazy computation: only resample monthly data when needed (not all sites upfront)
+    print("Preparing monthly resampling (lazy evaluation)...")
+    Q_syn_monthly = {}  # Will be computed on-demand per site
+
+    # Cache for Ensemble objects to avoid redundant creation
+    ensemble_cache = {}
 
     # Create figure directories
     fig_subdirs = ['drought_metrics', 'fdc', 'autocorrelation', 'statistical_validation', 'spatial_correlation']
@@ -86,7 +94,7 @@ def plot_ensemble_diagnostics(dataset_id):
 
     ### Gridded FDCs and Autocorrelation plots
     for freq in ['daily', 'monthly']:
-        
+
         print(f"\nGenerating {freq} diagnostic plots...")
 
         # Use daily or monthly flows
@@ -94,6 +102,10 @@ def plot_ensemble_diagnostics(dataset_id):
             Qs = Q_syn
             Qh = Q
         else:
+            # Compute monthly data on-demand only for sites we need
+            if not Q_syn_monthly:
+                print("  Computing monthly resampling for all sites...")
+                Q_syn_monthly = {k: v.resample('MS').sum() for k, v in Q_syn.items()}
             Qs = Q_syn_monthly
             Qh = Q_monthly
 
@@ -138,24 +150,27 @@ def plot_ensemble_diagnostics(dataset_id):
         fname = f"{dataset_id}_{site}_log.png" if logscale else f"{dataset_id}_{site}.png"
         fname = f"{FIG_DIR}/statistical_validation/{fname}"
 
-        # Convert synthetic data to Ensemble object
-        # Q_syn[site] is a DataFrame with realizations as columns
-        ensemble_dict = {}
-        for col in Q_syn[site].columns:
-            # Convert column to int if it's a string that represents an integer, otherwise use as-is
-            if isinstance(col, str) and col.isdigit():
-                real_id = int(col)
-            elif isinstance(col, (int, np.integer)):
-                real_id = int(col)
-            else:
-                real_id = col
-            ensemble_dict[real_id] = pd.DataFrame({site: Q_syn[site][col]})
+        # Check cache first
+        cache_key = f"validation_{site}"
+        if cache_key not in ensemble_cache:
+            # Convert synthetic data to Ensemble object
+            # Q_syn[site] is a DataFrame with realizations as columns
+            ensemble_dict = {}
+            for col in Q_syn[site].columns:
+                # Convert column to int if it's a string that represents an integer, otherwise use as-is
+                if isinstance(col, str) and col.isdigit():
+                    real_id = int(col)
+                elif isinstance(col, (int, np.integer)):
+                    real_id = int(col)
+                else:
+                    real_id = col
+                ensemble_dict[real_id] = pd.DataFrame({site: Q_syn[site][col]})
 
-        ensemble = Ensemble(ensemble_dict)
+            ensemble_cache[cache_key] = Ensemble(ensemble_dict)
 
         # Use new SGLib API
         plot_validation_panel(
-            ensemble=ensemble,
+            ensemble=ensemble_cache[cache_key],
             observed=Q.loc[:, site],
             site=site,
             timestep='monthly',
@@ -169,10 +184,21 @@ def plot_ensemble_diagnostics(dataset_id):
     # Use first realization for correlation analysis
     Qs_df = syn_ensemble[realization_ids[0]].loc[:, Q.columns]
 
-    # Convert to Ensemble object for spatial correlation
-    # Create single-realization ensemble for first realization
-    ensemble_dict_single = {0: Qs_df}
-    ensemble_single = Ensemble(ensemble_dict_single)
+    # Create daily ensemble (cached)
+    if 'spatial_daily' not in ensemble_cache:
+        ensemble_dict_single = {0: Qs_df}
+        ensemble_cache['spatial_daily'] = Ensemble(ensemble_dict_single)
+    ensemble_single = ensemble_cache['spatial_daily']
+
+    # Create monthly ensemble (cached, computed once)
+    if 'spatial_monthly' not in ensemble_cache:
+        Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
+        Qs_monthly_df = Qs_df.resample('MS').sum()
+        ensemble_dict_monthly = {0: Qs_monthly_df}
+        ensemble_cache['spatial_monthly'] = Ensemble(ensemble_dict_monthly)
+        ensemble_cache['Q_monthly_df'] = Q_monthly_df  # Cache for reuse
+    ensemble_monthly = ensemble_cache['spatial_monthly']
+    Q_monthly_df = ensemble_cache['Q_monthly_df']
 
     # Daily major nodes
     fname = f"{dataset_id}_daily_gage_flow_major_nodes.png"
@@ -188,11 +214,6 @@ def plot_ensemble_diagnostics(dataset_id):
     )
 
     # Monthly major nodes
-    Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
-    Qs_monthly_df = Qs_df.resample('MS').sum()
-    ensemble_dict_monthly = {0: Qs_monthly_df}
-    ensemble_monthly = Ensemble(ensemble_dict_monthly)
-
     fname = f"{dataset_id}_monthly_gage_flow_major_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
     plot_spatial_correlation(
