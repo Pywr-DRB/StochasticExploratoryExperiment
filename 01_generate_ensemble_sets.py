@@ -323,10 +323,10 @@ def generate_ensemble_set(set_id, dataset_id):
 
         for i, real_id in enumerate(set_realization_ids):
             real_col = str(real_id)
-            gage_flow_ensemble_dict[i] = pd.DataFrame({
+            gage_flow_ensemble_dict[real_id] = pd.DataFrame({
                 site: Q_syn[site][real_col] for site in sites
             }, index=syn_datetime)
-            inflow_ensemble_dict[i] = pd.DataFrame({
+            inflow_ensemble_dict[real_id] = pd.DataFrame({
                 site: Qs_inflows[site][real_col] for site in sites
             }, index=syn_datetime)
 
