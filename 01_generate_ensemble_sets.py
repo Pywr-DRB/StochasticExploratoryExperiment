@@ -16,8 +16,9 @@ from pywrdrb.pre.flows import _subtract_upstream_catchment_inflows
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.pywr_drb_node_data import downstream_node_lags
 
-from sglib.methods.nonparametric.kirsch_nowak import KirschNowakGenerator
-from sglib.utils.load import HDF5Manager
+from sglib.methods.generation.nonparametric.kirsch import KirschGenerator
+from sglib.methods.disaggregation.temporal.nowak import NowakDisaggregator
+from sglib.core.ensemble import Ensemble
 
 from methods.load import load_baseline_historical_flow
 from methods.config import *
@@ -85,13 +86,21 @@ def generate_ensemble_set(set_id, dataset_id):
     # baseline_mean_month = comm.bcast(baseline_mean_month, root=0)
     # baseline_std_month = comm.bcast(baseline_std_month, root=0)
     
-    # Fit KN generator (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
+    # Fit Kirsch generator (monthly) and Nowak disaggregator (monthly->daily)
+    # (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
     if rank == 0:
-        print(f"Set {set_id + 1}: Fitting Kirsch-Nowak model...")
+        print(f"Set {set_id + 1}: Fitting Kirsch generator (monthly)...")
 
-    kn_gen = KirschNowakGenerator(Q, debug=False)
-    kn_gen.preprocessing()
-    kn_gen.fit()
+    kirsch_gen = KirschGenerator(Q, debug=False)
+    kirsch_gen.preprocessing()
+    kirsch_gen.fit()
+
+    if rank == 0:
+        print(f"Set {set_id + 1}: Fitting Nowak disaggregator (monthly->daily)...")
+
+    nowak_disagg = NowakDisaggregator(Q, debug=False)
+    nowak_disagg.preprocessing()
+    nowak_disagg.fit()
     
     # Apply climate adjustments if needed
     if dataset_config['type'] == 'climate_adjusted':
@@ -103,19 +112,19 @@ def generate_ensemble_set(set_id, dataset_id):
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
         
         # Apply percentage changes to monthly means
-        prior_mean_month = kn_gen.mean_month
+        prior_mean_month = kirsch_gen.mean_month
         new_mean_month = prior_mean_month.copy() * pd.NA
 
         for i, site in enumerate(new_mean_month):
             # Convert from log scale, apply percentage change, convert back
-            # The kn_gen stores means in log scale
+            # The kirsch_gen stores means in log scale
             new_mean_month.loc[:, site] = np.exp(prior_mean_month.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
 
         # Convert back to log scale
         new_mean_month = np.log(new_mean_month.astype(float))
-        
+
         # Pass back to generator, overwriting the prior means
-        kn_gen.mean_month = new_mean_month
+        kirsch_gen.mean_month = new_mean_month
     
     # DISTRIBUTE REALIZATION GENERATION ACROSS RANKS
     # Each rank generates a subset of realizations
@@ -136,11 +145,17 @@ def generate_ensemble_set(set_id, dataset_id):
         if extra_realizations > 0:
             print(f"  First {extra_realizations} ranks get 1 extra realization")
 
-    # Generate local ensemble subset
+    # Generate local ensemble subset (monthly, then disaggregate to daily)
     if local_n_realizations > 0:
-        local_syn_ensemble = kn_gen.generate(n_realizations=local_n_realizations,
-                                           n_years=N_YEARS,
-                                           as_array=False)
+        # Step 1: Generate monthly flows using Kirsch
+        monthly_ensemble_obj = kirsch_gen.generate(n_realizations=local_n_realizations,
+                                                    n_years=N_YEARS)
+
+        # Step 2: Disaggregate monthly flows to daily using Nowak
+        daily_ensemble_obj = nowak_disagg.disaggregate(monthly_ensemble_obj)
+
+        # Convert Ensemble object to dictionary of DataFrames (by realization)
+        local_syn_ensemble = daily_ensemble_obj.data_by_realization
     else:
         local_syn_ensemble = {}
     
@@ -296,13 +311,29 @@ def generate_ensemble_set(set_id, dataset_id):
         
         # Save results
         print(f"Set {set_id + 1}: Saving results...")
-        hdf_manager = HDF5Manager()
-        
+
         gage_flow_fname = set_spec.files['gage_flow']
         catchment_inflow_fname = set_spec.files['catchment_inflow']
-        
-        hdf_manager.export_ensemble_to_hdf5(Q_syn, gage_flow_fname)
-        hdf_manager.export_ensemble_to_hdf5(Qs_inflows, catchment_inflow_fname)
+
+        # Create Ensemble objects and save to HDF5
+        # Convert site-based dict to realization-based dict for Ensemble
+        gage_flow_ensemble_dict = {}
+        inflow_ensemble_dict = {}
+
+        for i, real_id in enumerate(set_realization_ids):
+            real_col = str(real_id)
+            gage_flow_ensemble_dict[i] = pd.DataFrame({
+                site: Q_syn[site][real_col] for site in sites
+            }, index=syn_datetime)
+            inflow_ensemble_dict[i] = pd.DataFrame({
+                site: Qs_inflows[site][real_col] for site in sites
+            }, index=syn_datetime)
+
+        gage_flow_ensemble = Ensemble(gage_flow_ensemble_dict)
+        inflow_ensemble = Ensemble(inflow_ensemble_dict)
+
+        gage_flow_ensemble.to_hdf5(gage_flow_fname)
+        inflow_ensemble.to_hdf5(catchment_inflow_fname)
         
         print(f"Set {set_id + 1} completed successfully!")
         print(f"  Gage flow file: {gage_flow_fname}")

@@ -5,9 +5,7 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from sglib.plotting.monthly_flow_statistics import plot_validation
-from sglib.plotting.plot import plot_correlation
-from sglib.plotting.drought import drought_metric_scatter_plot
+from sglib.plotting import plot_validation_panel, plot_spatial_correlation, plot_drought_characteristics
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
@@ -90,7 +88,7 @@ def plot_ensemble_diagnostics(dataset_id):
         fname = f"{dataset_id}_delMontague_drought_metrics_scatter.png"
         fname = f"{FIG_DIR}/drought_metrics/{fname}"
 
-        drought_metric_scatter_plot(obs_droughts, 
+        plot_drought_characteristics(obs_droughts, 
                                     syn_drought_metrics=syn_droughts, 
                                     x_char='severity', 
                                     y_char='magnitude', 
@@ -154,7 +152,7 @@ def plot_ensemble_diagnostics(dataset_id):
         fname = f"{dataset_id}_{site}_log.png" if logscale else f"{dataset_id}_{site}.png"
         fname = f"{FIG_DIR}/statistical_validation/{fname}"
 
-        plot_validation(H_df=Q.loc[:, [site]], 
+        plot_validation_panel(H_df=Q.loc[:, [site]], 
                         S_df=Q_syn[site].loc[:'2019-12-31', :],
                         scale='monthly',
                         logspace=logscale,
@@ -170,7 +168,7 @@ def plot_ensemble_diagnostics(dataset_id):
     # Daily major nodes
     fname = f"{dataset_id}_daily_gage_flow_major_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_correlation(Q.loc[:, pywrdrb_nodes_to_generate], 
+    plot_spatial_correlation(Q.loc[:, pywrdrb_nodes_to_generate], 
                     Qs_df.loc[:, pywrdrb_nodes_to_generate],
                     savefig=True,
                     fname=fname)
@@ -180,7 +178,7 @@ def plot_ensemble_diagnostics(dataset_id):
     Qs_monthly_df = Qs_df.resample('MS').sum()
     fname = f"{dataset_id}_monthly_gage_flow_major_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate], 
+    plot_spatial_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_generate], 
                     Qs_monthly_df.loc[:, pywrdrb_nodes_to_generate],
                     savefig=True,
                     fname=fname)
@@ -188,7 +186,7 @@ def plot_ensemble_diagnostics(dataset_id):
     # Daily minor nodes
     fname = f"{dataset_id}_daily_gage_flow_minor_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_correlation(Q.loc[:, pywrdrb_nodes_to_regress], 
+    plot_spatial_correlation(Q.loc[:, pywrdrb_nodes_to_regress], 
                     Qs_df.loc[:, pywrdrb_nodes_to_regress],
                     savefig=True,
                     fname=fname)
@@ -196,7 +194,7 @@ def plot_ensemble_diagnostics(dataset_id):
     # Monthly minor nodes
     fname = f"{dataset_id}_monthly_gage_flow_minor_nodes.png"
     fname = f"{FIG_DIR}/spatial_correlation/{fname}"
-    plot_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_regress], 
+    plot_spatial_correlation(Q_monthly_df.loc[:, pywrdrb_nodes_to_regress], 
                     Qs_monthly_df.loc[:, pywrdrb_nodes_to_regress],
                     savefig=True,
                     fname=fname)

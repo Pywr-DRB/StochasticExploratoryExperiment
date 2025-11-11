@@ -8,8 +8,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from sglib import SSIDroughtMetrics, SSI
-from sglib import Ensemble, HDF5Manager
+from sglib.droughts.ssi import SSIDroughtMetrics, SSI
 
 
 from methods.load import load_baseline_historical_flow, load_wrf1960s_historical_flow
@@ -199,10 +198,12 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
             # Save SSI values to hdf5 (optional)
             if EXPORT_SSI_HDF5:
+                from sglib.core.ensemble import Ensemble
                 ssi_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}.hdf5"
                 print(f"  Saving SSI values to hdf5: {ssi_fname}")
-                hdf_manager = HDF5Manager()
-                hdf_manager.export_ensemble_to_hdf5(dict=syn_ssi_dict, output_file=ssi_fname)
+                # Convert syn_ssi_dict to Ensemble format
+                ssi_ensemble = Ensemble(syn_ssi_dict)
+                ssi_ensemble.to_hdf5(ssi_fname)
 
             # Combine drought data
             syn_droughts = pd.DataFrame()

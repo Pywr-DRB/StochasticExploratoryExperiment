@@ -6,7 +6,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from pywrdrb.path_manager import get_pn_object
-from sglib.utils.load import HDF5Manager
+from sglib.core.ensemble import Ensemble
 from methods.config import RECONSTRUCTION_OUTPUT_FNAME
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -166,8 +166,7 @@ def load_and_combine_ensemble_sets(ensemble_sets,
         gageflow_set_file = set_spec.files['gage_flow']
         set_realization_ids = set_spec.realization_ids
 
-        hdf_manager = HDF5Manager()
-        ensemble_set_data = hdf_manager.load_ensemble(gageflow_set_file)
+        ensemble_set_data = Ensemble.from_hdf5(gageflow_set_file)
 
         if by_site:
             # extract just the data by site
