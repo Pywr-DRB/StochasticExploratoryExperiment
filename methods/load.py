@@ -16,8 +16,8 @@ data_dir = f"{file_dir}/../data"
 
 
 def load_baseline_historical_flow(gage_flow=True, 
-                                  period='baseline',
-                                  flowtype='wrfaorc_withObsScaled'):
+                                  period='full',
+                                  flowtype='pub_nhmv10_BC_withObsScaled'):
     """
     Load the baseline historical data.
 
