@@ -15,7 +15,7 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-false}
 CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
-DATASETS=("climate_adjusted_low" "climate_adjusted_low" "climate_adjusted_high")
+DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")
 
 # make directories
 mkdir -p logs figures
@@ -38,5 +38,7 @@ if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then
     ################################################################################
     echo "Calculating storage zone probabilities..."
     ################################################################################
-    python3 07_calculate_storage_zone_probabilities.py stationary_ensemble
+    # python3 07_calculate_storage_zone_probabilities.py stationary_ensemble
+    python3 07_calculate_storage_zone_probabilities.py climate_adjusted_low
+    python3 07_calculate_storage_zone_probabilities.py climate_adjusted_high
 fi
