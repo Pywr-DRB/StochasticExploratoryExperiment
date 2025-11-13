@@ -145,8 +145,8 @@ def parallel_prep_all_sets(dataset_id):
             failed_sets = []
             required_files = [
                 'predicted_inflow',
-                'diversion_nyc_extrapolated',
-                'diversion_nj_extrapolated',
+                'diversion_nyc',
+                'diversion_nj',
                 'predicted_diversions'
             ]
 
@@ -186,8 +186,8 @@ def verify_prep_outputs(dataset_id):
     # Required files to check
     required_files = [
         'predicted_inflow',
-        'diversion_nyc_extrapolated',
-        'diversion_nj_extrapolated',
+        'diversion_nyc',
+        'diversion_nj',
         'predicted_diversions'
     ]
 

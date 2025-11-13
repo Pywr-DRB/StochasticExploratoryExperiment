@@ -420,7 +420,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     return keep_data
 
 
-def process_dataset(dataset_id, recombine_sets=False):
+def process_dataset(dataset_id, recombine_sets=True):
     """
     Process and combine all ensemble sets for a given dataset, then calculate performance metrics.
 
