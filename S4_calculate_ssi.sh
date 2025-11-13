@@ -14,7 +14,6 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # Workflow control flags 
 CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-true}
 CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-true}
-TEST_CLUSTER_POTENTIAL=${TEST_CLUSTER_POTENTIAL:-false}
 
 
 # make directories
@@ -42,14 +41,15 @@ if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
 fi
 
 
+# TEST_CLUSTER_POTENTIAL=${TEST_CLUSTER_POTENTIAL:-false}
 
-if [ "$TEST_CLUSTER_POTENTIAL" = true ]; then
+# if [ "$TEST_CLUSTER_POTENTIAL" = true ]; then
 
-    ################################################################################
-    echo "Testing cluster computing potential..."
-    ################################################################################
-    python3 SI3_evaluate_cluster_potential.py stationary_ensemble 3
-    python3 SI3_evaluate_cluster_potential.py stationary_ensemble 6
-    python3 SI3_evaluate_cluster_potential.py stationary_ensemble 12
+#     ################################################################################
+#     echo "Testing cluster computing potential..."
+#     ################################################################################
+#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 3
+#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 6
+#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 12
 
-fi
+# fi

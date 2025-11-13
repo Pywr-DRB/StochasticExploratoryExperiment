@@ -294,8 +294,6 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
         full_results_set_dict[dataset_id] = combined_data
         setattr(data, results_set, full_results_set_dict)
 
-    # Replace gage flow with combined version
-    data.major_flow[dataset_id] = gage_flow_dict[dataset_id]
 
     # Add Trenton equivalent flow AFTER combining datasets
     # This ensures delTrenton_equiv is added to the combined dataset
@@ -623,7 +621,7 @@ if __name__ == "__main__":
     verify_dataset_id(dataset_id)
 
     # Check for --recombine flag
-    recombine_sets = False
+    recombine_sets = True
     if len(sys.argv) == 3:
         if sys.argv[2] == '--recombine':
             recombine_sets = True

@@ -12,7 +12,7 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
-RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-false}
+RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
 CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
 DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")

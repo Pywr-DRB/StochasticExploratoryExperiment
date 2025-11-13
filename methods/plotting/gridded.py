@@ -38,7 +38,7 @@ def plot_fdc_gridded(Qh, Qs,
     # Create the plot
     fig, axs = plt.subplots(figsize=(ncols*3, nrows*3),
                         nrows=nrows, ncols=ncols,
-                        sharex=True, sharey=True)
+                        sharex=True, sharey='row')
 
     # Pre-compute realization ID mapping once (shared across all sites)
     first_site = sites[0]
@@ -51,6 +51,9 @@ def plot_fdc_gridded(Qh, Qs,
             real_id_map[col] = int(col)
         else:
             real_id_map[col] = col
+
+    # order sites based on mean flow
+    sites = sorted(sites, key=lambda x: Qh[x].mean(), reverse=True)
 
     for i, site in enumerate(sites):
 

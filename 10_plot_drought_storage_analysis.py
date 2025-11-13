@@ -49,6 +49,9 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # Drought metrics directory
 DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
 
+# Satisficing analysis directory
+SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
+
 # NYC reservoir parameters
 NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
 NYC_STORAGE_CAPACITIES = {
@@ -480,6 +483,257 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
     return fig
 
 
+def load_satisficing_data(dataset_id, ssi_window):
+    """
+    Load satisficing analysis results for drought years.
+
+    Parameters:
+    -----------
+    dataset_id : str
+        Dataset identifier
+    ssi_window : int
+        SSI window size
+
+    Returns:
+    --------
+    pd.DataFrame
+        Satisficing results for years with droughts
+    """
+    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
+
+    if not os.path.exists(fname):
+        print(f"  WARNING: Satisficing data not found: {fname}")
+        print(f"  Run 06_calculate_satisficing_by_drought.py first!")
+        return None
+
+    satisficing_data = pd.read_csv(fname)
+    print(f"  Loaded satisficing data for {len(satisficing_data):,} year-realization pairs")
+    return satisficing_data
+
+
+def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):
+    """
+    Create scatter plots colored by satisficing status.
+
+    Parameters:
+    -----------
+    satisficing_data : pd.DataFrame
+        Satisficing results with nyc_inflow, montague_contrib, and satisficing columns
+    dataset_id : str
+        Dataset identifier
+    ssi_window : int
+        SSI window size
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        Figure with satisficing scatter plots
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Get dataset label
+    dataset_label = DATASET_LABELS_SHORT.get(dataset_id, dataset_id)
+
+    # Define colors for satisficing status
+    colors = {True: '#2ecc71', False: '#e74c3c'}  # Green for satisficing, red for non-satisficing
+    labels = {True: 'Satisficing', False: 'Non-satisficing'}
+
+    # Panel 1: NYC Inflow vs Montague Contribution
+    for satisficing_status in [False, True]:  # Plot non-satisficing first, then satisficing
+        subset = satisficing_data[satisficing_data['satisficing'] == satisficing_status]
+        ax1.scatter(
+            subset['nyc_inflow'],
+            subset['montague_contrib'],
+            c=colors[satisficing_status],
+            label=labels[satisficing_status],
+            alpha=0.6,
+            s=40,
+            edgecolors='black',
+            linewidth=0.5
+        )
+
+    ax1.set_xlabel('NYC Inflow (MG)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('NYC Contribution to Montague (MG)', fontsize=12, fontweight='bold')
+    ax1.set_title('NYC Inflow vs Montague Contribution\n(Drought Years)', fontsize=13, fontweight='bold')
+    ax1.legend(loc='best', fontsize=11, framealpha=0.9)
+    ax1.grid(True, alpha=0.3, linestyle='--')
+
+    # Add summary statistics
+    n_satisficing = satisficing_data['satisficing'].sum()
+    n_total = len(satisficing_data)
+    pct_satisficing = 100 * n_satisficing / n_total if n_total > 0 else 0
+
+    stats_text = f"Total: {n_total:,}\nSatisficing: {n_satisficing:,} ({pct_satisficing:.1f}%)\nNon-satisficing: {n_total - n_satisficing:,} ({100 - pct_satisficing:.1f}%)"
+    ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes,
+            verticalalignment='top', fontsize=10,
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    # Panel 2: Min Storage vs Max Violation Days
+    for satisficing_status in [False, True]:
+        subset = satisficing_data[satisficing_data['satisficing'] == satisficing_status]
+        ax2.scatter(
+            subset['min_storage_pct'],
+            subset['max_violation_days'],
+            c=colors[satisficing_status],
+            label=labels[satisficing_status],
+            alpha=0.6,
+            s=40,
+            edgecolors='black',
+            linewidth=0.5
+        )
+
+    ax2.set_xlabel('Minimum NYC Storage (%)', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Max Consecutive Montague Violation Days', fontsize=12, fontweight='bold')
+    ax2.set_title('Storage vs Montague Violations\n(Drought Years)', fontsize=13, fontweight='bold')
+    ax2.legend(loc='best', fontsize=11, framealpha=0.9)
+    ax2.grid(True, alpha=0.3, linestyle='--')
+
+    # Add reference lines for satisficing thresholds
+    ax2.axvline(x=20, color='red', linestyle='--', linewidth=2, alpha=0.7, label='Storage Threshold (20%)')
+    ax2.axhline(y=3, color='orange', linestyle='--', linewidth=2, alpha=0.7, label='Violation Threshold (3 days)')
+
+    # Overall title
+    title = f"Satisficing Analysis: {dataset_label} (SSI-{ssi_window} Drought Years)"
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=1.00)
+
+    plt.tight_layout()
+    return fig
+
+
+def merge_satisficing_with_droughts(droughts_with_storage, satisficing_data):
+    """
+    Merge drought events with satisficing data.
+
+    Parameters:
+    -----------
+    droughts_with_storage : pd.DataFrame
+        Drought events with min_storage_pct column
+    satisficing_data : pd.DataFrame
+        Satisficing data for drought years
+
+    Returns:
+    --------
+    pd.DataFrame
+        Merged data with both drought metrics and satisficing status
+    """
+    # Extract year from drought start date
+    droughts_with_storage = droughts_with_storage.copy()
+    droughts_with_storage['year'] = droughts_with_storage['start'].dt.year
+
+    # Merge on year and realization
+    merged = droughts_with_storage.merge(
+        satisficing_data[['year', 'realization', 'satisficing']],
+        left_on=['year', 'realization_id'],
+        right_on=['year', 'realization'],
+        how='left'
+    )
+
+    # Drop duplicate realization column
+    if 'realization' in merged.columns:
+        merged = merged.drop(columns=['realization'])
+
+    print(f"  Merged {len(merged):,} drought events with satisficing data")
+    print(f"  {merged['satisficing'].notna().sum():,} events have satisficing status")
+
+    return merged
+
+
+def create_drought_satisficing_scatter(merged_data, dataset_id, ssi_window):
+    """
+    Create scatter plots of drought metrics colored by satisficing status.
+
+    Parameters:
+    -----------
+    merged_data : pd.DataFrame
+        Merged drought and satisficing data
+    dataset_id : str
+        Dataset identifier
+    ssi_window : int
+        SSI window size
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        Figure with drought-satisficing scatter plots
+    """
+    # Filter to only events with satisficing status
+    plot_data = merged_data[merged_data['satisficing'].notna()].copy()
+
+    if len(plot_data) == 0:
+        print("  WARNING: No data with satisficing status to plot")
+        return None
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Get dataset label
+    dataset_label = DATASET_LABELS_SHORT.get(dataset_id, dataset_id)
+
+    # Define colors for satisficing status
+    colors = {True: '#2ecc71', False: '#e74c3c'}  # Green for satisficing, red for non-satisficing
+    labels = {True: 'Satisficing', False: 'Non-satisficing'}
+
+    # Panel 1: Severity vs Magnitude colored by satisficing
+    for satisficing_status in [False, True]:
+        subset = plot_data[plot_data['satisficing'] == satisficing_status]
+        ax1.scatter(
+            subset['severity'],
+            subset['magnitude'],
+            c=colors[satisficing_status],
+            label=labels[satisficing_status],
+            alpha=0.6,
+            s=40,
+            edgecolors='black',
+            linewidth=0.5
+        )
+
+    ax1.set_xlabel('Drought Severity (min SSI)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Drought Magnitude (cumulative deficit)', fontsize=12, fontweight='bold')
+    ax1.set_title('Drought Severity vs Magnitude\n(Colored by Satisficing Status)', fontsize=13, fontweight='bold')
+    ax1.legend(loc='best', fontsize=11, framealpha=0.9)
+    ax1.grid(True, alpha=0.3, linestyle='--')
+
+    # Add summary statistics
+    n_satisficing = plot_data['satisficing'].sum()
+    n_total = len(plot_data)
+    pct_satisficing = 100 * n_satisficing / n_total if n_total > 0 else 0
+
+    stats_text = f"Total: {n_total:,}\nSatisficing: {n_satisficing:,} ({pct_satisficing:.1f}%)\nNon-satisficing: {n_total - n_satisficing:,} ({100 - pct_satisficing:.1f}%)"
+    ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes,
+            verticalalignment='top', fontsize=10,
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    # Panel 2: Severity vs Min Storage colored by satisficing
+    for satisficing_status in [False, True]:
+        subset = plot_data[plot_data['satisficing'] == satisficing_status]
+        ax2.scatter(
+            subset['severity'],
+            subset['min_storage_pct'],
+            c=colors[satisficing_status],
+            label=labels[satisficing_status],
+            alpha=0.6,
+            s=40,
+            edgecolors='black',
+            linewidth=0.5
+        )
+
+    ax2.set_xlabel('Drought Severity (min SSI)', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Minimum NYC Storage (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Drought Severity vs Minimum Storage\n(Colored by Satisficing Status)', fontsize=13, fontweight='bold')
+    ax2.legend(loc='best', fontsize=11, framealpha=0.9)
+    ax2.grid(True, alpha=0.3, linestyle='--')
+
+    # Add reference line for storage threshold
+    ax2.axhline(y=20, color='red', linestyle='--', linewidth=2, alpha=0.7, label='Storage Threshold (20%)')
+    ax2.set_ylim(-5, 105)
+
+    # Overall title
+    title = f"Drought Metrics & Satisficing: {dataset_label} (SSI-{ssi_window})"
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=1.00)
+
+    plt.tight_layout()
+    return fig
+
+
 def main():
     """Main execution function."""
 
@@ -556,6 +810,33 @@ def main():
         fig.savefig(fname, dpi=300, bbox_inches='tight')
         print(f"  Saved: {fname}")
         plt.close(fig)
+
+        # Load satisficing data and create additional plots
+        print(f"\nLoading satisficing data (SSI-{ssi_window})...")
+        satisficing_data = load_satisficing_data(dataset_id, ssi_window)
+
+        if satisficing_data is not None:
+            # Create satisficing scatter plots
+            print(f"\nCreating satisficing scatter plots...")
+            fig = create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window)
+            if fig is not None:
+                fname = f"{FIG_OUTPUT_DIR}/{dataset_id}_ssi{ssi_window}_satisficing_scatter.png"
+                fig.savefig(fname, dpi=300, bbox_inches='tight')
+                print(f"  Saved: {fname}")
+                plt.close(fig)
+
+            # Merge drought events with satisficing data
+            print(f"\nMerging drought events with satisficing data...")
+            merged_data = merge_satisficing_with_droughts(droughts_with_storage, satisficing_data)
+
+            # Create drought-satisficing scatter plots
+            print(f"\nCreating drought-satisficing scatter plots...")
+            fig = create_drought_satisficing_scatter(merged_data, dataset_id, ssi_window)
+            if fig is not None:
+                fname = f"{FIG_OUTPUT_DIR}/{dataset_id}_ssi{ssi_window}_drought_satisficing_scatter.png"
+                fig.savefig(fname, dpi=300, bbox_inches='tight')
+                print(f"  Saved: {fname}")
+                plt.close(fig)
 
         # Print summary statistics
         print(f"\nSummary Statistics (SSI-{ssi_window}):")

@@ -1,16 +1,16 @@
 """
-Calculate satisficing conditions during drought vs non-drought periods.
+Calculate satisficing conditions during drought vs non-drought years.
 
 This script addresses the question: Is there a meaningful difference between
-performance outcomes during drought periods vs non-drought periods?
+performance outcomes during years with droughts vs years without droughts?
 
 Analysis includes:
 1. Satisficing during ALL simulation years (baseline)
-2. Satisficing during SSI-identified drought periods only
-3. Satisficing during non-drought periods only
+2. Satisficing during years with some drought events
+3. Satisficing during years with no drought events
 
 Satisficing conditions:
-- NYC storage >= 20% throughout evaluation period
+- NYC storage >= 20% throughout evaluation period (Jun-Dec)
 - Montague flow target violations <= 3 consecutive days
 
 The results are saved in a format suitable for comparative plotting and analysis.
@@ -54,9 +54,9 @@ def print_summary_statistics(all_years_results, drought_results, non_drought_res
     all_years_results : pd.DataFrame
         Satisficing results for all years
     drought_results : pd.DataFrame
-        Satisficing results during droughts
+        Satisficing results for years with drought events
     non_drought_results : pd.DataFrame
-        Satisficing results during non-drought periods
+        Satisficing results for years without drought events
     dataset_id : str
         Dataset identifier
     ssi_window : int
@@ -81,11 +81,11 @@ def print_summary_statistics(all_years_results, drought_results, non_drought_res
 
     print("\nOVERALL SATISFICING RATES:")
     print("-" * 80)
-    print(f"{'Condition':<30} {'Total Periods':>15} {'Satisficing':>15} {'%':>10}")
+    print(f"{'Condition':<30} {'Total Years':>15} {'Satisficing':>15} {'%':>10}")
     print("-" * 80)
     print(f"{'All Years (Jun-Dec)':<30} {n_all:>15,} {n_sat_all:>15,} {pct_sat_all:>9.1f}%")
-    print(f"{'During Droughts':<30} {n_drought:>15,} {n_sat_drought:>15,} {pct_sat_drought:>9.1f}%")
-    print(f"{'Non-Drought Years':<30} {n_non_drought:>15,} {n_sat_non_drought:>15,} {pct_sat_non_drought:>9.1f}%")
+    print(f"{'Years with Droughts':<30} {n_drought:>15,} {n_sat_drought:>15,} {pct_sat_drought:>9.1f}%")
+    print(f"{'Years without Droughts':<30} {n_non_drought:>15,} {n_sat_non_drought:>15,} {pct_sat_non_drought:>9.1f}%")
     print("-" * 80)
 
     # Calculate difference
@@ -95,9 +95,9 @@ def print_summary_statistics(all_years_results, drought_results, non_drought_res
 
     print("\nCOMPARISONS:")
     print("-" * 80)
-    print(f"Drought vs All Years:       {diff_drought_vs_all:+.1f} percentage points")
-    print(f"Non-Drought vs All Years:   {diff_non_vs_all:+.1f} percentage points")
-    print(f"Non-Drought vs Drought:     {diff_non_vs_drought:+.1f} percentage points")
+    print(f"Years with Droughts vs All Years:       {diff_drought_vs_all:+.1f} percentage points")
+    print(f"Years without Droughts vs All Years:    {diff_non_vs_all:+.1f} percentage points")
+    print(f"Years without vs with Droughts:         {diff_non_vs_drought:+.1f} percentage points")
     print("-" * 80)
 
     # Failure breakdown
@@ -106,8 +106,8 @@ def print_summary_statistics(all_years_results, drought_results, non_drought_res
 
     for results, label in [
         (all_years_results, "All Years"),
-        (drought_results, "During Droughts"),
-        (non_drought_results, "Non-Drought Years")
+        (drought_results, "Years with Droughts"),
+        (non_drought_results, "Years without Droughts")
     ]:
         if len(results) == 0:
             continue
@@ -135,8 +135,8 @@ def print_summary_statistics(all_years_results, drought_results, non_drought_res
     metrics_summary = []
     for results, label in [
         (all_years_results, "All Years"),
-        (drought_results, "During Droughts"),
-        (non_drought_results, "Non-Drought Years")
+        (drought_results, "Years with Droughts"),
+        (non_drought_results, "Years without Droughts")
     ]:
         if len(results) == 0:
             continue
@@ -164,9 +164,9 @@ def calculate_statistical_significance(drought_results, non_drought_results):
     Parameters
     ----------
     drought_results : pd.DataFrame
-        Satisficing results during droughts
+        Satisficing results for years with droughts
     non_drought_results : pd.DataFrame
-        Satisficing results during non-drought periods
+        Satisficing results for years without droughts
 
     Returns
     -------
@@ -194,7 +194,7 @@ def calculate_statistical_significance(drought_results, non_drought_results):
         'dof': dof
     }
 
-    print("\nChi-Square Test: Satisficing Rates (Drought vs Non-Drought)")
+    print("\nChi-Square Test: Satisficing Rates (Years with vs without Droughts)")
     print("-" * 80)
     print(f"Chi-square statistic: {chi2:.4f}")
     print(f"p-value: {p_value:.4e}")
@@ -273,9 +273,9 @@ def save_results(all_years_results, drought_results, non_drought_results,
     all_years_results : pd.DataFrame
         All years results
     drought_results : pd.DataFrame
-        Drought period results
+        Years with drought events results
     non_drought_results : pd.DataFrame
-        Non-drought period results
+        Years without drought events results
     dataset_id : str
         Dataset identifier
     ssi_window : int
@@ -293,12 +293,12 @@ def save_results(all_years_results, drought_results, non_drought_results,
     fnames.append(fname)
     print(f"Saved: {fname}")
 
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_during_droughts.csv"
+    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
     drought_results.to_csv(fname, index=False)
     fnames.append(fname)
     print(f"Saved: {fname}")
 
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_non_drought.csv"
+    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
     non_drought_results.to_csv(fname, index=False)
     fnames.append(fname)
     print(f"Saved: {fname}")
@@ -367,27 +367,27 @@ def main(dataset_id, ssi_window):
     )
     print(f"  Evaluated {len(all_years_results)} year-realization pairs")
 
-    # 2. Calculate satisficing during drought periods
+    # 2. Calculate satisficing for years with drought events
     print("\n" + "=" * 80)
-    print("CALCULATING: During Drought Periods")
+    print("CALCULATING: Years with Drought Events")
     print("=" * 80)
     drought_results = calculate_satisficing_during_droughts(
         data, dataset_id, drought_events_df,
         storage_threshold=20.0,
         violation_days=3
     )
-    print(f"  Evaluated {len(drought_results)} drought events")
+    print(f"  Evaluated {len(drought_results)} year-realization pairs with droughts")
 
-    # 3. Calculate satisficing during non-drought periods
+    # 3. Calculate satisficing for years without drought events
     print("\n" + "=" * 80)
-    print("CALCULATING: Non-Drought Periods")
+    print("CALCULATING: Years without Drought Events")
     print("=" * 80)
     non_drought_results = calculate_satisficing_non_drought_periods(
         data, dataset_id, drought_events_df,
         storage_threshold=20.0,
         violation_days=3
     )
-    print(f"  Evaluated {len(non_drought_results)} non-drought periods")
+    print(f"  Evaluated {len(non_drought_results)} year-realization pairs without droughts")
 
     # Print summary statistics
     print_summary_statistics(all_years_results, drought_results, non_drought_results,

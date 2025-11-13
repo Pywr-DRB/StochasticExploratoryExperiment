@@ -49,13 +49,13 @@ def plot_ensemble_diagnostics(dataset_id):
     ### Loading data
     ## Historic reconstruction data
     # Total flow
-    Q = load_baseline_historical_flow()
+    Q = load_baseline_historical_flow(period='full', gage_flow=True, flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)  # Remove Trenton gage as it is not used in the ensemble
     Q_monthly = Q.resample('MS').sum()
 
     # Catchment inflows
-    Q_inflows = load_baseline_historical_flow(gage_flow=False)
+    Q_inflows = load_baseline_historical_flow(gage_flow=False, period='full', flowtype=BASELINE_DATASET)
     Q_inflows.replace(0, np.nan, inplace=True)
     Q_inflows.drop(columns=['delTrenton'], inplace=True)
 

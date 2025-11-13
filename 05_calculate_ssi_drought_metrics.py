@@ -28,26 +28,33 @@ def calculate_historic_observed_droughts(ssi_windows=[3, 6, 12]):
     print("=" * 60)
 
     # Load historic reconstruction data
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype='pub_nhmv10_BC_withObsScaled')
+    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
 
-    Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
-    Q_1960s.replace(0, np.nan, inplace=True)
-    Q_1960s.drop(columns=['delTrenton'], inplace=True)
 
+
+
+    if BASELINE_DATASET == 'wrfaorc_withObsScaled':
+        Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
+        Q_1960s.replace(0, np.nan, inplace=True)
+        Q_1960s.drop(columns=['delTrenton'], inplace=True)
+        # combine the two datasets
+        Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()   
+        Q_full.replace(0, np.nan, inplace=True)
+        Q_full.dropna(axis=0, how='any', inplace=True)
+    else:
+        Q_full = Q.copy()
+    
     # Calculate nyc_aggregate for historical data
     nyc_gages = ["01425000", "01417000", "01436000"]
-    Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
-    Q_1960s['nyc_aggregate'] = Q_1960s[nyc_gages].sum(axis=1)
+    Q_full['nyc_aggregate'] = Q_full[nyc_gages].sum(axis=1)
+    Q_monthly = Q_full.resample('MS').sum()
+    Q_monthly.replace(0, np.nan, inplace=True)
+    Q_monthly.dropna(axis=0, how='any', inplace=True)
+    
 
-    Q_monthly = Q.resample('MS').sum()
-    Q_1960s_monthly = Q_1960s.resample('MS').sum()
-
-    # Use the full monthly data
-    Q_full_monthly = Q_monthly.copy()
-
-    print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites.")
+    print(f"Loaded historic data with {Q_full.shape[0]// 365} years ({Q_full.index.min()}, {Q_full.index.max()}) of daily data for {Q_full.shape[1]} sites.")
 
     # Create output directory if it doesn't exist
     os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
@@ -66,11 +73,16 @@ def calculate_historic_observed_droughts(ssi_windows=[3, 6, 12]):
         ssi_calculator.fit(Q_monthly.loc[:, node])
 
         # Calculate SSI for historical data
-        ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
+        ssi_obs = ssi_calculator.transform(Q_monthly.loc[:, node])
         obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
 
         # Save observed drought metrics
         obs_droughts.reset_index(inplace=True, drop=True)
+        
+        # if baseline dataset is wrfaorc_withObsScaled, drop any droughts that begin < 1969-12-31 and end > 1979-01-01
+        if BASELINE_DATASET == 'wrfaorc_withObsScaled':
+            obs_droughts = obs_droughts[~((obs_droughts['start'] < pd.to_datetime('1970-01-01')) & (obs_droughts['end'] > pd.to_datetime('1979-01-01')))]
+
         obs_fname = f"./pywrdrb/drought_metrics/observed_ssi{ssi_window}_drought_events.csv"
         obs_droughts.to_csv(obs_fname, index=False)
         print(f"  Saved observed drought metrics: {obs_fname}")
@@ -102,7 +114,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Using {size} MPI ranks")
 
     # Historic reconstruction data (for fitting SSI only, not for calculating observed droughts)
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype='pub_nhmv10_BC_withObsScaled')
+    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
 

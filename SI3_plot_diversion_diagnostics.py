@@ -87,7 +87,7 @@ def plot_distribution_comparison(observed, ensemble_dict, loc, dataset_id):
         ens_clean = ensemble_dict[key].dropna()
         if len(ens_clean) > 1 and ens_clean.std() > 0:
             try:
-                ens_clean.plot.kde(ax=ax1, color='#ff7f0e', alpha=0.15,
+                ens_clean.plot.kde(ax=ax1, color='#ff7f0e', alpha=0.25,
                                   linewidth=0.8, label='Ensemble' if i == 0 else None)
             except (ValueError, np.linalg.LinAlgError):
                 # KDE failed, skip this realization

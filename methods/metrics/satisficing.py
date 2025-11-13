@@ -112,9 +112,9 @@ def calculate_satisficing_conditions(data, dataset_id,
             years = pd.DatetimeIndex(common_index).year.unique()
 
             for year in years:
-                # Define period (June 1 - Dec 31)
+                # Define period (Jan 1 - Dec 31)
                 if period_start is None:
-                    p_start = f'{year}-06-01'
+                    p_start = f'{year}-01-01'
                 else:
                     # Use custom start but within this year
                     p_start = pd.to_datetime(period_start).replace(year=year)
@@ -235,7 +235,10 @@ def calculate_satisficing_during_droughts(data, dataset_id, drought_events_df,
                                           storage_threshold=20.0,
                                           violation_days=3):
     """
-    Calculate satisficing conditions during specific drought events.
+    Calculate satisficing conditions for years with drought events.
+
+    This function evaluates the entire Jun-Dec period for years that contain
+    at least one drought event (rather than evaluating individual drought periods).
 
     Parameters
     ----------
@@ -253,9 +256,9 @@ def calculate_satisficing_during_droughts(data, dataset_id, drought_events_df,
     Returns
     -------
     pd.DataFrame
-        Results with satisficing status for each drought event.
-        Includes all columns from drought_events_df plus:
-        nyc_inflow, montague_contrib, satisficing, min_storage_pct, max_violation_days
+        Results with satisficing status for each year-realization with drought.
+        Columns: year, realization, nyc_inflow, montague_contrib, satisficing,
+                min_storage_pct, max_violation_days, n_droughts_in_year
     """
 
     nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
@@ -273,12 +276,48 @@ def calculate_satisficing_during_droughts(data, dataset_id, drought_events_df,
     drought_events_df['start'] = pd.to_datetime(drought_events_df['start'])
     drought_events_df['end'] = pd.to_datetime(drought_events_df['end'])
 
+    # Identify all (realization, year) pairs that have drought overlap
+    drought_year_pairs = set()
+
+    for _, drought in drought_events_df.iterrows():
+        r = drought['realization_id']
+        drought_start = drought['start']
+        drought_end = drought['end']
+
+        # Find all years that this drought overlaps with
+        start_year = drought_start.year
+        end_year = drought_end.year
+
+        for year in range(start_year, end_year + 1):
+            period_start = pd.to_datetime(f'{year}-01-01')
+            period_end = pd.to_datetime(f'{year}-12-31')
+
+            # Check if drought overlaps with this year's Jan-Dec period
+            if not (period_end < drought_start or period_start > drought_end):
+                drought_year_pairs.add((r, year))
+
+    # Count droughts per (realization, year)
+    drought_counts = {}
+    for _, drought in drought_events_df.iterrows():
+        r = drought['realization_id']
+        drought_start = drought['start']
+        drought_end = drought['end']
+
+        start_year = drought_start.year
+        end_year = drought_end.year
+
+        for year in range(start_year, end_year + 1):
+            period_start = pd.to_datetime(f'{year}-01-01')
+            period_end = pd.to_datetime(f'{year}-12-31')
+
+            if not (period_end < drought_start or period_start > drought_end):
+                key = (r, year)
+                drought_counts[key] = drought_counts.get(key, 0) + 1
+
     results = []
 
-    for idx, row in drought_events_df.iterrows():
-        r = row['realization_id']
-        drought_start = row['start']
-        drought_end = row['end']
+    for (r, year) in sorted(drought_year_pairs):
+        n_droughts = drought_counts.get((r, year), 0)
 
         # Get data for this realization
         nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
@@ -293,28 +332,31 @@ def calculate_satisficing_during_droughts(data, dataset_id, drought_events_df,
         nyc_inflow = nyc_inflow.reindex(common_index, fill_value=0)
         montague_contrib = montague_contrib.reindex(common_index, fill_value=0)
 
-        # Filter to drought period
-        mask = (common_index >= drought_start) & (common_index <= drought_end)
+        # Define evaluation period (Jan 1 - Dec 31 of this year)
+        period_start = pd.to_datetime(f'{year}-01-01')
+        period_end = pd.to_datetime(f'{year}-12-31')
+        mask = (common_index >= period_start) & (common_index <= period_end)
 
         if not mask.any():
-            # No data for this drought period - skip
+            # No data for this period - skip
             continue
 
-        # Evaluate satisficing for this drought period
+        # Evaluate satisficing for entire Jun-Dec period
         satisficing, min_storage, max_consec, total_inflow, total_contrib = \
             _evaluate_period(nyc_storage_pct[mask], montague_shortage[mask],
                             nyc_inflow[mask], montague_contrib[mask],
                             storage_threshold, violation_days)
 
-        # Combine original drought characteristics with satisficing results
-        result_row = row.to_dict()
-        result_row['nyc_inflow'] = total_inflow
-        result_row['montague_contrib'] = total_contrib
-        result_row['satisficing'] = satisficing
-        result_row['min_storage_pct'] = min_storage
-        result_row['max_violation_days'] = max_consec
-
-        results.append(result_row)
+        results.append({
+            'year': year,
+            'realization': r,
+            'nyc_inflow': total_inflow,
+            'montague_contrib': total_contrib,
+            'satisficing': satisficing,
+            'min_storage_pct': min_storage,
+            'max_violation_days': max_consec,
+            'n_droughts_in_year': n_droughts
+        })
 
     return pd.DataFrame(results)
 
@@ -392,8 +434,8 @@ def calculate_satisficing_non_drought_periods(data, dataset_id, drought_events_d
         years = pd.DatetimeIndex(common_index).year.unique()
 
         for year in years:
-            # Define evaluation period (Jun-Dec)
-            period_start = pd.to_datetime(f'{year}-06-01')
+            # Define evaluation period (Jan-Dec)
+            period_start = pd.to_datetime(f'{year}-01-01')
             period_end = pd.to_datetime(f'{year}-12-31')
 
             # Check if this period overlaps with any drought
