@@ -10,15 +10,15 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 5
+TOTAL_REALIZATIONS = 2000
 BASELINE_DATASET = 'wrfaorc_withObsScaled' #  'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
-N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
+N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
 # Pywr-DRB simulation batching (within each ensemble set)
-N_REALIZATIONS_PER_PYWRDRB_BATCH = 5  # Simulation memory limits
+N_REALIZATIONS_PER_PYWRDRB_BATCH = 10  # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
