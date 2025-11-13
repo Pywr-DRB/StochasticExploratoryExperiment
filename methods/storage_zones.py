@@ -122,40 +122,33 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
         # This works because FFMP boundaries follow a seasonal pattern that repeats annually
         storage_doy = nyc_storage.index.dayofyear.values
 
-        # Handle leap year mismatches:
-        # - If FFMP has Feb 29 but storage date doesn't: shift days after Feb 29 down by 1
-        # - If storage has Feb 29 but FFMP doesn't: map Feb 29 to Feb 28
+        # Handle leap year mismatches using vectorized operations
+        # - If FFMP has Feb 29 but storage date doesn't: shift days after Feb 29 up by 1
+        # - If storage has Feb 29 but FFMP doesn't: map Feb 29 to Feb 28, shift others down by 1
         storage_doy_adjusted = storage_doy.copy()
+
+        # Vectorized leap year check
+        years = nyc_storage.index.year.values
+        is_leap = ((years % 4 == 0) & ((years % 100 != 0) | (years % 400 == 0)))
 
         if has_feb29:
             # FFMP includes Feb 29 (day 60)
-            # For storage dates in non-leap years, days after Feb 28 are off by 1
-            # Check each storage date individually
-            for i, date in enumerate(nyc_storage.index):
-                is_leap = (date.year % 4 == 0 and (date.year % 100 != 0 or date.year % 400 == 0))
-                if not is_leap and storage_doy[i] >= 60:
-                    # Non-leap year, but doy >= 60 means we're past where Feb 29 would be
-                    # Shift up by 1 to match FFMP which has Feb 29
-                    storage_doy_adjusted[i] = storage_doy[i] + 1
+            # For non-leap years, days >= 60 need to shift up by 1
+            mask = (~is_leap) & (storage_doy >= 60)
+            storage_doy_adjusted[mask] = storage_doy[mask] + 1
         else:
             # FFMP does not include Feb 29
-            # For storage dates in leap years, map Feb 29 to Feb 28
-            # and shift days after Feb 29 down by 1
-            for i, date in enumerate(nyc_storage.index):
-                is_leap = (date.year % 4 == 0 and (date.year % 100 != 0 or date.year % 400 == 0))
-                if is_leap:
-                    if storage_doy[i] == 60:
-                        # Feb 29 -> map to Feb 28
-                        storage_doy_adjusted[i] = 59
-                    elif storage_doy[i] > 60:
-                        # After Feb 29 -> shift down by 1
-                        storage_doy_adjusted[i] = storage_doy[i] - 1
+            # For leap years, map Feb 29 to Feb 28 and shift days > 60 down by 1
+            mask_feb29 = is_leap & (storage_doy == 60)
+            mask_after = is_leap & (storage_doy > 60)
+            storage_doy_adjusted[mask_feb29] = 59
+            storage_doy_adjusted[mask_after] = storage_doy[mask_after] - 1
 
-        # Create aligned FFMP boundaries by looking up each day-of-year
-        # Use list comprehension to ensure one-to-one mapping
-        ffmp_values = np.array([ffmp_doy_lookup.loc[doy, thr_cols].values for doy in storage_doy_adjusted])
+        # Create aligned FFMP boundaries using vectorized lookup
+        # This is much faster than list comprehension
+        ffmp_aligned = ffmp_doy_lookup.loc[storage_doy_adjusted].values
         ffmp_aligned = pd.DataFrame(
-            ffmp_values,
+            ffmp_aligned,
             index=nyc_storage.index,
             columns=thr_cols
         )
