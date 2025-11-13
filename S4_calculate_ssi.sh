@@ -2,8 +2,8 @@
 #SBATCH --job-name=ssi
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=40
 #SBATCH --mem=0
 
 # Load modules and environment
@@ -26,8 +26,8 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     echo "Calculating SSI based drought metrics..."
     ################################################################################
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "stationary_ensemble"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_low"
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_high"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_low"
+    # mpirun -np $np python3 05_calculate_ssi_drought_metrics.py "climate_adjusted_high"
 
 fi
 

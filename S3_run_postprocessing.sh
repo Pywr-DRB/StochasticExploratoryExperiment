@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=post
-#SBATCH --output=./logs/postprocessing.out
-#SBATCH --error=./logs/postprocessing.err
+#SBATCH --output=./logs/post.out
+#SBATCH --error=./logs/post.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=0
@@ -15,7 +15,7 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
 CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
-DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")
+DATASETS=("climate_adjusted_low" "climate_adjusted_high")
 
 # make directories
 mkdir -p logs figures
@@ -38,5 +38,5 @@ if [ "$CALCULATE_STORAGE_ZONE_PROBABILITIES" = true ]; then
     ################################################################################
     echo "Calculating storage zone probabilities..."
     ################################################################################
-    python3 07_calculate_storage_zone_probabilities.py --all
+    python3 07_calculate_storage_zone_probabilities.py stationary_ensemble
 fi

@@ -2,7 +2,7 @@
 #SBATCH --job-name=SA
 #SBATCH --output=./logs/SA.out
 #SBATCH --error=./logs/SA.err
-#SBATCH --nodes=2
+#SBATCH --nodes=5
 #SBATCH --ntasks-per-node=40
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
@@ -14,7 +14,7 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
-GENERATE=${GENERATE:-false}
+GENERATE=${GENERATE:-true}
 PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
