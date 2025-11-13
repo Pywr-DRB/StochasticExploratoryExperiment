@@ -1,14 +1,19 @@
 """
-Plot performance metrics across ensembles with 4-panel comparison layout.
+Plot performance metrics across ensembles with flexible comparison layout.
 
 Shows:
-- Left panel: Absolute performance for stationary ensemble (with uncertainty bars)
-- Right panels (stacked): Percentage change for each climate scenario
+- Left panel: Absolute performance for baseline dataset (with uncertainty bars)
+- Right panels (stacked): Percentage change for each comparison dataset
 
 This script uses pre-calculated metrics from postprocessing:
 - shortage: Pre-calculated flow target violations
 - mrf_target: Flow targets for calculating reliability
 - res_storage: Reservoir storage for NYC system
+
+Features:
+- Flexible metric selection: Plot any list of performance metrics
+- Dynamic dataset handling: Automatically adjusts panels based on config.py datasets
+- Smart y-axis labeling: Detects metric types for appropriate labels
 
 Usage:
   python 09_plot_performance_outcome_bars.py
@@ -39,9 +44,9 @@ PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 # Specify which metrics to plot and in what order
 # The order of this list determines the order of bars in the plot
 #
-# Available metrics (from 04_postprocess_data.py):
+# Available metrics (from methods/postprocess.py calculate_performance_metrics):
 #   - years_reliable: Years where Montague flow target met >90% of time
-#   - years_high_storage: Years where NYC storage >90% on June 1
+#   - years_high_storage: Years where NYC storage ≥95% on June 1
 #   - years_above_20pct: Years where minimum NYC storage stays >20%
 #   - years_above_10pct: Years where minimum NYC storage stays >10%
 #   - mean_sept1_storage_pct: Average NYC storage on Sept 1 (%)
@@ -52,11 +57,19 @@ PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 #   - mean_annual_nyc_contribution_mg: Average annual NYC downstream release (MG)
 #   - max_annual_nyc_contribution_mg: Maximum annual NYC downstream release (MG)
 
-METRICS_TO_PLOT = [
-    'years_high_storage',     # Years NYC storage high on June 1
-    'years_above_20pct',      # Years min storage stays >20%
-    'years_reliable',         # Years Montague reliable
-]
+
+
+# ============================================================================
+# DATASET CONFIGURATION
+# ============================================================================
+# Specify which dataset to use as baseline (left panel, absolute values)
+# All other datasets from config.py will be shown as percentage changes
+BASELINE_DATASET = 'stationary_ensemble'
+
+# Option to manually specify which datasets to compare (in addition to baseline)
+# Set to None to automatically use all datasets from config.py
+# Set to list of dataset_ids to manually specify (e.g., ['climate_adjusted_low', 'climate_adjusted_high'])
+COMPARISON_DATASETS = None  # None = use all datasets except baseline
 
 # Metric display names (for plot labels)
 METRIC_DISPLAY_NAMES = {
@@ -72,6 +85,20 @@ METRIC_DISPLAY_NAMES = {
     'mean_annual_nyc_contribution_mg': 'Mean Annual NYC\nContribution (MG)',
     'max_annual_nyc_contribution_mg': 'Max Annual NYC\nContribution (MG)',
 }
+
+METRICS_TO_PLOT = [
+    'years_reliable',
+    'years_high_storage',
+    'years_above_20pct',
+    'years_above_10pct',
+    # 'mean_sept1_storage_pct',
+    'years_low_carryover',
+    'years_trenton_reliable',
+    # 'pct_days_nyc_diversion_shortage',
+    'max_consecutive_drought_days',
+    # 'mean_annual_nyc_contribution_mg',
+    # 'max_annual_nyc_contribution_mg',
+]
 
 # Color palettes for bars
 COLORS_ABSOLUTE = ['#A23B72', '#F18F01', '#2E86AB']  # Purple, Orange, Blue
@@ -94,6 +121,53 @@ METRICS_TO_SCALE = [
     'years_low_carryover',
     'years_trenton_reliable',
 ]
+
+# ============================================================================
+# METRIC METADATA - For smart y-axis labeling
+# ============================================================================
+# Categorize metrics by their units/types
+METRIC_UNITS = {
+    # Year count metrics
+    'years_reliable': 'years',
+    'years_high_storage': 'years',
+    'years_above_20pct': 'years',
+    'years_above_10pct': 'years',
+    'years_low_carryover': 'years',
+    'years_trenton_reliable': 'years',
+
+    # Percentage metrics
+    'mean_sept1_storage_pct': 'percent',
+    'pct_days_nyc_diversion_shortage': 'percent',
+
+    # Duration metrics (days)
+    'max_consecutive_drought_days': 'days',
+
+    # Volume metrics (million gallons)
+    'mean_annual_nyc_contribution_mg': 'million_gallons',
+    'max_annual_nyc_contribution_mg': 'million_gallons',
+}
+
+# Y-axis labels for different metric types
+Y_AXIS_LABELS = {
+    'years': 'Number of Years (out of 70)',
+    'percent': 'Percentage (%)',
+    'days': 'Days',
+    'million_gallons': 'Million Gallons (MG)',
+}
+
+def get_ylabel_for_metrics(metric_list):
+    """
+    Determine appropriate y-axis label for a list of metrics.
+    If all metrics have same units, return that unit's label.
+    Otherwise, return a generic label.
+    """
+    units = set(METRIC_UNITS.get(m, 'value') for m in metric_list)
+
+    if len(units) == 1:
+        unit = units.pop()
+        return Y_AXIS_LABELS.get(unit, 'Value')
+    else:
+        return 'Value'
 
 
 def load_performance_metrics(dataset_id):
@@ -177,13 +251,61 @@ def calculate_ensemble_percentiles(metrics_df, metrics_list):
     return percentiles
 
 
-def plot_4panel_performance_comparison():
+def get_datasets_from_config():
     """
-    Generate complete 4-panel performance metrics figure.
+    Get list of datasets from config.py and separate baseline from comparison datasets.
 
-    Layout:
-    - Left panel: Stationary ensemble absolute values
-    - Right panels (stacked): Low, Medium, High climate scenarios (% change)
+    Returns
+    -------
+    baseline_dataset : str
+        Dataset to use as baseline (absolute values in left panel)
+    comparison_datasets : list
+        Datasets to compare (percentage change in right panels)
+    dataset_labels : dict
+        Display labels for each dataset
+    """
+    from methods.config import DATASET_CONFIGS
+
+    # Start with all datasets from config
+    all_datasets = list(DATASET_CONFIGS.keys())
+
+    # Verify baseline exists
+    if BASELINE_DATASET not in all_datasets:
+        raise ValueError(
+            f"Baseline dataset '{BASELINE_DATASET}' not found in config.py!\n"
+            f"Available datasets: {all_datasets}"
+        )
+
+    # Determine comparison datasets
+    if COMPARISON_DATASETS is None:
+        # Use all datasets except baseline
+        comparison_datasets = [d for d in all_datasets if d != BASELINE_DATASET]
+    else:
+        # Use manually specified comparison datasets
+        comparison_datasets = COMPARISON_DATASETS
+        # Verify they exist
+        for d in comparison_datasets:
+            if d not in all_datasets:
+                raise ValueError(f"Comparison dataset '{d}' not found in config.py!")
+
+    # Create display labels from descriptions
+    dataset_labels = {}
+    for dataset_id in [BASELINE_DATASET] + comparison_datasets:
+        config = DATASET_CONFIGS[dataset_id]
+        # Use first 3 words of description or full description if short
+        desc = config.get('description', dataset_id)
+        dataset_labels[dataset_id] = desc
+
+    return BASELINE_DATASET, comparison_datasets, dataset_labels
+
+
+def plot_performance_comparison():
+    """
+    Generate flexible multi-panel performance metrics figure.
+
+    Layout dynamically adjusts based on number of datasets:
+    - Left panel: Baseline dataset absolute values (with uncertainty bars)
+    - Right panels (stacked): Percentage change for each comparison dataset
     """
 
     print("=" * 80)
@@ -192,17 +314,20 @@ def plot_4panel_performance_comparison():
     print(f"Metrics to plot ({len(METRICS_TO_PLOT)}): {METRICS_TO_PLOT}")
     print("=" * 80)
 
-    # Load pre-calculated data for all datasets
-    datasets = {
-        'stationary_ensemble': 'Stationary',
-        'climate_adjusted_low': 'Low',
-        'climate_adjusted_medium': 'Medium',
-        'climate_adjusted_high': 'High'
-    }
+    # Get datasets from config
+    baseline_dataset, comparison_datasets, dataset_labels = get_datasets_from_config()
+
+    print(f"\nBaseline dataset: {baseline_dataset}")
+    print(f"Comparison datasets ({len(comparison_datasets)}): {comparison_datasets}")
+    print("=" * 80)
+
+    # Combine all datasets to load
+    all_datasets = [baseline_dataset] + comparison_datasets
 
     all_percentiles = {}
 
-    for dataset_id, label in datasets.items():
+    for dataset_id in all_datasets:
+        label = dataset_labels[dataset_id]
         print(f"\nLoading {dataset_id} ({label})...")
 
         # Load pre-calculated metrics from CSV
@@ -257,45 +382,58 @@ def plot_4panel_performance_comparison():
         print("Historic values will not be shown on plot.")
         historic_values = None
 
-    # Calculate percentage changes from stationary
+    # Calculate percentage changes from baseline
     print(f"\n{'='*80}")
-    print("Calculating percentage changes from stationary...")
+    print(f"Calculating percentage changes from baseline ({baseline_dataset})...")
     print(f"{'='*80}")
 
-    stat_perc = all_percentiles['stationary_ensemble']
+    baseline_perc = all_percentiles[baseline_dataset]
     pct_changes = {}
 
-    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+    for dataset_id in comparison_datasets:
         pct_change = {}
         for metric in METRICS_TO_PLOT:
             # Calculate % change at each percentile
             eps = 1e-8
             pct_change[metric] = [
-                100.0 * (all_percentiles[dataset_id][metric][i] - stat_perc[metric][i]) /
-                max(abs(stat_perc[metric][i]), eps)
+                100.0 * (all_percentiles[dataset_id][metric][i] - baseline_perc[metric][i]) /
+                max(abs(baseline_perc[metric][i]), eps)
                 for i in range(3)
             ]
         pct_changes[dataset_id] = pct_change
 
-    # Create figure
+    # Create figure with dynamic layout
+    n_comparison_datasets = len(comparison_datasets)
     print(f"\n{'='*60}")
-    print("Creating 4-panel figure...")
+    print(f"Creating {n_comparison_datasets + 1}-panel figure...")
     print(f"{'='*60}")
 
-    fig = plt.figure(figsize=(14, 10))
-    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[1, 1],
-                          hspace=0.30, wspace=0.30,
-                          left=0.10, right=0.95, top=0.93, bottom=0.08)
+    # Dynamic figure sizing based on number of comparison datasets
+    fig_height = max(8, 3 * n_comparison_datasets + 2)
+    fig = plt.figure(figsize=(14, fig_height))
+
+    # Create grid: left column for baseline, right column for comparisons (stacked)
+    gs = fig.add_gridspec(
+        n_comparison_datasets, 2,
+        height_ratios=[1] * n_comparison_datasets,
+        width_ratios=[1, 1],
+        hspace=0.30, wspace=0.30,
+        left=0.10, right=0.95, top=0.93, bottom=0.08
+    )
 
     # Create axes
-    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans all rows
-    ax_low = fig.add_subplot(gs[0, 1])   # Top right
-    ax_med = fig.add_subplot(gs[1, 1])   # Middle right
-    ax_high = fig.add_subplot(gs[2, 1])  # Bottom right
+    # Left panel spans all rows (baseline)
+    ax_baseline = fig.add_subplot(gs[:, 0])
 
-    axes = [ax_stat, ax_low, ax_med, ax_high]
-    dataset_list = list(datasets.keys())
-    panel_labels = ['(a)', '(b)', '(c)', '(d)']
+    # Right panels (one for each comparison dataset)
+    axes_comparison = [fig.add_subplot(gs[i, 1]) for i in range(n_comparison_datasets)]
+
+    # Combine into list for iteration
+    axes = [ax_baseline] + axes_comparison
+    dataset_list = [baseline_dataset] + comparison_datasets
+
+    # Generate panel labels dynamically
+    panel_labels = [f'({chr(97 + i)})' for i in range(len(axes))]  # (a), (b), (c), ...
 
     # Use configured metrics
     metric_keys = METRICS_TO_PLOT
@@ -307,9 +445,9 @@ def plot_4panel_performance_comparison():
     colors_abs = (COLORS_ABSOLUTE * ((n_metrics // len(COLORS_ABSOLUTE)) + 1))[:n_metrics]
     colors_diff = (COLORS_CHANGE * ((n_metrics // len(COLORS_CHANGE)) + 1))[:n_metrics]
 
-    # Calculate y-axis range for right panels (shared across all 3 climate scenarios)
+    # Calculate y-axis range for right panels (shared across all comparison datasets)
     all_pct_values = []
-    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+    for dataset_id in comparison_datasets:
         for metric in metric_keys:
             all_pct_values.append(pct_changes[dataset_id][metric][1])  # p50 values
 
@@ -321,15 +459,18 @@ def plot_4panel_performance_comparison():
         ymin_shared = -y_abs_max
         ymax_shared = y_abs_max
 
+    # Determine appropriate y-axis label for baseline panel
+    ylabel_baseline = get_ylabel_for_metrics(metric_keys)
+
     # Plot each panel
     for idx, (ax, dataset_id, panel_label) in enumerate(zip(axes, dataset_list, panel_labels)):
 
-        if idx == 0:  # Stationary panel (absolute values)
+        if idx == 0:  # Baseline panel (absolute values)
             # Plot bars for each metric
             x_pos = np.arange(n_metrics)
-            p50_values = [stat_perc[m][1] for m in metric_keys]
-            p1_values = [stat_perc[m][0] for m in metric_keys]
-            p99_values = [stat_perc[m][2] for m in metric_keys]
+            p50_values = [baseline_perc[m][1] for m in metric_keys]
+            p1_values = [baseline_perc[m][0] for m in metric_keys]
+            p99_values = [baseline_perc[m][2] for m in metric_keys]
 
             # Error bars (p1 to p99 range)
             yerr_low = [p50_values[i] - p1_values[i] for i in range(n_metrics)]
@@ -348,7 +489,7 @@ def plot_4panel_performance_comparison():
 
             ax.set_xticks(x_pos)
             ax.set_xticklabels(metric_names, fontsize=10)
-            ax.set_ylabel('Number of Years (out of 70)', fontsize=12, fontweight='bold')
+            ax.set_ylabel(ylabel_baseline, fontsize=12, fontweight='bold')
             ax.set_ylim(bottom=0)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
             ax.set_axisbelow(True)
@@ -357,7 +498,7 @@ def plot_4panel_performance_comparison():
             if historic_values is not None:
                 ax.legend(loc='upper left', fontsize=9, frameon=True, fancybox=True)
 
-        else:  # Climate scenario panels (percentage change)
+        else:  # Comparison dataset panels (percentage change)
             pct_change = pct_changes[dataset_id]
 
             # Plot bars for each metric (median percentage change only)
@@ -375,7 +516,7 @@ def plot_4panel_performance_comparison():
             ax.set_axisbelow(True)
 
         # Panel title
-        title_text = datasets[dataset_id]
+        title_text = dataset_labels[dataset_id]
         ax.text(0.02, 0.98, f"{panel_label} {title_text}",
                transform=ax.transAxes, fontsize=13, fontweight='bold',
                verticalalignment='top',
@@ -397,8 +538,9 @@ def plot_4panel_performance_comparison():
     fig.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(0.98, 0.98),
               fontsize=10, frameon=True, fancybox=True, shadow=True)
 
-    # Save
-    fname = f"{FIG_OUTPUT_DIR}/performance_metrics_comparison_4panel.png"
+    # Save with dynamic filename based on number of panels
+    n_panels = len(axes)
+    fname = f"{FIG_OUTPUT_DIR}/performance_metrics_comparison_{n_panels}panel.png"
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
@@ -412,7 +554,7 @@ def plot_4panel_performance_comparison():
 
 def main():
     """Main entry point."""
-    plot_4panel_performance_comparison()
+    plot_performance_comparison()
 
     print("\n" + "=" * 60)
     print("Done!")
