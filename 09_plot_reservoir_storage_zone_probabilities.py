@@ -14,13 +14,77 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm, LogNorm
+from matplotlib.colors import TwoSlopeNorm, LogNorm, BoundaryNorm, ListedColormap
 from matplotlib import colors
 import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import *
+
+# Default probability bins (percent) - configurable
+DEFAULT_PROB_BINS = [0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 100]
+
+
+def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
+    """
+    Create a discrete colormap with segments sized proportionally to bin widths.
+
+    Parameters
+    ----------
+    bin_edges : list or array
+        Bin edges (e.g., [0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 100])
+    base_cmap : str or colormap
+        Base colormap to sample from
+
+    Returns
+    -------
+    cmap : ListedColormap
+        Discrete colormap with colors proportional to bin widths
+    norm : BoundaryNorm
+        Normalization for the discrete bins
+    """
+    bin_edges = np.array(bin_edges)
+    n_bins = len(bin_edges) - 1
+
+    # Use a hybrid approach: log scale for low values, linear for high values
+    # This gives better visual separation across the full range
+
+    # Transform bin edges to a perceptually-scaled space
+    def transform(x):
+        """Hybrid log-linear transform for better color distribution."""
+        # Use log scale up to 50%, then linear after that
+        threshold = 50.0
+        if x <= threshold:
+            # Log scale for 0.1 to 50: emphasize low probability differences
+            return np.log10(np.maximum(x, 0.01))
+        else:
+            # Linear scale for 50 to 100: spread out high probabilities
+            log_threshold = np.log10(threshold)
+            # Map [50, 100] to [log(50), log(50) + scaled_range]
+            # Scale factor chosen to give adequate visual separation
+            scale_factor = 2.0  # Adjust this to control high-end spread
+            return log_threshold + scale_factor * (x - threshold) / (100 - threshold)
+
+    transformed_edges = np.array([transform(x) for x in bin_edges])
+    transformed_widths = np.diff(transformed_edges)
+
+    # Normalize to [0, 1] for sampling the base colormap
+    cumulative_widths = np.cumsum(transformed_widths)
+    cumulative_widths = cumulative_widths / cumulative_widths[-1]
+
+    # Sample colors from base colormap at proportional positions
+    base_cmap_obj = plt.get_cmap(base_cmap)
+    colors_list = [base_cmap_obj(pos) for pos in cumulative_widths]
+
+    # Create discrete colormap
+    cmap = ListedColormap(colors_list)
+    cmap.set_bad(color='#f0f0f0')
+
+    # Create boundary normalization
+    norm = BoundaryNorm(boundaries=bin_edges, ncolors=n_bins, extend='neither')
+
+    return cmap, norm
 
 
 # Input/output directories
@@ -150,7 +214,7 @@ def _plot_single_storage_panel(ax,
     X, Y : np.ndarray
         Meshgrid coordinates (Z+1, P+1)
     cmap : str or matplotlib colormap
-        Colormap to use
+        Colormap to use (can be string or colormap object)
     norm : matplotlib normalization
         Color normalization
     show_zone_lines : bool
@@ -163,8 +227,12 @@ def _plot_single_storage_panel(ax,
     pcolormesh
         The pcolormesh object for creating colorbars
     """
-    cmap_obj = plt.get_cmap(cmap).copy()
-    cmap_obj.set_bad(color='#f0f0f0')
+    # Handle both string and colormap object inputs
+    if isinstance(cmap, str):
+        cmap_obj = plt.get_cmap(cmap).copy()
+        cmap_obj.set_bad(color='#f0f0f0')
+    else:
+        cmap_obj = cmap  # Already a colormap object with set_bad applied
 
     pcm = ax.pcolormesh(X, Y, M, cmap=cmap_obj, norm=norm, shading='flat')
 
@@ -187,12 +255,11 @@ def plot_storage_zone_probabilities(prob_df,
                                      period='weekly',
                                      figsize=(14, 6),
                                      cmap='magma_r',
-                                     vmin=0.01,
-                                     vmax=100,
+                                     prob_bins=None,
                                      title=None,
                                      fname=None):
     """
-    Plot storage zone probability heatmap.
+    Plot storage zone probability heatmap with discrete colormap.
 
     Parameters
     ----------
@@ -202,7 +269,13 @@ def plot_storage_zone_probabilities(prob_df,
         FFMP level boundaries for computing Y edges
     period : str
         Time aggregation period
+    prob_bins : list or array, optional
+        Probability bin edges (percent). If None, uses DEFAULT_PROB_BINS
     """
+    # Use default bins if not specified
+    if prob_bins is None:
+        prob_bins = DEFAULT_PROB_BINS
+
     # Build grids
     y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
     x_edges = build_x_edges(periods_sorted)
@@ -210,24 +283,23 @@ def plot_storage_zone_probabilities(prob_df,
     # Align probability data to periods_sorted
     M = prob_df.loc[periods_sorted].to_numpy().T  # (Z, P)
 
-    # Handle zeros for LogNorm
-    M = np.where(M > 0, M, vmin)
-
     # Build meshgrid
     X = np.tile(x_edges, (y_edges_grid.shape[0], 1))  # (Z+1, P+1)
     Y = y_edges_grid  # (Z+1, P+1)
 
+    # Create discrete colormap
+    cmap_discrete, norm_discrete = create_discrete_colormap(prob_bins, base_cmap=cmap)
+
     # Plot using helper
     fig, ax = plt.subplots(figsize=figsize)
-    norm = LogNorm(vmin=vmin, vmax=vmax)
 
     quad = _plot_single_storage_panel(
         ax=ax,
         M=M,
         X=X,
         Y=Y,
-        cmap=cmap,
-        norm=norm,
+        cmap=cmap_discrete,
+        norm=norm_discrete,
         show_zone_lines=True,
         xlabel='Period of year',
         ylabel='Total NYC storage (% of capacity)'
@@ -315,8 +387,7 @@ def plot_storage_zone_comparison(prob_df_ref,
 
 def plot_4panel_storage_comparison(period='weekly',
                                     figsize=(14, 10),
-                                    vmin_abs=0.01,
-                                    vmax_abs=100,
+                                    prob_bins=None,
                                     vmin_diff=-100,
                                     vmax_diff=100,
                                     fname=None):
@@ -333,13 +404,16 @@ def plot_4panel_storage_comparison(period='weekly',
         Time aggregation period ('weekly', 'monthly', 'daily')
     figsize : tuple
         Figure size in inches
-    vmin_abs, vmax_abs : float
-        Color scale limits for absolute probability (left panel)
+    prob_bins : list or array, optional
+        Probability bin edges (percent) for discrete colormap. If None, uses DEFAULT_PROB_BINS
     vmin_diff, vmax_diff : float
         Color scale limits for percentage difference (right panels)
     fname : str
         Output filename (if None, will auto-generate)
     """
+    # Use default bins if not specified
+    if prob_bins is None:
+        prob_bins = DEFAULT_PROB_BINS
 
     print(f"\n{'='*60}")
     print("Creating 4-Panel Storage Zone Comparison Figure")
@@ -407,11 +481,10 @@ def plot_4panel_storage_comparison(period='weekly',
     panel_labels = ['(a)', '(b)', '(c)', '(d)']
 
     # Set up colormaps and norms
-    # Left panel: absolute probability
-    cmap_abs = 'magma_r'
-    norm_abs = LogNorm(vmin=vmin_abs, vmax=vmax_abs)
+    # Left panel: absolute probability (discrete colormap)
+    cmap_abs, norm_abs = create_discrete_colormap(prob_bins, base_cmap='magma_r')
 
-    # Right panels: percentage difference (diverging colormap)
+    # Right panels: percentage difference (diverging colormap - continuous)
     cmap_diff = 'BrBG_r'
     norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
 
@@ -424,7 +497,6 @@ def plot_4panel_storage_comparison(period='weekly',
 
         if idx == 0:  # Stationary panel (absolute values)
             M = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
-            M = np.where(M > 0, M, vmin_abs)  # Handle zeros for LogNorm
 
             pm_abs = _plot_single_storage_panel(
                 ax=ax,

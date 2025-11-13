@@ -140,10 +140,6 @@ def plot_shortage_occurrence(shortage_counts, location, dataset_id, dataset_labe
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"  Saved: {fname}")
 
-    # Also save as SVG
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved: {fname_svg}")
 
     plt.close()
 
@@ -231,10 +227,7 @@ def plot_comparison_all_locations(shortage_data, dataset_id, dataset_label):
     fname = f"{FIG_DIR_SHORTAGE}/{dataset_id}_shortage_doy_comparison.png"
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"\n  Saved comparison: {fname}")
-
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved comparison: {fname_svg}")
+    
 
     plt.close()
 
