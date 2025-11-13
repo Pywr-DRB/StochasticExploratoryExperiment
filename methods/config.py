@@ -11,7 +11,7 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 
 # Total experiment size
 TOTAL_REALIZATIONS = 5
-BASELINE_DATASET = 'wrfaorc_withObsScaled' #  'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
+BASELINE_DATASET = 'pub_nhmv10_BC_withObsScaled' #  'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
 N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
@@ -23,8 +23,8 @@ N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PE
 
 # Temporal configuration
 N_YEARS = 70
-START_DATE = '1950-01-01'
-END_DATE = '2019-12-31'
+START_DATE = '2030-01-01'
+END_DATE = '2099-12-31'
 
 # Validation checks
 assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \

@@ -130,4 +130,4 @@ def verify_postprocessing_output(dataset_id):
             f"Run 04_postprocess_data.py for {dataset_id} first!"
         )
 
-    print(f"✓ Postprocessing outputs verified for {dataset_id}")
+    print(f"Postprocessing outputs verified for {dataset_id}")
