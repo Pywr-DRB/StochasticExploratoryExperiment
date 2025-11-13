@@ -54,7 +54,7 @@ def calculate_historic_observed_droughts(ssi_windows=[3, 6, 12]):
     Q_monthly.dropna(axis=0, how='any', inplace=True)
     
 
-    print(f"Loaded historic data with {Q_full.shape[0]// 365} years ({Q_full.index.min()}, {Q_full.index.max()}) of daily data for {Q_full.shape[1]} sites.")
+    print(f"Loaded historic data with {Q_full.shape[0]// 365} years ({Q_full.index}) of daily data for {Q_full.shape[1]} sites.")
 
     # Create output directory if it doesn't exist
     os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)

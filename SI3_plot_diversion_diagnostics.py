@@ -216,7 +216,7 @@ def plot_seasonal_patterns(observed, ensemble_dict, loc, dataset_id):
     print(f"  Saved: {fname}")
 
 
-def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id):
+def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id, temporal_resolution='daily'):
     """
     Create time series overview plot.
 
@@ -230,6 +230,8 @@ def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id):
         Location identifier
     dataset_id : str
         Dataset identifier
+    temporal_resolution : str, optional
+        'daily' or 'monthly' - temporal aggregation for plot (default: 'daily')
     """
     location_names = {'nyc': 'NYC', 'nj': 'NJ'}
     location_name = location_names.get(loc, loc)
@@ -237,13 +239,35 @@ def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id):
     # Create figure
     fig, ax = plt.subplots(figsize=(14, 4))
 
+    # Resample data based on temporal resolution
+    if temporal_resolution == 'monthly':
+        # Resample ensemble to monthly
+        ensemble_resampled = {}
+        for key, series in ensemble_dict.items():
+            ensemble_resampled[key] = series.resample('MS').mean()
+
+        # Resample observed to monthly
+        observed_resampled = observed.resample('MS').mean()
+
+        obs_label = 'Observed (Monthly Mean)'
+        ens_label_range = 'Ensemble 10-90% (Monthly Mean)'
+        ens_label_median = 'Ensemble Median (Monthly Mean)'
+    else:
+        # Keep daily resolution
+        ensemble_resampled = ensemble_dict
+        observed_resampled = observed
+
+        obs_label = 'Observed (Daily)'
+        ens_label_range = 'Ensemble 10-90% (Daily)'
+        ens_label_median = 'Ensemble Median (Daily)'
+
     # Plot ensemble percentiles
     # Combine all ensemble data
-    all_dates = sorted(set().union(*[set(v.index) for v in ensemble_dict.values()]))
-    ensemble_matrix = np.zeros((len(ensemble_dict), len(all_dates)))
+    all_dates = sorted(set().union(*[set(v.index) for v in ensemble_resampled.values()]))
+    ensemble_matrix = np.zeros((len(ensemble_resampled), len(all_dates)))
     ensemble_matrix[:] = np.nan
 
-    for i, (key, series) in enumerate(ensemble_dict.items()):
+    for i, (key, series) in enumerate(ensemble_resampled.items()):
         for j, date in enumerate(all_dates):
             if date in series.index:
                 ensemble_matrix[i, j] = series.loc[date]
@@ -255,23 +279,23 @@ def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id):
 
     # Plot ensemble range
     ax.fill_between(all_dates, p10, p90, color='#ff7f0e', alpha=0.3,
-                    label='Ensemble 10-90%')
+                    label=ens_label_range)
     ax.plot(all_dates, p50, color='#ff7f0e', linewidth=1.5,
-           label='Ensemble Median', alpha=0.7)
+           label=ens_label_median, alpha=0.7)
 
-    # Plot observed (resample to monthly for clarity)
-    obs_monthly = observed.resample('MS').mean()
-    ax.plot(obs_monthly.index, obs_monthly.values, color='#1f77b4',
-           linewidth=2, label='Observed (Monthly Avg)', zorder=3)
+    # Plot observed
+    ax.plot(observed_resampled.index, observed_resampled.values, color='#1f77b4',
+           linewidth=2, label=obs_label, zorder=3)
 
     ax.set_xlabel('Date')
     ax.set_ylabel(f'{location_name} Diversion (MGD)')
-    ax.set_title(f'{location_name} Diversion Time Series')
+    resolution_text = 'Monthly Mean' if temporal_resolution == 'monthly' else 'Daily'
+    ax.set_title(f'{location_name} Diversion Time Series ({resolution_text})')
     ax.legend(frameon=False, loc='upper left')
     ax.grid(True, alpha=0.3, linestyle='--')
 
     plt.tight_layout()
-    fname = f"{FIG_DIR_DIVERSIONS}/{dataset_id}_{loc}_timeseries.png"
+    fname = f"{FIG_DIR_DIVERSIONS}/{dataset_id}_{loc}_timeseries_{temporal_resolution}.png"
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"  Saved: {fname}")
@@ -324,8 +348,12 @@ def main(dataset_id):
         print(f"  Creating seasonal pattern plot...")
         plot_seasonal_patterns(observed, ensemble_dict, loc, dataset_id)
 
-        print(f"  Creating time series overview plot...")
-        plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id)
+        print(f"  Creating time series overview plots...")
+        # Generate both monthly and daily versions
+        for resolution in ['monthly', 'daily']:
+            print(f"    Creating {resolution} time series plot...")
+            plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id,
+                                   temporal_resolution=resolution)
 
     print("\n" + "=" * 60)
     print("Diversion diagnostic plots completed!")
