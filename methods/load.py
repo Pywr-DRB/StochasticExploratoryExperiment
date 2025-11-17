@@ -9,10 +9,37 @@ import pywrdrb
 from pywrdrb.path_manager import get_pn_object
 from pywrdrb.utils.constants import cfs_to_mgd
 from sglib.core.ensemble import Ensemble
-from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS
+from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS, ROOT_DIR
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
+
+
+def load_performance_metrics(dataset_id):
+    """
+    Load pre-calculated performance metrics from CSV.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    metrics_df : pd.DataFrame
+        DataFrame with performance metrics for all realizations
+    """
+    performance_metrics_dir = f"{ROOT_DIR}/pywrdrb/performance_metrics"
+    csv_file = f"{performance_metrics_dir}/{dataset_id}_performance_metrics.csv"
+
+    if not os.path.exists(csv_file):
+        raise FileNotFoundError(
+            f"Performance metrics not found: {csv_file}\n"
+            f"Run 04_postprocess_data.py first to calculate metrics!"
+        )
+
+    metrics_df = pd.read_csv(csv_file, index_col='realization_id')
+    return metrics_df
 
 
 def load_baseline_historical_flow(gage_flow=True, 

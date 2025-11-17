@@ -25,19 +25,25 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
+from methods.plotting.styles import (
+    DATASET_COLORS,
+    METRIC_DISPLAY_NAMES,
+    METRICS_TO_SCALE,
+    RECONSTRUCTION_SCALE_FACTOR,
+    HISTORIC_MARKER_STYLE,
+    get_ylabel_for_metrics,
+    DPI_HIGH,
+)
+from methods.load import load_performance_metrics
 
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/performance_metrics"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-
-# Performance metrics directory
-PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 
 # ============================================================================
 # CONFIGURABLE METRICS
@@ -121,16 +127,17 @@ PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
 #   - years_trenton_reliable: Alias for years_reliable_trenton
 
 METRICS_TO_PLOT = [
-    'years_reliable',
-    'years_high_storage',
-    'years_above_20pct',
-    'years_above_10pct',
-    'years_low_carryover',
-    'years_trenton_reliable',
-    'max_consecutive_drought_days',
-    'mean_annual_nyc_contribution_mg',
-    'pct_days_nyc_contribution',
+    'pct_days_storage_below_30',
     'years_vulnerable',
+    # 'years_reliable',
+    # 'years_high_storage',
+    # 'years_above_20pct',
+    # 'years_above_10pct',
+    # 'years_low_carryover',
+    # 'years_trenton_reliable',
+    'max_consecutive_drought_days',
+    # 'mean_annual_nyc_contribution_mg',
+    'pct_days_nyc_contribution',
 ]
 
 # ============================================================================
@@ -144,184 +151,8 @@ BASELINE_DATASET = 'stationary_ensemble'
 # Set to list of dataset_ids to manually specify
 DATASETS_TO_PLOT = None  # None = use all datasets from config.py
 
-# ============================================================================
-# DISPLAY CONFIGURATION
-# ============================================================================
-# Metric display names (for plot labels)
-METRIC_DISPLAY_NAMES = {
-    # Flow Reliability - Montague
-    'years_reliable_montague': 'Years Montague\nReliable (>90%)',
-    'years_reliable_montague_95': 'Years Montague\nReliable (>95%)',
-    'mean_annual_montague_reliability': 'Mean Annual\nMontague Reliability',
-    'min_annual_montague_reliability': 'Worst Annual\nMontague Reliability',
-    'total_montague_shortage_mg': 'Total Montague\nShortage (MG)',
-    'mean_annual_montague_shortage_mg': 'Mean Annual\nMontague Shortage',
-
-    # Flow Reliability - Trenton
-    'years_reliable_trenton': 'Years Trenton\nReliable (>90%)',
-    'years_reliable_trenton_95': 'Years Trenton\nReliable (>95%)',
-    'mean_annual_trenton_reliability': 'Mean Annual\nTrenton Reliability',
-    'total_trenton_shortage_mg': 'Total Trenton\nShortage (MG)',
-    'mean_annual_trenton_shortage_mg': 'Mean Annual\nTrenton Shortage',
-
-    # NYC Storage - Thresholds
-    'years_above_30pct': 'Years Min\nStorage >30%',
-    'years_above_20pct': 'Years Min\nStorage >20%',
-    'years_above_10pct': 'Years Min\nStorage >10%',
-    'years_below_10pct': 'Years Min\nStorage ≤10%',
-
-    # NYC Storage - Key Dates
-    'years_high_storage_june1': 'Years June 1\nStorage ≥95%',
-    'years_high_storage_june1_90': 'Years June 1\nStorage ≥90%',
-    'mean_june1_storage_pct': 'Mean June 1\nStorage (%)',
-    'mean_sept1_storage_pct': 'Mean Sept 1\nStorage (%)',
-    'years_low_carryover': 'Years Sept 1\nStorage <50%',
-    'years_low_carryover_40': 'Years Sept 1\nStorage <40%',
-
-    # NYC Storage - Statistics
-    'mean_storage_pct': 'Mean Storage (%)',
-    'median_storage_pct': 'Median Storage (%)',
-    'min_storage_pct': 'Min Storage (%)',
-    'max_storage_pct': 'Max Storage (%)',
-    'std_storage_pct': 'Storage Std Dev (%)',
-    'pct_days_storage_below_30': '% Days\nStorage <30%',
-    'pct_days_storage_below_20': '% Days\nStorage <20%',
-    'mean_annual_storage_range': 'Mean Annual\nStorage Range (%)',
-
-    # Water Supply Reliability
-    'pct_days_nyc_diversion_shortage': '% Days NYC\nDiversion Shortage',
-    'total_nyc_diversion_shortage_mg': 'Total NYC\nDiversion Shortage',
-    'mean_annual_nyc_diversion_shortage_mg': 'Mean Annual NYC\nDiversion Shortage',
-    'max_daily_nyc_diversion_shortage_mg': 'Max Daily NYC\nDiversion Shortage',
-    'years_no_nyc_shortage': 'Years No\nNYC Shortage',
-    'years_minor_nyc_shortage': 'Years Minor\nNYC Shortage',
-
-    # Drought Characteristics
-    'max_consecutive_drought_days': 'Max Consecutive\nDrought (days)',
-    'mean_drought_duration_days': 'Mean Drought\nDuration (days)',
-    'n_drought_events': 'Number of\nDrought Events',
-    'n_major_droughts': 'Number of\nMajor Droughts',
-    'n_severe_droughts': 'Number of\nSevere Droughts',
-    'worst_drought_max_daily_shortage_mg': 'Worst Drought\nPeak Shortage',
-    'max_consecutive_drought_days_trenton': 'Max Consecutive\nTrenton Drought',
-    'n_drought_events_trenton': 'Number of\nTrenton Droughts',
-    'pct_days_combined_stress': '% Days Combined\nSystem Stress',
-
-    # NYC Contributions
-    'mean_annual_nyc_contribution_mg': 'Mean Annual NYC\nContribution (MG)',
-    'max_annual_nyc_contribution_mg': 'Max Annual NYC\nContribution (MG)',
-    'min_annual_nyc_contribution_mg': 'Min Annual NYC\nContribution (MG)',
-    'std_annual_nyc_contribution_mg': 'NYC Contribution\nStd Dev (MG)',
-    'total_nyc_contribution_mg': 'Total NYC\nContribution (MG)',
-    'pct_days_nyc_contribution': '% Days NYC\nContribution',
-    'n_days_high_nyc_contribution': 'Days High NYC\nContribution (>100 MGD)',
-
-    # System Balance
-    'nyc_contribution_to_shortage_ratio': 'NYC Contribution /\nShortage Ratio',
-    'years_high_storage_and_reliable': 'Years High Storage\n& Reliable',
-    'years_vulnerable': 'Years\nVulnerable',
-
-    # Legacy
-    'years_reliable': 'Years Montague\nReliable',
-    'years_high_storage': 'Years June 1\nStorage High',
-}
-
-# Color palette for datasets (will cycle if more datasets than colors)
-DATASET_COLORS = {
-    'stationary_ensemble': '#2E86AB',           # Blue
-    'climate_adjusted_low': '#C73E1D',          # Red
-    'climate_adjusted_high': '#06A77D',         # Teal
-}
-
-# Reconstruction scaling factor
-# Reconstruction has 79 years, ensembles have 70 years
-# Scale reconstruction metrics to be comparable
-RECONSTRUCTION_YEARS = 79
-ENSEMBLE_YEARS = 70
-RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS  # 70/79 ≈ 0.886
-
-# Metrics that should be scaled (count of years)
-METRICS_TO_SCALE = [
-    'years_reliable',
-    'years_high_storage',
-    'years_above_20pct',
-    'years_above_10pct',
-    'years_low_carryover',
-    'years_trenton_reliable',
-]
-
-# ============================================================================
-# METRIC METADATA - For smart y-axis labeling
-# ============================================================================
-# Categorize metrics by their units/types
-METRIC_UNITS = {
-    # Year count metrics
-    'years_reliable': 'years',
-    'years_high_storage': 'years',
-    'years_above_20pct': 'years',
-    'years_above_10pct': 'years',
-    'years_low_carryover': 'years',
-    'years_trenton_reliable': 'years',
-
-    # Percentage metrics
-    'mean_sept1_storage_pct': 'percent',
-    'pct_days_nyc_diversion_shortage': 'percent',
-
-    # Duration metrics (days)
-    'max_consecutive_drought_days': 'days',
-
-    # Volume metrics (million gallons)
-    'mean_annual_nyc_contribution_mg': 'million_gallons',
-    'max_annual_nyc_contribution_mg': 'million_gallons',
-}
-
-# Y-axis labels for different metric types
-Y_AXIS_LABELS = {
-    'years': 'Number of Years (out of 70)',
-    'percent': 'Percentage (%)',
-    'days': 'Days',
-    'million_gallons': 'Million Gallons (MG)',
-}
-
-def get_ylabel_for_metrics(metric_list):
-    """
-    Determine appropriate y-axis label for a list of metrics.
-    If all metrics have same units, return that unit's label.
-    Otherwise, return a generic label.
-    """
-    units = set(METRIC_UNITS.get(m, 'value') for m in metric_list)
-
-    if len(units) == 1:
-        unit = units.pop()
-        return Y_AXIS_LABELS.get(unit, 'Value')
-    else:
-        return 'Value'
-
-
-def load_performance_metrics(dataset_id):
-    """
-    Load pre-calculated performance metrics from CSV.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-
-    Returns
-    -------
-    metrics_df : pd.DataFrame
-        DataFrame with performance metrics for all realizations
-    """
-    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_performance_metrics.csv"
-
-    if not os.path.exists(csv_file):
-        raise FileNotFoundError(
-            f"Performance metrics not found: {csv_file}\n"
-            f"Run 04_postprocess_data.py first to calculate metrics!"
-        )
-
-    metrics_df = pd.read_csv(csv_file, index_col='realization_id')
-    return metrics_df
+# Option to show historical reconstruction values on plots
+SHOW_HISTORIC = False  # Set to False to hide historic reconstruction points
 
 
 def validate_metrics(metrics_df, dataset_id):
@@ -353,7 +184,7 @@ def validate_metrics(metrics_df, dataset_id):
         )
 
 
-def get_datasets_from_config():
+def get_datasets_to_plot():
     """
     Get list of datasets from config.py.
 
@@ -364,8 +195,6 @@ def get_datasets_from_config():
     dataset_labels : dict
         Display labels for each dataset
     """
-    from methods.config import DATASET_CONFIGS
-
     # Start with all datasets from config
     all_datasets = list(DATASET_CONFIGS.keys())
 
@@ -380,13 +209,6 @@ def get_datasets_from_config():
         for d in datasets_to_plot:
             if d not in all_datasets:
                 raise ValueError(f"Dataset '{d}' not found in config.py!")
-
-    # Verify baseline exists
-    if BASELINE_DATASET not in datasets_to_plot:
-        raise ValueError(
-            f"Baseline dataset '{BASELINE_DATASET}' not in datasets to plot!\n"
-            f"Datasets to plot: {datasets_to_plot}"
-        )
 
     # Create display labels from descriptions
     dataset_labels = {}
@@ -619,35 +441,64 @@ def print_top_changing_metrics(top_metrics_df, n_display=10):
     print(f"{'='*80}\n")
 
 
+def calculate_quantiles_by_dataset(all_metrics_dfs, datasets_to_plot, metrics_to_plot):
+    """
+    Calculate 5th, 50th, and 95th percentiles for each metric and dataset.
+
+    Parameters
+    ----------
+    all_metrics_dfs : dict
+        Dictionary mapping dataset_id to metrics DataFrame
+    datasets_to_plot : list
+        List of dataset IDs
+    metrics_to_plot : list
+        List of metrics to calculate quantiles for
+
+    Returns
+    -------
+    quantiles_data : dict
+        Nested dict: {metric: {dataset_id: {'p5': val, 'p50': val, 'p95': val}}}
+    """
+    quantiles_data = {}
+
+    for metric in metrics_to_plot:
+        quantiles_data[metric] = {}
+
+        for dataset_id in datasets_to_plot:
+            df = all_metrics_dfs[dataset_id]
+
+            if metric in df.columns:
+                values = df[metric].values
+                p5 = np.percentile(values, 5)
+                p50 = np.percentile(values, 50)
+                p95 = np.percentile(values, 95)
+
+                quantiles_data[metric][dataset_id] = {
+                    'p5': p5,
+                    'p50': p50,
+                    'p95': p95
+                }
+
+    return quantiles_data
+
+
 def plot_boxplot_comparison():
     """
-    Generate box plot comparison figure showing distributions.
+    Generate multi-panel performance metrics figure.
 
     Layout:
-    - Left panel: Absolute value distributions for all datasets
-    - Right panel: Percentage change distributions (relative to baseline)
+    - One subplot per metric
+    - Within each subplot: grouped bars by quantile (5th, 50th, 95th)
+    - Colors distinguish datasets
     """
 
-    print("=" * 80)
-    print("CREATING BOX PLOT PERFORMANCE METRICS VISUALIZATION")
-    print("=" * 80)
-    print(f"Metrics to plot ({len(METRICS_TO_PLOT)}): {METRICS_TO_PLOT}")
-    print("=" * 80)
-
     # Get datasets from config
-    datasets_to_plot, dataset_labels = get_datasets_from_config()
-
-    print(f"\nDatasets to plot ({len(datasets_to_plot)}): {datasets_to_plot}")
-    print(f"Baseline dataset: {BASELINE_DATASET}")
-    print("=" * 80)
+    datasets_to_plot, dataset_labels = get_datasets_to_plot()
 
     # Load all metrics
     all_metrics_dfs = {}
 
     for dataset_id in datasets_to_plot:
-        label = dataset_labels[dataset_id]
-        print(f"\nLoading {dataset_id} ({label})...")
-
         # Load pre-calculated metrics from CSV
         try:
             metrics_df = load_performance_metrics(dataset_id)
@@ -663,224 +514,147 @@ def plot_boxplot_comparison():
             return None
 
         all_metrics_dfs[dataset_id] = metrics_df
-        print(f"  Loaded {len(metrics_df)} realizations")
 
-    # Load historic (reconstruction) metrics for comparison
-    print(f"\nLoading historic (reconstruction) metrics...")
-    print(f"  Note: Reconstruction has {RECONSTRUCTION_YEARS} years, ensembles have {ENSEMBLE_YEARS} years")
-    print(f"  Scaling reconstruction year-count metrics by {RECONSTRUCTION_SCALE_FACTOR:.3f}")
+    # Load historic (reconstruction) metrics if requested
+    historic_quantiles = None
+    if SHOW_HISTORIC:
+        try:
+            historic_metrics_df = load_performance_metrics('reconstruction')
+            historic_quantiles = {}
+            for metric in METRICS_TO_PLOT:
+                if metric in historic_metrics_df.columns:
+                    # For reconstruction, we only have one realization (single value)
+                    # Use this value for all quantiles since there's no distribution
+                    raw_value = historic_metrics_df[metric].iloc[0]
 
-    try:
-        historic_metrics_df = load_performance_metrics('reconstruction')
-        historic_values = {}
-        for metric in METRICS_TO_PLOT:
-            if metric in historic_metrics_df.columns:
-                raw_value = historic_metrics_df[metric].iloc[0]
+                    # Scale metrics that count years to make them comparable
+                    if metric in METRICS_TO_SCALE:
+                        scaled_value = raw_value * RECONSTRUCTION_SCALE_FACTOR
+                    else:
+                        scaled_value = raw_value
 
-                # Scale metrics that count years to make them comparable
-                if metric in METRICS_TO_SCALE:
-                    scaled_value = raw_value * RECONSTRUCTION_SCALE_FACTOR
-                    historic_values[metric] = scaled_value
-                    print(f"  Historic {metric}: {raw_value:.1f} → {scaled_value:.1f} (scaled)")
-                else:
-                    historic_values[metric] = raw_value
-                    print(f"  Historic {metric}: {raw_value:.1f}")
-            else:
-                print(f"  WARNING: Historic metric '{metric}' not found")
+                    # Use same value for all quantiles (no distribution)
+                    historic_quantiles[metric] = {
+                        'p5': scaled_value,
+                        'p50': scaled_value,
+                        'p95': scaled_value
+                    }
+        except FileNotFoundError:
+            historic_quantiles = None
 
-        if not historic_values:
-            historic_values = None
-    except FileNotFoundError as e:
-        print(f"WARNING: {e}")
-        print("Historic values will not be shown on plot.")
-        historic_values = None
-
-    # Identify top changing metrics (if we have comparison datasets)
-    if len(datasets_to_plot) > 1:
-        comparison_datasets_for_analysis = [d for d in datasets_to_plot if d != BASELINE_DATASET]
-
-        if comparison_datasets_for_analysis:
-            print(f"\n{'='*80}")
-            print("IDENTIFYING TOP CHANGING METRICS")
-            print(f"{'='*80}")
-
-            # Get all available metrics
-            all_available_metrics = list(all_metrics_dfs[BASELINE_DATASET].columns)
-
-            # Identify top changing metrics
-            top_metrics_df = identify_top_changing_metrics(
-                all_metrics_dfs,
-                BASELINE_DATASET,
-                comparison_datasets_for_analysis,
-                all_metrics=all_available_metrics,
-                n_top=20  # Get top 20 for analysis
-            )
-
-            # Print top 15 changing metrics
-            print_top_changing_metrics(top_metrics_df, n_display=15)
-
-            # Save to CSV for further analysis
-            top_metrics_csv = f"{FIG_OUTPUT_DIR}/top_changing_metrics.csv"
-            top_metrics_df.to_csv(top_metrics_csv, index=False)
-            print(f"Saved top changing metrics analysis to: {top_metrics_csv}\n")
-
-    # Prepare data for box plots
-    print(f"\n{'='*80}")
-    print("Preparing data for box plots...")
-    print(f"{'='*80}")
-
-    df_absolute, df_pct_change = prepare_data_for_boxplots(
-        all_metrics_dfs, datasets_to_plot, dataset_labels
+    # Calculate quantiles for each metric and dataset
+    quantiles_data = calculate_quantiles_by_dataset(
+        all_metrics_dfs, datasets_to_plot, METRICS_TO_PLOT
     )
 
-    print(f"  Absolute values: {len(df_absolute)} data points")
-    if df_pct_change is not None:
-        print(f"  Percentage changes: {len(df_pct_change)} data points")
+    # Determine subplot layout
+    n_metrics = len(METRICS_TO_PLOT)
+    n_cols = min(3, n_metrics)  # Max 3 columns
+    n_rows = int(np.ceil(n_metrics / n_cols))
 
-    # Create figure
-    print(f"\n{'='*60}")
-    print("Creating box plot figure...")
-    print(f"{'='*60}")
+    # Create figure with subplots
+    fig_width = 6 * n_cols
+    fig_height = 5 * n_rows
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
 
-    # Determine layout based on whether we have percentage changes
-    if df_pct_change is not None and len(datasets_to_plot) > 1:
-        # Two-panel layout
-        fig, (ax_absolute, ax_pct_change) = plt.subplots(1, 2, figsize=(16, 8))
-        has_pct_panel = True
+    # Flatten axes array for easier iteration
+    if n_metrics == 1:
+        axes = [axes]
     else:
-        # Single panel layout
-        fig, ax_absolute = plt.subplots(1, 1, figsize=(10, 8))
-        ax_pct_change = None
-        has_pct_panel = False
+        axes = axes.flatten() if n_metrics > 1 else [axes]
 
-    # Get metric display names
-    metric_display_names = [METRIC_DISPLAY_NAMES.get(m, m) for m in METRICS_TO_PLOT]
-
-    # Map metric names to display names in dataframes
-    metric_name_map = {m: METRIC_DISPLAY_NAMES.get(m, m) for m in METRICS_TO_PLOT}
-    df_absolute['metric_display'] = df_absolute['metric'].map(metric_name_map)
-    if df_pct_change is not None:
-        df_pct_change['metric_display'] = df_pct_change['metric'].map(metric_name_map)
-
-    # Set up color palette
-    palette = {}
+    # Set up color palette for datasets
+    dataset_colors = {}
     for dataset_id in datasets_to_plot:
-        label = dataset_labels[dataset_id]
         if dataset_id in DATASET_COLORS:
-            palette[label] = DATASET_COLORS[dataset_id]
+            dataset_colors[dataset_id] = DATASET_COLORS[dataset_id]
         else:
-            # Use default seaborn color if not specified
-            palette[label] = None
+            # Default colors if not specified
+            dataset_colors[dataset_id] = plt.cm.tab10(len(dataset_colors))
 
-    # Remove None values from palette (let seaborn handle defaults)
-    palette = {k: v for k, v in palette.items() if v is not None}
+    # Plot each metric in its own subplot
+    quantile_labels = ['5th', '50th', '95th']
+    quantile_keys = ['p5', 'p50', 'p95']
+    n_quantiles = len(quantile_labels)
+    n_datasets = len(datasets_to_plot)
 
-    # Set style
-    sns.set_style("whitegrid")
+    for idx, metric in enumerate(METRICS_TO_PLOT):
+        ax = axes[idx]
 
-    # ====================================================================
-    # LEFT PANEL: Absolute values
-    # ====================================================================
-    print("  Plotting absolute values...")
+        # Prepare data for this metric
+        bar_width = 0.25
+        x_positions = np.arange(n_quantiles)
 
-    sns.boxplot(
-        data=df_absolute,
-        x='metric_display',
-        y='value',
-        hue='dataset',
-        ax=ax_absolute,
-        palette=palette if palette else None,
-        linewidth=1.5,
-        fliersize=3
-    )
+        # Plot bars for each dataset
+        for dataset_idx, dataset_id in enumerate(datasets_to_plot):
+            dataset_label = dataset_labels[dataset_id]
+            color = dataset_colors[dataset_id]
 
-    # Add historic values as scatter points (if available)
-    if historic_values is not None:
-        x_positions = np.arange(len(METRICS_TO_PLOT))
-        historic_scatter_values = [historic_values.get(m, np.nan) for m in METRICS_TO_PLOT]
+            # Get quantile values for this dataset and metric
+            values = [
+                quantiles_data[metric][dataset_id][qkey]
+                for qkey in quantile_keys
+            ]
 
-        ax_absolute.scatter(
-            x_positions, historic_scatter_values,
-            color='red', s=120, marker='D',
-            edgecolors='darkred', linewidths=2.5,
-            zorder=10, label='Historic'
-        )
+            # Offset positions for grouped bars
+            offset = (dataset_idx - (n_datasets - 1) / 2) * bar_width
+            positions = x_positions + offset
 
-    # Formatting
-    ax_absolute.set_xlabel('Performance Metric', fontsize=13, fontweight='bold')
-    ylabel = get_ylabel_for_metrics(METRICS_TO_PLOT)
-    ax_absolute.set_ylabel(ylabel, fontsize=13, fontweight='bold')
-    ax_absolute.set_title('(a) Absolute Performance', fontsize=14, fontweight='bold', pad=15)
-    ax_absolute.tick_params(axis='both', labelsize=10)
-    ax_absolute.set_xticklabels(ax_absolute.get_xticklabels(), rotation=45, ha='right')
-    ax_absolute.grid(axis='y', alpha=0.3, linestyle='--')
-    ax_absolute.set_axisbelow(True)
+            ax.bar(positions, values, bar_width,
+                  label=dataset_label, color=color, alpha=0.8,
+                  edgecolor='black', linewidth=0.5)
 
-    # Move legend to upper left
-    ax_absolute.legend(loc='upper left', fontsize=10, frameon=True, fancybox=True)
-
-    # ====================================================================
-    # RIGHT PANEL: Percentage changes (if applicable)
-    # ====================================================================
-    if has_pct_panel and df_pct_change is not None:
-        print("  Plotting percentage changes...")
-
-        sns.boxplot(
-            data=df_pct_change,
-            x='metric_display',
-            y='pct_change',
-            hue='dataset',
-            ax=ax_pct_change,
-            palette=palette if palette else None,
-            linewidth=1.5,
-            fliersize=3
-        )
-
-        # Add horizontal line at 0
-        ax_pct_change.axhline(0, color='black', linewidth=1.5, linestyle='-', alpha=0.7)
+        # Add historic reconstruction points if available
+        if historic_quantiles is not None and metric in historic_quantiles:
+            historic_values = [
+                historic_quantiles[metric][qkey]
+                for qkey in quantile_keys
+            ]
+            ax.scatter(x_positions, historic_values,
+                      **HISTORIC_MARKER_STYLE,
+                      label='Historic' if idx == 0 else None)
 
         # Formatting
-        ax_pct_change.set_xlabel('Performance Metric', fontsize=13, fontweight='bold')
-        ax_pct_change.set_ylabel('% Change from Baseline', fontsize=13, fontweight='bold')
-        ax_pct_change.set_title(
-            f'(b) % Change from {dataset_labels[BASELINE_DATASET]}',
-            fontsize=14, fontweight='bold', pad=15
-        )
-        ax_pct_change.tick_params(axis='both', labelsize=10)
-        ax_pct_change.set_xticklabels(ax_pct_change.get_xticklabels(), rotation=45, ha='right')
-        ax_pct_change.grid(axis='y', alpha=0.3, linestyle='--')
-        ax_pct_change.set_axisbelow(True)
+        metric_display_name = METRIC_DISPLAY_NAMES.get(metric, metric)
+        ax.set_title(metric_display_name, fontsize=12, fontweight='bold', pad=10)
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(quantile_labels, fontsize=10)
+        ax.set_xlabel('Percentile', fontsize=11, fontweight='bold')
 
-        # Legend
-        ax_pct_change.legend(loc='upper left', fontsize=10, frameon=True, fancybox=True)
+        # Y-axis label
+        ylabel = get_ylabel_for_metrics([metric])
+        ax.set_ylabel(ylabel, fontsize=11, fontweight='bold')
+
+        ax.grid(axis='y', alpha=0.3, linestyle='--')
+        ax.set_axisbelow(True)
+
+        # Add legend to first subplot only
+        if idx == 0:
+            ax.legend(loc='upper left', fontsize=9, frameon=True, fancybox=True)
+
+    # Hide unused subplots
+    for idx in range(n_metrics, len(axes)):
+        axes[idx].axis('off')
 
     # Overall title
     fig.suptitle(
-        'Water System Performance Metrics - Distribution Comparison',
-        fontsize=16, fontweight='bold', y=0.98
+        'Water System Performance Metrics - Quantile Comparison',
+        fontsize=16, fontweight='bold', y=0.995
     )
 
     plt.tight_layout()
 
     # Save
     fname = f"{FIG_OUTPUT_DIR}/performance_metrics_boxplot_comparison.png"
-    plt.savefig(fname, dpi=400, bbox_inches='tight')
+    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
-    # Also save as SVG
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"Saved: {fname_svg}")
-
-    return fig, (ax_absolute, ax_pct_change) if has_pct_panel else (ax_absolute,)
+    return fig, axes
 
 
 def main():
     """Main entry point."""
     plot_boxplot_comparison()
-
-    print("\n" + "=" * 60)
-    print("Done!")
 
 
 if __name__ == "__main__":
