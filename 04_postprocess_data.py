@@ -485,11 +485,11 @@ if __name__ == "__main__":
     # Check for --recombine flag
     recombine_sets = True
     if len(sys.argv) == 3:
-        if sys.argv[2] == '--recombine':
-            recombine_sets = True
+        if sys.argv[2] == '--skip-recombine':
+            recombine_sets = False
         else:
             print(f"ERROR: Unknown option '{sys.argv[2]}'")
-            print("Use --recombine to recombine ensemble sets from scratch")
+            print("Use --skip-recombine to skip recombining ensemble sets")
             sys.exit(1)
 
     main(dataset_id, recombine_sets=recombine_sets)

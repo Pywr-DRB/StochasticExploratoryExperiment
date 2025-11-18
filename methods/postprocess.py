@@ -9,6 +9,7 @@ This module contains functions for:
 """
 
 import os
+import numpy as np
 import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
