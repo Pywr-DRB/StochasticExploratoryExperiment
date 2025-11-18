@@ -116,7 +116,8 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
         "mrf_target",
         "ibt_diversions",
         "ibt_demands",
-        "nyc_release_components"
+        "nyc_release_components",
+        "res_level"
     ]
 
     data = pywrdrb.Data(results_sets=results_sets, print_status=False)
@@ -256,6 +257,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     ibt_diversions_dict = {}
     ibt_demands_dict = {}
     mrf_target_dict = {}
+    res_level_dict = {}
 
     for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         if model in data.inflow:
@@ -265,11 +267,13 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
             ibt_diversions_dict[model] = data.ibt_diversions[model]
             ibt_demands_dict[model] = data.ibt_demands[model]
             mrf_target_dict[model] = data.mrf_target[model]
+            res_level_dict[model] = data.res_level[model]
 
     keep_data.inflow = inflow_dict
     keep_data.major_flow = major_flow_dict
     keep_data.res_storage = res_storage_dict
     keep_data.ibt_diversions = ibt_diversions_dict
+    keep_data.res_level = res_level_dict
     keep_data.ibt_demands = ibt_demands_dict
     keep_data.mrf_target = mrf_target_dict
 
@@ -485,11 +489,11 @@ if __name__ == "__main__":
     # Check for --recombine flag
     recombine_sets = True
     if len(sys.argv) == 3:
-        if sys.argv[2] == '--recombine':
-            recombine_sets = True
+        if sys.argv[2] == '--skip-recombine':
+            recombine_sets = False
         else:
             print(f"ERROR: Unknown option '{sys.argv[2]}'")
-            print("Use --recombine to recombine ensemble sets from scratch")
+            print("Use --skip-recombine to skip recombining ensemble sets")
             sys.exit(1)
 
     main(dataset_id, recombine_sets=recombine_sets)
