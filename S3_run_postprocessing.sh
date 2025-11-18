@@ -9,6 +9,7 @@
 
 # Load modules and environment
 module load python/3.11.5
+module load openmpi/4.1.4
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
