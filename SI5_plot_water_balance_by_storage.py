@@ -9,7 +9,9 @@ Features:
 - Water balance components shown as stacked bars
 - Configurable quantile (mean, median, 90th percentile, etc.)
 - Configurable normalization: percentage of inflow or percentage of total
-- Analysis window: N months prior to minimum storage event
+- Two aggregation methods:
+  1. Since June 1: Aggregate from June 1 to the date of minimum storage
+  2. N months prior: Aggregate for N months prior to minimum storage
 - Bins with no data are greyed out
 
 Water Balance Components:
@@ -19,8 +21,9 @@ Water Balance Components:
 - Evaporation & Spills: Losses from reservoirs
 
 Configuration (edit constants in script):
-- QUANTILE: Which percentile to plot (default: 0.95 for 95th percentile)
-- N_MONTHS_PRIOR: Window size in months before minimum storage (default: 6)
+- AGGREGATION_METHOD: 'since_june1' or 'n_months_prior' (default: 'since_june1')
+- QUANTILE: Which percentile to plot (default: 0.50 for median)
+- N_MONTHS_PRIOR: Window size in months (only used if method is 'n_months_prior')
 - NORMALIZE_BY: 'inflow' (% of inflow) or 'total' (% of sum of all components)
 
 Usage:
@@ -50,10 +53,15 @@ os.makedirs(FIG_DIR_WATER_BALANCE, exist_ok=True)
 # CONFIGURATION
 # ============================================================================
 
-# Quantile to calculate for each storage bin (0.5 = median, 0.9 = 90th percentile)
-QUANTILE = 0.95  # Use median by default
+# Aggregation method for water balance calculations
+# 'since_june1': Aggregate from June 1 to minimum storage date
+# 'n_months_prior': Aggregate for N months prior to minimum storage date
+AGGREGATION_METHOD = 'since_june1'  # Options: 'since_june1' or 'n_months_prior'
 
-# Number of months prior to minimum storage to analyze
+# Quantile to calculate for each storage bin (0.5 = median, 0.9 = 90th percentile)
+QUANTILE = 0.50  # Use median by default
+
+# Number of months prior to minimum storage to analyze (only used if method is 'n_months_prior')
 N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum storage
 
 # Normalization method for water balance components
@@ -107,7 +115,9 @@ def bin_data_by_storage(storage_pct, components_dict):
 
     Each year is classified into a storage bin based on that year's minimum
     storage percentage. For each year, the water balance components are summed
-    over the N months prior to when the minimum storage occurred.
+    using the aggregation method specified by AGGREGATION_METHOD:
+    - 'since_june1': Aggregate from June 1 to minimum storage date
+    - 'n_months_prior': Aggregate for N months prior to minimum storage date
 
     Parameters
     ----------
@@ -121,7 +131,7 @@ def bin_data_by_storage(storage_pct, components_dict):
     -------
     binned_data : dict
         Dictionary with storage bins as keys, each containing a DataFrame
-        with N-month windowed totals for each component (index = year)
+        with windowed totals for each component (index = year)
     """
     # Add year column to storage data
     storage_with_year = storage_pct.to_frame('storage_pct')
@@ -131,12 +141,28 @@ def bin_data_by_storage(storage_pct, components_dict):
     min_storage_dates = storage_with_year.groupby('year')['storage_pct'].idxmin()
     min_storage_values = storage_with_year.groupby('year')['storage_pct'].min()
 
-    # Calculate N-month window sums for each year
+    # Calculate windowed sums for each year
     windowed_totals = {comp_name: {} for comp_name in components_dict.keys()}
 
     for year, min_date in min_storage_dates.items():
-        # Calculate start date (N months before minimum)
-        start_date = min_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+        # Determine start date based on aggregation method
+        if AGGREGATION_METHOD == 'since_june1':
+            # Start from June 1 of the same year as min_date
+            # Note: For minimum storage occurring Jan-May, this will use June 1 of previous year
+            year_of_min_storage = min_date.year
+            if min_date.month >= 6:
+                # Use June 1 of same year
+                start_date = pd.Timestamp(year=year_of_min_storage, month=6, day=1)
+            else:
+                # Use June 1 of previous year (for minimum storage in Jan-May)
+                start_date = pd.Timestamp(year=year_of_min_storage - 1, month=6, day=1)
+
+        elif AGGREGATION_METHOD == 'n_months_prior':
+            # Calculate start date (N months before minimum)
+            start_date = min_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+
+        else:
+            raise ValueError(f"Invalid AGGREGATION_METHOD: {AGGREGATION_METHOD}. Must be 'since_june1' or 'n_months_prior'")
 
         # Sum components in window for this year
         for comp_name, comp_series in components_dict.items():
@@ -450,10 +476,15 @@ def plot_water_balance_by_storage(agg_fractions, dataset_id, dataset_label, quan
         quantile, f'{int(quantile*100)}th Percentile'
     )
 
-    # Title includes normalization method
+    # Title includes normalization method and aggregation method
     normalize_label = 'as % of Inflow' if NORMALIZE_BY == 'inflow' else 'as % of Total'
+    if AGGREGATION_METHOD == 'since_june1':
+        agg_label = 'June 1 to min storage'
+    else:
+        agg_label = f'{N_MONTHS_PRIOR}-month prior'
+
     ax.set_title(
-        f'NYC Water Balance Decomposition by Storage Level\n{dataset_label} ({quantile_label}, {normalize_label})',
+        f'NYC Water Balance Decomposition by Storage Level\n{dataset_label} ({quantile_label}, {normalize_label}, {agg_label})',
         fontsize=14, fontweight='bold', pad=20
     )
 
@@ -494,6 +525,23 @@ def main(dataset_id):
     print("=" * 80)
     print(f"NYC WATER BALANCE BY STORAGE: {dataset_id}")
     print("=" * 80)
+
+    # Validate aggregation method
+    if AGGREGATION_METHOD not in ['since_june1', 'n_months_prior']:
+        raise ValueError(
+            f"Invalid AGGREGATION_METHOD: '{AGGREGATION_METHOD}'\n"
+            "Must be 'since_june1' or 'n_months_prior'"
+        )
+
+    # Print configuration
+    print("\nConfiguration:")
+    print(f"  Aggregation method: {AGGREGATION_METHOD}")
+    if AGGREGATION_METHOD == 'since_june1':
+        print(f"    -> Aggregating from June 1 to minimum storage date")
+    else:
+        print(f"    -> Aggregating {N_MONTHS_PRIOR} months prior to minimum storage date")
+    print(f"  Quantile: {QUANTILE} ({int(QUANTILE*100)}th percentile)")
+    print(f"  Normalization: {NORMALIZE_BY}")
 
     # Verify dataset
     verify_dataset_id(dataset_id)
