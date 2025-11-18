@@ -6,8 +6,10 @@ components vary across different storage levels.
 
 Features:
 - Storage bins (0-10%, 10-20%, 20-30%, etc.) on Y-axis
-- Water balance components shown as stacked bars (percentage of total)
+- Water balance components shown as stacked bars
 - Configurable quantile (mean, median, 90th percentile, etc.)
+- Configurable normalization: percentage of inflow or percentage of total
+- Analysis window: N months prior to minimum storage event
 - Bins with no data are greyed out
 
 Water Balance Components:
@@ -15,6 +17,11 @@ Water Balance Components:
 - NYC Diversions: Water delivered to NYC for consumption
 - Downstream Contributions: NYC releases to support downstream targets
 - Evaporation & Spills: Losses from reservoirs
+
+Configuration (edit constants in script):
+- QUANTILE: Which percentile to plot (default: 0.95 for 95th percentile)
+- N_MONTHS_PRIOR: Window size in months before minimum storage (default: 6)
+- NORMALIZE_BY: 'inflow' (% of inflow) or 'total' (% of sum of all components)
 
 Usage:
     python SI5_plot_water_balance_by_storage.py <dataset_id>
@@ -44,7 +51,15 @@ os.makedirs(FIG_DIR_WATER_BALANCE, exist_ok=True)
 # ============================================================================
 
 # Quantile to calculate for each storage bin (0.5 = median, 0.9 = 90th percentile)
-QUANTILE = 0.5  # Use median by default
+QUANTILE = 0.95  # Use median by default
+
+# Number of months prior to minimum storage to analyze
+N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum storage
+
+# Normalization method for water balance components
+# 'inflow': Express all components as percentage of total inflow
+# 'total': Express all components as percentage of sum of all components
+NORMALIZE_BY = 'inflow'  # Options: 'inflow' or 'total'
 
 # Storage bins (in percentage)
 STORAGE_BINS = [
@@ -88,7 +103,11 @@ COMPONENT_NAMES = {
 
 def bin_data_by_storage(storage_pct, components_dict):
     """
-    Bin daily water balance data by storage level.
+    Bin water balance data by minimum storage level for each year.
+
+    Each year is classified into a storage bin based on that year's minimum
+    storage percentage. For each year, the water balance components are summed
+    over the N months prior to when the minimum storage occurred.
 
     Parameters
     ----------
@@ -102,24 +121,46 @@ def bin_data_by_storage(storage_pct, components_dict):
     -------
     binned_data : dict
         Dictionary with storage bins as keys, each containing a DataFrame
-        with columns for each component
+        with N-month windowed totals for each component (index = year)
     """
-    binned_data = {}
+    # Add year column to storage data
+    storage_with_year = storage_pct.to_frame('storage_pct')
+    storage_with_year['year'] = storage_pct.index.year
 
+    # Find date and value of minimum storage for each year
+    min_storage_dates = storage_with_year.groupby('year')['storage_pct'].idxmin()
+    min_storage_values = storage_with_year.groupby('year')['storage_pct'].min()
+
+    # Calculate N-month window sums for each year
+    windowed_totals = {comp_name: {} for comp_name in components_dict.keys()}
+
+    for year, min_date in min_storage_dates.items():
+        # Calculate start date (N months before minimum)
+        start_date = min_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+
+        # Sum components in window for this year
+        for comp_name, comp_series in components_dict.items():
+            # Filter to window
+            mask = (comp_series.index >= start_date) & (comp_series.index <= min_date)
+            windowed_totals[comp_name][year] = comp_series[mask].sum()
+
+    # Convert to DataFrame
+    windowed_df = pd.DataFrame(windowed_totals)
+    windowed_df['min_storage'] = min_storage_values
+
+    # Bin years by minimum storage
+    binned_data = {}
     for bin_min, bin_max in STORAGE_BINS:
-        # Find days in this storage bin
-        mask = (storage_pct >= bin_min) & (storage_pct < bin_max)
+        # Find years where minimum storage falls in this bin
+        mask = (windowed_df['min_storage'] >= bin_min) & (windowed_df['min_storage'] < bin_max)
 
         if mask.sum() == 0:
-            # No data in this bin
+            # No years in this bin
             binned_data[(bin_min, bin_max)] = None
             continue
 
-        # Extract component values for days in this bin
-        bin_df = pd.DataFrame({
-            comp_name: comp_series[mask].values
-            for comp_name, comp_series in components_dict.items()
-        })
+        # Extract windowed totals for years in this bin (exclude min_storage column)
+        bin_df = windowed_df[mask].drop(columns=['min_storage'])
 
         binned_data[(bin_min, bin_max)] = bin_df
 
@@ -128,49 +169,43 @@ def bin_data_by_storage(storage_pct, components_dict):
 
 def calculate_annual_totals(binned_data, dates):
     """
-    Calculate annual totals for each storage bin and component.
+    Pass-through function for compatibility.
+
+    The binned_data already contains windowed totals (after refactoring),
+    so this function just returns the input unchanged.
 
     Parameters
     ----------
     binned_data : dict
-        Output from bin_data_by_storage()
+        Output from bin_data_by_storage() - already contains windowed totals
     dates : pd.DatetimeIndex
-        DateTime index for the data
+        DateTime index for the data (unused, kept for compatibility)
 
     Returns
     -------
-    annual_totals : dict
-        Dictionary with storage bins as keys, each containing a DataFrame
-        with annual totals for each component
+    windowed_totals : dict
+        Same as binned_data (already contains windowed totals)
     """
-    annual_totals = {}
-
-    for storage_bin, bin_df in binned_data.items():
-        if bin_df is None:
-            annual_totals[storage_bin] = None
-            continue
-
-        # Add dates to dataframe
-        bin_df_with_dates = bin_df.copy()
-        bin_df_with_dates['date'] = dates[bin_df.index]
-        bin_df_with_dates['year'] = bin_df_with_dates['date'].dt.year
-
-        # Calculate annual totals for each component (exclude datetime columns)
-        annual_df = bin_df_with_dates.groupby('year')[list(bin_df.columns)].sum()
-
-        annual_totals[storage_bin] = annual_df
-
-    return annual_totals
+    # Data is already in windowed form from bin_data_by_storage
+    return binned_data
 
 
 def calculate_quantile_fractions(annual_totals, quantile=0.5):
     """
     Calculate the quantile fractions for each storage bin.
 
+    For each storage bin, calculates the specified quantile across all years
+    in that bin, then converts to fractions showing the relative contribution
+    of each water balance component.
+
+    The normalization method is determined by NORMALIZE_BY:
+    - 'inflow': Express all components as percentage of total inflow
+    - 'total': Express all components as percentage of sum of all components
+
     Parameters
     ----------
     annual_totals : dict
-        Output from calculate_annual_totals()
+        Output from calculate_annual_totals() - contains windowed totals
     quantile : float
         Quantile to calculate (0.5 = median, 0.9 = 90th percentile)
 
@@ -178,7 +213,7 @@ def calculate_quantile_fractions(annual_totals, quantile=0.5):
     -------
     fractions : dict
         Dictionary with storage bins as keys, each containing a dict of
-        component: fraction pairs
+        component: fraction pairs (as percentages)
     """
     fractions = {}
 
@@ -187,15 +222,31 @@ def calculate_quantile_fractions(annual_totals, quantile=0.5):
             fractions[storage_bin] = None
             continue
 
-        # Calculate quantile for each component
+        # Calculate quantile for each component across all years in this bin
         quantile_values = annual_df.quantile(quantile)
 
-        # Calculate total (sum of all components)
-        total = quantile_values.sum()
+        # Determine normalization denominator based on NORMALIZE_BY setting
+        if NORMALIZE_BY == 'inflow':
+            # Normalize by total inflow only
+            if 'inflow' not in quantile_values.index:
+                fractions[storage_bin] = None
+                continue
 
-        if total == 0:
-            fractions[storage_bin] = None
-            continue
+            total = quantile_values['inflow']
+
+            if total == 0:
+                fractions[storage_bin] = None
+                continue
+
+        elif NORMALIZE_BY == 'total':
+            # Normalize by sum of all components
+            total = quantile_values.sum()
+
+            if total == 0:
+                fractions[storage_bin] = None
+                continue
+        else:
+            raise ValueError(f"Invalid NORMALIZE_BY value: {NORMALIZE_BY}. Must be 'inflow' or 'total'")
 
         # Calculate fractions (as percentage)
         bin_fractions = {
@@ -349,7 +400,11 @@ def plot_water_balance_by_storage(agg_fractions, dataset_id, dataset_label, quan
     bar_height = 0.8
 
     # Component order for stacking
-    components_ordered = ['inflow', 'diversions', 'contributions', 'evap_spill']
+    # When normalizing by inflow, exclude inflow from the plot (it's always 100%)
+    if NORMALIZE_BY == 'inflow':
+        components_ordered = ['diversions', 'contributions', 'evap_spill']
+    else:
+        components_ordered = ['inflow', 'diversions', 'contributions', 'evap_spill']
 
     # Plot each storage bin
     for idx, storage_bin in enumerate(STORAGE_BINS):
@@ -383,17 +438,34 @@ def plot_water_balance_by_storage(agg_fractions, dataset_id, dataset_label, quan
     ax.set_yticklabels([f"{bin_min}-{bin_max}%" for bin_min, bin_max in STORAGE_BINS],
                        fontsize=11)
     ax.set_ylabel('NYC Storage Level (%)', fontsize=13, fontweight='bold')
-    ax.set_xlabel('Percentage of Annual Water Balance (%)', fontsize=13, fontweight='bold')
+
+    # X-axis label depends on normalization method
+    if NORMALIZE_BY == 'inflow':
+        xlabel = 'Percentage of Total Inflow (%)'
+    else:
+        xlabel = 'Percentage of Annual Water Balance (%)'
+    ax.set_xlabel(xlabel, fontsize=13, fontweight='bold')
 
     quantile_label = {0.5: 'Median', 0.9: '90th Percentile', 0.1: '10th Percentile'}.get(
         quantile, f'{int(quantile*100)}th Percentile'
     )
+
+    # Title includes normalization method
+    normalize_label = 'as % of Inflow' if NORMALIZE_BY == 'inflow' else 'as % of Total'
     ax.set_title(
-        f'NYC Water Balance Decomposition by Storage Level\n{dataset_label} ({quantile_label})',
+        f'NYC Water Balance Decomposition by Storage Level\n{dataset_label} ({quantile_label}, {normalize_label})',
         fontsize=14, fontweight='bold', pad=20
     )
 
-    ax.set_xlim(0, 100)
+    # X-axis limit depends on normalization method
+    if NORMALIZE_BY == 'inflow':
+        # When normalizing by inflow, components can sum to >100% (storage decrease)
+        # or <100% (storage increase), so use wider range
+        ax.set_xlim(0, 150)
+    else:
+        # When normalizing by total, always sums to 100%
+        ax.set_xlim(0, 100)
+
     ax.grid(axis='x', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
 
@@ -402,8 +474,9 @@ def plot_water_balance_by_storage(agg_fractions, dataset_id, dataset_label, quan
 
     plt.tight_layout()
 
-    # Save
-    fname = f"{FIG_DIR_WATER_BALANCE}/{dataset_id}_water_balance_by_storage_q{int(quantile*100)}.png"
+    # Save - include normalization method in filename
+    normalize_suffix = 'pct_inflow' if NORMALIZE_BY == 'inflow' else 'pct_total'
+    fname = f"{FIG_DIR_WATER_BALANCE}/{dataset_id}_water_balance_by_storage_q{int(quantile*100)}_{normalize_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
