@@ -4,6 +4,8 @@
 #SBATCH --error=./logs/post.err
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=40
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=01:00:00
 
 # Load modules and environment
 module load python/3.11.5
@@ -26,8 +28,8 @@ if [ "$RUN_POSTPROCESSING" = true ]; then
 
     # Loop through datasets
     for DATASET_ID in "${DATASETS[@]}"; do
-        echo "Post-processing $DATASET_ID with MPI (${SLURM_NTASKS} ranks)..."
-        mpirun -np ${SLURM_NTASKS} python3 04_postprocess_data_mpi.py "$DATASET_ID"
+        echo "Post-processing $DATASET_ID with MPI ($np ranks)..."
+        mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID"
     done
 fi
 
