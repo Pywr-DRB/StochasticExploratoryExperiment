@@ -90,6 +90,7 @@ def calculate_performance_metrics(data, dataset_id, realizations):
 
         years_reliable_montague = (annual_reliability > 0.90).sum()
         years_reliable_montague_95 = (annual_reliability > 0.95).sum()
+        years_reliable_montague_99 = (annual_reliability > 0.99).sum()
         mean_annual_montague_reliability = annual_reliability.mean()
         min_annual_montague_reliability = annual_reliability.min()
 
@@ -115,7 +116,9 @@ def calculate_performance_metrics(data, dataset_id, realizations):
         # Critical storage thresholds throughout year
         min_annual_storage = nyc_storage_pct.resample('YS').min()
         years_above_30pct = (min_annual_storage > 30).sum()
+        years_below_30pct = (min_annual_storage <= 30).sum()
         years_above_20pct = (min_annual_storage > 20).sum()
+        years_below_20pct = (min_annual_storage <= 20).sum()
         years_above_10pct = (min_annual_storage > 10).sum()
         years_below_10pct = (min_annual_storage <= 10).sum()
 
@@ -139,7 +142,7 @@ def calculate_performance_metrics(data, dataset_id, realizations):
         max_storage_pct = nyc_storage_pct.max()
         pct_days_storage_below_30 = 100.0 * (nyc_storage_pct < 30).sum() / len(nyc_storage_pct)
         pct_days_storage_below_20 = 100.0 * (nyc_storage_pct < 20).sum() / len(nyc_storage_pct)
-
+        
         # Storage variability
         std_storage_pct = nyc_storage_pct.std()
         annual_storage_range = nyc_storage_pct.resample('YS').apply(lambda x: x.max() - x.min())
@@ -258,6 +261,7 @@ def calculate_performance_metrics(data, dataset_id, realizations):
             # Flow Reliability - Montague
             'years_reliable_montague': years_reliable_montague,
             'years_reliable_montague_95': years_reliable_montague_95,
+            'years_reliable_montague_99': years_reliable_montague_99,
             'mean_annual_montague_reliability': mean_annual_montague_reliability,
             'min_annual_montague_reliability': min_annual_montague_reliability,
             'total_montague_shortage_mg': total_montague_shortage_mg,
@@ -274,6 +278,8 @@ def calculate_performance_metrics(data, dataset_id, realizations):
             'years_above_30pct': years_above_30pct,
             'years_above_20pct': years_above_20pct,
             'years_above_10pct': years_above_10pct,
+            'years_below_30pct': years_below_30pct,
+            'years_below_20pct': years_below_20pct,
             'years_below_10pct': years_below_10pct,
 
             # NYC Storage - Key Dates
