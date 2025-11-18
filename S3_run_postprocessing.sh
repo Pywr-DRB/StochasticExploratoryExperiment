@@ -2,9 +2,8 @@
 #SBATCH --job-name=post
 #SBATCH --output=./logs/post.out
 #SBATCH --error=./logs/post.err
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --mem=0
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=40
 
 # Load modules and environment
 module load python/3.11.5
@@ -22,13 +21,13 @@ mkdir -p logs figures
 
 if [ "$RUN_POSTPROCESSING" = true ]; then
     ################################################################################
-    echo "Post-processing..."
+    echo "MPI Parallel Post-processing..."
     ################################################################################
-    
+
     # Loop through datasets
     for DATASET_ID in "${DATASETS[@]}"; do
-        echo "Post-processing $DATASET_ID..."
-        python3 04_postprocess_data.py "$DATASET_ID" --skip-recombine
+        echo "Post-processing $DATASET_ID with MPI (${SLURM_NTASKS} ranks)..."
+        mpirun -np ${SLURM_NTASKS} python3 04_postprocess_data_mpi.py "$DATASET_ID"
     done
 fi
 
