@@ -200,7 +200,7 @@ def _plot_single_storage_panel(ax,
                                 cmap,
                                 norm,
                                 show_zone_lines=True,
-                                xlabel='Period of year',
+                                xlabel='',
                                 ylabel='Total NYC storage (% of capacity)'):
     """
     Plot a single storage zone probability panel.
@@ -243,6 +243,16 @@ def _plot_single_storage_panel(ax,
 
     ax.set_xlim(X.min(), X.max())
     ax.set_ylim(0, 100)
+
+    # Set up monthly ticks (water year starts June 1)
+    # Week 1 = June 1, so approximate month boundaries in weeks
+    # Months: Jun, Jul, Aug, Sep, Oct, Nov, Dec, Jan, Feb, Mar, Apr, May
+    month_week_starts = [1, 5, 9, 14, 18, 23, 27, 32, 36, 40, 45, 49]  # Approximate week at start of each month
+    month_labels = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
+
+    ax.set_xticks(month_week_starts)
+    ax.set_xticklabels(month_labels)
+
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel(ylabel, fontsize=12)
     ax.tick_params(labelsize=10)
@@ -301,7 +311,6 @@ def plot_storage_zone_probabilities(prob_df,
         cmap=cmap_discrete,
         norm=norm_discrete,
         show_zone_lines=True,
-        xlabel='Period of year',
         ylabel='Total NYC storage (% of capacity)'
     )
 
@@ -368,7 +377,6 @@ def plot_storage_zone_comparison(prob_df_ref,
         cmap='BrBG_r',
         norm=norm,
         show_zone_lines=True,
-        xlabel='Period of year',
         ylabel='Total NYC storage (% of capacity)'
     )
 
@@ -386,17 +394,17 @@ def plot_storage_zone_comparison(prob_df_ref,
 
 
 def plot_4panel_storage_comparison(period='weekly',
-                                    figsize=(14, 10),
+                                    figsize=(14, 8),
                                     prob_bins=None,
                                     vmin_diff=-100,
                                     vmax_diff=100,
                                     fname=None):
     """
-    Create a 4-panel comparison figure showing storage zone probabilities for all scenarios.
+    Create a 3-panel comparison figure showing storage zone probabilities for selected scenarios.
 
     Layout:
     - Left panel: Stationary ensemble (absolute probability)
-    - Right panels (stacked): Low, Medium, High climate scenarios (% difference from stationary)
+    - Right panels (stacked): Low, High climate scenarios (% difference from stationary)
 
     Parameters
     ----------
@@ -416,14 +424,13 @@ def plot_4panel_storage_comparison(period='weekly',
         prob_bins = DEFAULT_PROB_BINS
 
     print(f"\n{'='*60}")
-    print("Creating 4-Panel Storage Zone Comparison Figure")
+    print("Creating 3-Panel Storage Zone Comparison Figure")
     print(f"{'='*60}")
 
-    # Define datasets to plot
+    # Define datasets to plot (excluding climate_adjusted_medium)
     datasets = {
         'stationary_ensemble': 'Stationary',
         'climate_adjusted_low': 'Low',
-        'climate_adjusted_medium': 'Medium',
         'climate_adjusted_high': 'High'
     }
 
@@ -455,7 +462,7 @@ def plot_4panel_storage_comparison(period='weekly',
     eps = 1e-8
 
     diff_matrices = {}
-    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_medium', 'climate_adjusted_high']:
+    for dataset_id in ['climate_adjusted_low', 'climate_adjusted_high']:
         M_comp = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
         prob_diff = 100.0 * (M_comp - M_ref) / np.maximum(M_ref, eps)
         diff_matrices[dataset_id] = prob_diff
@@ -466,19 +473,18 @@ def plot_4panel_storage_comparison(period='weekly',
 
     # Set up figure with GridSpec
     fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1], width_ratios=[1, 1],
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1],
                           hspace=0.15, wspace=0.25,
                           left=0.08, right=0.95, top=0.95, bottom=0.12)
 
     # Create axes
-    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans all rows
+    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans both rows
     ax_low = fig.add_subplot(gs[0, 1])   # Top right
-    ax_med = fig.add_subplot(gs[1, 1])   # Middle right
-    ax_high = fig.add_subplot(gs[2, 1])  # Bottom right
+    ax_high = fig.add_subplot(gs[1, 1])  # Bottom right
 
-    axes = [ax_stat, ax_low, ax_med, ax_high]
+    axes = [ax_stat, ax_low, ax_high]
     dataset_list = list(datasets.keys())
-    panel_labels = ['(a)', '(b)', '(c)', '(d)']
+    panel_labels = ['(a)', '(b)', '(c)']
 
     # Set up colormaps and norms
     # Left panel: absolute probability (discrete colormap)
@@ -506,7 +512,6 @@ def plot_4panel_storage_comparison(period='weekly',
                 cmap=cmap_abs,
                 norm=norm_abs,
                 show_zone_lines=True,
-                xlabel='Period of year',
                 ylabel='Total NYC storage (% of capacity)'
             )
 
@@ -521,7 +526,6 @@ def plot_4panel_storage_comparison(period='weekly',
                 cmap=cmap_diff,
                 norm=norm_diff,
                 show_zone_lines=True,
-                xlabel='Period of year',
                 ylabel=''  # No ylabel for right panels
             )
 
@@ -531,20 +535,6 @@ def plot_4panel_storage_comparison(period='weekly',
                transform=ax.transAxes, fontsize=13, fontweight='bold',
                verticalalignment='top',
                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.3))
-
-        # X-axis labels only for bottom panels
-        if idx == 0:  # Left panel (always show)
-            ax.set_xlabel('Period of year', fontsize=12)
-            ax.set_ylabel('Total NYC storage (% of capacity)', fontsize=12)
-        elif idx == 3:  # Bottom right panel
-            ax.set_xlabel('Period of year', fontsize=12)
-        else:  # Other right panels
-            ax.set_xticklabels([])
-            ax.set_xlabel('')
-
-        # Y-axis labels only for left panel
-        if idx != 0:
-            ax.set_ylabel('')
 
     # Add two colorbars at bottom
     # Left colorbar for absolute probability
@@ -561,7 +551,7 @@ def plot_4panel_storage_comparison(period='weekly',
 
     # Save figure
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/comparison_4panel_storage_zone_probabilities_{period}.png"
+        fname = f"{FIG_OUTPUT_DIR}/comparison_3panel_storage_zone_probabilities_{period}.png"
 
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     # Also save vector version
@@ -664,7 +654,7 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
-        print("Special option: 'comparison' - generates 4-panel comparison figure")
+        print("Special option: 'comparison' - generates 3-panel comparison figure")
         sys.exit(1)
 
     arg = sys.argv[1]
@@ -672,14 +662,14 @@ def main():
 
     figsize = (10, 8)
 
-    # Handle special 'comparison' option for 4-panel figure
+    # Handle special 'comparison' option for 3-panel figure
     if arg.lower() == 'comparison':
         print("=" * 60)
-        print("PLOTTING 4-PANEL STORAGE ZONE COMPARISON")
+        print("PLOTTING 3-PANEL STORAGE ZONE COMPARISON")
         print("=" * 60)
         plot_4panel_storage_comparison(period=period)
         print("=" * 60)
-        print("4-panel comparison figure completed successfully!")
+        print("3-panel comparison figure completed successfully!")
         return
 
     if arg == '--all':
