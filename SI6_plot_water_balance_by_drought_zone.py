@@ -43,6 +43,7 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from methods.config import *
 from methods.plotting.styles import DPI_HIGH
+from methods.config import NYC_TOTAL_CAPACITY, WRF1960s_OUTPUT_FNAME
 
 # Output directory
 FIG_DIR_DROUGHT_ZONE = f"{FIG_DIR}/water_balance_by_drought_zone"
@@ -55,7 +56,7 @@ os.makedirs(FIG_DIR_DROUGHT_ZONE, exist_ok=True)
 # Aggregation method for water balance calculations
 # 'since_june1': Aggregate from June 1 to minimum zone date
 # 'n_months_prior': Aggregate for N months prior to minimum zone date
-AGGREGATION_METHOD = 'n_months_prior'  # Options: 'since_june1' or 'n_months_prior'
+AGGREGATION_METHOD = 'n_months_prior' #'n_months_prior'  # Options: 'since_june1' or 'n_months_prior'
 
 # Number of months prior to minimum zone to analyze (only used if method is 'n_months_prior')
 N_MONTHS_PRIOR = 9  # Analyze water balance for N months leading up to minimum zone
@@ -65,6 +66,16 @@ DROP_NORMAL = False  # Set to False to include "Normal or Above" category
 
 # Minimum inflow threshold for filtering (MG)
 MIN_INFLOW_THRESHOLD = 1000  # Filter out years with total inflow below this value
+
+# X-axis maximum limit configuration
+# Set to None to use quantile-based limit, or a number for manual limit
+XLIM_MAX_MANUAL = 100  # e.g., 100 for fixed limit, None for auto
+
+# Quantile for determining x-axis max when XLIM_MAX_MANUAL is None
+XLIM_QUANTILE = 1  # Use 95th percentile of max values across categories
+
+# Include 1960s reconstruction data point
+INCLUDE_RECONSTRUCTION = False  # Set to True to add 1964 drought data point
 
 # NYC reservoir parameters
 NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
@@ -289,6 +300,133 @@ def categorize_by_drought_zone(aggregates_df):
     return categorized_data
 
 
+def calculate_reconstruction_contribution_ratio():
+    """
+    Calculate the contribution ratio for the 1960s reconstruction simulation.
+
+    Finds the date when NYC reservoirs first reached minimum storage (<=1 MG)
+    in 1964, then calculates the (NYC contributions / total inflow) ratio
+    for the N months prior (or since June 1).
+
+    Returns
+    -------
+    float or None
+        Contribution ratio as percentage, or None if data unavailable
+    """
+    # Load reconstruction data
+    reconstruction_file = RECONSTRUCTION_OUTPUT_FNAME
+
+    if not os.path.exists(reconstruction_file):
+        print(f"  Warning: Reconstruction file not found: {reconstruction_file}")
+        return None
+
+    print(f"  Loading reconstruction data from: {reconstruction_file}")
+
+    try:
+        # Load the reconstruction simulation data
+        data = pywrdrb.Data()
+        data.load_output(output_filenames=[reconstruction_file],
+                         results_sets=['res_storage', 'inflow', 'nyc_release_components'])
+
+        dataset_name = 'reconstruction'
+        
+        # Check available keys
+        if dataset_name not in data.res_storage:
+            # Try to find the correct key
+            available_keys = list(data.res_storage.keys())
+            print(f"  Available storage keys: {available_keys}")
+            if len(available_keys) == 1:
+                dataset_name = available_keys[0]
+            else:
+                print(f"  Warning: Could not find reconstruction data")
+                return None
+
+        # Get realization 0 (single run for reconstruction)
+        realization_id = 0
+        if realization_id not in data.res_storage[dataset_name]:
+            # Try to find any available realization
+            available_reals = list(data.res_storage[dataset_name].keys())
+            if len(available_reals) > 0:
+                realization_id = available_reals[0]
+            else:
+                print(f"  Warning: No realizations found in reconstruction data")
+                return None
+
+        # Get storage data
+        storage_df = data.res_storage[dataset_name][realization_id]
+
+        # Calculate NYC aggregate storage
+        nyc_storage = storage_df[NYC_RESERVOIRS].sum(axis=1)
+
+        # Find first date where storage reaches minimum (<=1 MG) in 1964
+        # First filter to 1964 data
+        mask_1964 = (nyc_storage.index.year == 1964)
+        storage_1964 = nyc_storage[mask_1964]
+
+        if len(storage_1964) == 0:
+            print(f"  Warning: No 1964 data found in reconstruction")
+            return None
+
+        # Find first date where storage <= 1 MG (or minimum if never reaches 1)
+        min_storage_threshold = 1.0  # MG
+        low_storage_mask = storage_1964 <= min_storage_threshold
+
+        if low_storage_mask.any():
+            # Use first date where storage <= 1 MG
+            min_date = storage_1964[low_storage_mask].index[0]
+            print(f"  1964 minimum storage date (<=1 MG): {min_date.date()}")
+        else:
+            # Use date of actual minimum
+            min_date = storage_1964.idxmin()
+            print(f"  1964 minimum storage date: {min_date.date()} (min = {storage_1964.min():.1f} MG)")
+
+        # Determine start date based on aggregation method
+        if AGGREGATION_METHOD == 'since_june1':
+            if min_date.month >= 6:
+                start_date = pd.Timestamp(year=min_date.year, month=6, day=1)
+            else:
+                start_date = pd.Timestamp(year=min_date.year - 1, month=6, day=1)
+        else:  # n_months_prior
+            start_date = min_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+
+        print(f"  Aggregation period: {start_date.date()} to {min_date.date()}")
+
+        # Get inflow data
+        inflow_df = data.inflow[dataset_name][realization_id]
+        nyc_inflow = inflow_df[NYC_RESERVOIRS].sum(axis=1)
+
+        # Get contribution data
+        nyc_reservoirs = NYC_RESERVOIRS
+        contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
+        nyc_contributions = data.nyc_release_components[dataset_name][realization_id].loc[:, contribution_columns].sum(axis=1)
+
+        # Calculate totals in aggregation window
+        inflow_mask = (nyc_inflow.index >= start_date) & (nyc_inflow.index <= min_date)
+        contribution_mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= min_date)
+
+        inflow_total = nyc_inflow[inflow_mask].sum()
+        contribution_total = nyc_contributions[contribution_mask].sum()
+
+        if inflow_total <= 0:
+            print(f"  Warning: Invalid inflow total: {inflow_total}")
+            return None
+
+        # Calculate ratio as percentage
+        contribution_ratio = 100.0 * contribution_total / inflow_total
+
+        print(f"  Reconstruction contribution ratio: {contribution_ratio:.1f}%")
+        print(f"    Total inflow: {inflow_total:.0f} MG")
+        print(f"    Total contributions: {contribution_total:.0f} MG")
+
+        return contribution_ratio
+
+    except Exception as e:
+        print(f"  Warning: Error loading reconstruction data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     """
     Create KDE plots showing distributions of water balance components by zone.
@@ -359,14 +497,7 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     ax.set_ylabel('Density', fontsize=12, fontweight='bold')
     ax.set_title('NYC Inflow Distribution by Drought Zone',
                  fontsize=13, fontweight='bold', pad=15)
-    ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-
-    # Set x and y limits based on DROP_NORMAL setting
-    # if DROP_NORMAL:
-    #     ax.set_xlim(0, 200000)
-    # else:
-    #     ax.set_xlim(0, 400000)
 
     # Plot contribution distributions
     ax = axes[1]
@@ -404,14 +535,7 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     ax.set_ylabel('Density', fontsize=12, fontweight='bold')
     ax.set_title('NYC Contributions Distribution by Drought Zone',
                  fontsize=13, fontweight='bold', pad=15)
-    ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-
-    # Set x and y limits based on DROP_NORMAL setting
-    # if DROP_NORMAL:
-    #     ax.set_xlim(0, 200000)
-    # else:
-    #     ax.set_xlim(0, 400000)
 
     # Single legend at the bottom with reordered zones
     handles, labels = axes[1].get_legend_handles_labels()
@@ -460,7 +584,7 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     print("Creating contribution ratio KDE plot...")
 
     # Create single panel figure
-    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 12))
 
     # Prepare data for plotting
     # Drop "Normal or Above" category if DROP_NORMAL is True
@@ -469,7 +593,13 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     else:
         categories = ['emergency', 'watch', 'warning', 'other']
 
-    # Plot contribution ratio distributions
+    # Track sample sizes for legend labels
+    sample_sizes = {}
+
+    # First pass: calculate contribution ratios and collect all values for quantile calculation
+    all_contribution_ratios = []
+    category_data = {}
+
     for cat in categories:
         cat_info = DROUGHT_CATEGORIES[cat]
         df = categorized_data[cat].copy()
@@ -479,22 +609,73 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
             df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
 
             if len(df_filtered) > 0:
+                # Store sample size
+                sample_sizes[cat] = len(df_filtered)
+
                 # Calculate contribution ratio (as percentage)
                 contribution_ratio = 100.0 * df_filtered['contribution_total'] / df_filtered['inflow_total']
 
-                # Plot KDE
-                contribution_ratio.plot.kde(
-                    ax=ax,
-                    color=cat_info['color'],
-                    linewidth=2.5,
-                    alpha=0.8,
-                    label=cat_info['label']
-                )
+                # Store for plotting
+                category_data[cat] = {
+                    'ratio': contribution_ratio,
+                    'n': len(df_filtered)
+                }
 
-                # Plot mean value line
-                mean_val = contribution_ratio.mean()
-                ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
-                          linewidth=1.5, alpha=0.7)
+                # Collect all values for quantile calculation
+                all_contribution_ratios.extend(contribution_ratio.values)
+
+    # Determine x-axis max limit
+    if XLIM_MAX_MANUAL is not None:
+        xlim_max = XLIM_MAX_MANUAL
+    else:
+        # Use quantile-based limit
+        if len(all_contribution_ratios) > 0:
+            xlim_max = np.quantile(all_contribution_ratios, XLIM_QUANTILE)
+            print(f"  X-axis max set to {XLIM_QUANTILE*100:.0f}th percentile: {xlim_max:.1f}%")
+        else:
+            xlim_max = 100  # Fallback
+
+    # Second pass: plot the distributions
+    for cat in categories:
+        if cat not in category_data:
+            continue
+
+        cat_info = DROUGHT_CATEGORIES[cat]
+        contribution_ratio = category_data[cat]['ratio']
+        n = category_data[cat]['n']
+
+        # Create label with "Years with" prefix and sample size
+        if cat == 'other':
+            label = f"Years with Normal or Above (n = {n})"
+        else:
+            label = f"Years with {cat_info['label']} (n = {n})"
+
+        # Plot KDE
+        contribution_ratio.plot.kde(
+            ax=ax,
+            color=cat_info['color'],
+            linewidth=2.5,
+            alpha=0.8,
+            label=label
+        )
+
+        # Plot mean value line
+        mean_val = contribution_ratio.mean()
+        ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                  linewidth=1.5, alpha=0.7)
+
+    # Add a single legend entry for mean lines
+    ax.axvline(np.nan, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, label='KDE Mean')
+
+    # Add reconstruction data point if enabled
+    reconstruction_ratio = None
+    if INCLUDE_RECONSTRUCTION:
+        print("\nCalculating reconstruction contribution ratio...")
+        reconstruction_ratio = calculate_reconstruction_contribution_ratio()
+        if reconstruction_ratio is not None:
+            # Plot vertical line for 1964 drought
+            ax.axvline(reconstruction_ratio, color='black', linestyle='-',
+                      linewidth=2.5, alpha=0.9, label='1964 Drought')
 
     # X-axis label depends on aggregation method
     if AGGREGATION_METHOD == 'since_june1':
@@ -504,30 +685,31 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
 
     ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
     ax.set_ylabel('Density', fontsize=12, fontweight='bold')
-    ax.set_title(f'NYC Contribution Ratio Distribution by Drought Zone\n{dataset_label}',
-                 fontsize=13, fontweight='bold', pad=15)
-    ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-    ax.set_xlim(left=0, right=100)
+    ax.set_xlim(left=0, right=xlim_max)
 
-    # Legend with reordered zones
+    # Legend with reordered zones - placed below the axes
     handles, labels = ax.get_legend_handles_labels()
 
-    # Reorder legend: Normal or Flood, Drought Warning, Drought Watch, Drought Emergency
-    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency']
+    # Reorder legend: Normal or Above, Drought Warning, Drought Watch, Drought Emergency, KDE Mean, 1964 Drought
+    # Match based on partial string since labels now include sample sizes
+    desired_order_keywords = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency', 'KDE Mean', '1964 Drought']
 
     # Create ordered lists
     ordered_handles = []
     ordered_labels = []
-    for desired_label in desired_order:
-        if desired_label in labels:
-            idx = labels.index(desired_label)
-            ordered_handles.append(handles[idx])
-            ordered_labels.append(labels[idx])
+    for keyword in desired_order_keywords:
+        for idx, label in enumerate(labels):
+            if keyword in label and handles[idx] not in ordered_handles:
+                ordered_handles.append(handles[idx])
+                ordered_labels.append(labels[idx])
+                break
 
-    ax.legend(ordered_handles, ordered_labels, loc='best', fontsize=11, frameon=True, fancybox=True)
+    # Place legend below the axes
+    ax.legend(ordered_handles, ordered_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+              ncol=1, fontsize=10, frameon=True, fancybox=True)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.1, 1, 1])
 
     # Save
     fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_contribution_ratio_by_drought_zone_{N_MONTHS_PRIOR}M.png"

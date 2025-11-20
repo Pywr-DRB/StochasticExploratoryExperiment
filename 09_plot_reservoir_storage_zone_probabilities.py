@@ -23,7 +23,7 @@ import pywrdrb
 from methods.config import *
 
 # Default probability bins (percent) - configurable
-DEFAULT_PROB_BINS = [0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 100]
+DEFAULT_PROB_BINS = [0.1, 1, 2.5, 5, 10, 25, 50, 75, 90, 95]
 
 
 def create_discrete_colormap(bin_edges, base_cmap='magma_r'):

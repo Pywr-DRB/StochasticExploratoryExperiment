@@ -15,6 +15,8 @@ file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
 
 
+DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
+
 def load_performance_metrics(dataset_id):
     """
     Load pre-calculated performance metrics from CSV.
@@ -107,7 +109,7 @@ def load_wrf1960s_historical_flow(gage_flow=True):
 
 
 
-def load_drought_events(dataset_id, ssi_window):
+def load_drought_events(dataset_id, ssi_window, observed=False):
     """
     Load drought events for a given dataset and SSI window.
 
@@ -125,7 +127,10 @@ def load_drought_events(dataset_id, ssi_window):
     """
     # Get the root directory (parent of methods/)
     root_dir = os.path.dirname(file_dir)
-    fname = f"{root_dir}/pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
+    if observed:
+        fname = f"{DROUGHT_METRICS_DIR}/observed_ssi{ssi_window}_drought_events.csv"
+    else:
+        fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
 
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Drought events file not found: {fname}")
@@ -139,6 +144,15 @@ def load_drought_events(dataset_id, ssi_window):
         if col in df.columns:
             df[col] = pd.to_datetime(df[col])
 
+    # Take absolute values and ensure finite
+    for metric in ['severity', 'magnitude']:
+        if metric in droughts.columns:
+            droughts[metric] = droughts[metric].abs()
+
+    # Remove infinite or NaN values
+    droughts = droughts.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=['severity', 'magnitude', 'duration']
+    )
     print(f"  Loaded {len(df)} drought events")
     print(f"  Unique realizations: {df['realization_id'].nunique()}")
 

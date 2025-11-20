@@ -37,7 +37,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
-
+from methods.load import load_drought_events
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/drought_distributions"
@@ -63,53 +63,6 @@ METRIC_UNITS = {
     'duration': 'months'
 }
 
-
-def load_drought_events(dataset_id, ssi_window, observed=False):
-    """
-    Load drought events from CSV file.
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier ('stationary_ensemble', 'climate_adjusted_low', etc.)
-    ssi_window : int
-        SSI window size in months (3, 6, or 12)
-    observed : bool
-        If True, load observed droughts; if False, load synthetic droughts
-
-    Returns:
-    --------
-    pd.DataFrame
-        Drought events with columns: start, end, duration, severity, magnitude, realization_id
-    """
-    if observed:
-        fname = f"{DROUGHT_METRICS_DIR}/observed_ssi{ssi_window}_drought_events.csv"
-    else:
-        fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Drought events file not found: {fname}\n"
-            f"Run 05_calculate_ssi_drought_metrics.py first!"
-        )
-
-    droughts = pd.read_csv(fname)
-
-    # Convert dates to datetime
-    droughts['start'] = pd.to_datetime(droughts['start'])
-    droughts['end'] = pd.to_datetime(droughts['end'])
-
-    # Take absolute values and ensure finite
-    for metric in ['severity', 'magnitude']:
-        if metric in droughts.columns:
-            droughts[metric] = droughts[metric].abs()
-
-    # Remove infinite or NaN values
-    droughts = droughts.replace([np.inf, -np.inf], np.nan).dropna(
-        subset=['severity', 'magnitude', 'duration']
-    )
-
-    return droughts
 
 
 def validate_metric(metric):
