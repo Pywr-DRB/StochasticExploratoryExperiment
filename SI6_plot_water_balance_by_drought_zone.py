@@ -75,7 +75,7 @@ XLIM_MAX_MANUAL = 100  # e.g., 100 for fixed limit, None for auto
 XLIM_QUANTILE = 1  # Use 95th percentile of max values across categories
 
 # Include 1960s reconstruction data point
-INCLUDE_RECONSTRUCTION = False  # Set to True to add 1964 drought data point
+INCLUDE_RECONSTRUCTION = True  # Set to True to add 1964 drought data point
 
 # NYC reservoir parameters
 NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
@@ -584,7 +584,7 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     print("Creating contribution ratio KDE plot...")
 
     # Create single panel figure
-    fig, ax = plt.subplots(1, 1, figsize=(10, 12))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 9))
 
     # Prepare data for plotting
     # Drop "Normal or Above" category if DROP_NORMAL is True
@@ -718,6 +718,232 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     plt.close()
 
 
+def plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_label):
+    """
+    Create scatter plot of NYC inflow vs contributions, colored by drought zone.
+
+    Parameters
+    ----------
+    categorized_data : dict
+        Output from categorize_by_drought_zone()
+    dataset_id : str
+        Dataset identifier
+    dataset_label : str
+        Dataset display label
+    """
+    print("Creating inflow vs contributions scatter plot...")
+
+    # Create single panel figure
+    fig, ax = plt.subplots(1, 1, figsize=(10, 9))
+
+    # Prepare data for plotting
+    # Drop "Normal or Above" category if DROP_NORMAL is True
+    if DROP_NORMAL:
+        categories = ['emergency', 'watch', 'warning']
+    else:
+        categories = ['emergency', 'watch', 'warning', 'other']
+
+    # Track sample sizes for legend
+    all_inflows = []
+    all_contributions = []
+
+    # Define zorder for each category (higher = on top)
+    category_zorder = {
+        'other': 1,      # Normal or Above on bottom
+        'watch': 2,      # Drought Watch
+        'warning': 3,    # Drought Warning
+        'emergency': 4   # Drought Emergency on top
+    }
+
+    # Plot scatter points for each category
+    for cat in categories:
+        cat_info = DROUGHT_CATEGORIES[cat]
+        df = categorized_data[cat].copy()
+
+        if len(df) > 0:
+            # Filter out low inflow values
+            df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
+
+            if len(df_filtered) > 0:
+                inflows = df_filtered['inflow_total'].values
+                contributions = df_filtered['contribution_total'].values
+                n = len(df_filtered)
+
+                # Collect all data for determining axis limits
+                all_inflows.extend(inflows)
+                all_contributions.extend(contributions)
+
+                # Create label with "Years with" prefix and sample size
+                if cat == 'other':
+                    label = f"Years with Normal or Above (n = {n})"
+                else:
+                    label = f"Years with {cat_info['label']} (n = {n})"
+
+                # Set marker size: smaller for Normal or Above, larger for drought categories
+                marker_size = 10 if cat == 'other' else 50
+
+                # Plot scatter with zorder
+                ax.scatter(inflows, contributions,
+                          c=cat_info['color'],
+                          s=marker_size,
+                          alpha=0.6,
+                          edgecolors='white',
+                          linewidth=0.5,
+                          label=label,
+                          zorder=category_zorder.get(cat, 1))
+
+    # Determine axis limits
+    if len(all_inflows) > 0:
+        max_inflow = max(all_inflows)
+        max_contribution = max(all_contributions)
+        # Add some padding
+        xlim_max = max_inflow * 1.1
+        ylim_max = max_contribution * 1.1
+        
+        xlim_min = min(all_inflows) * 1.1
+        ylim_min = min(all_contributions) * 1.1
+        
+        xlim_min = 10**5
+        ylim_min = 10**4
+        
+    else:
+        xlim_max = 100000
+        ylim_max = 100000
+        xlim_min = 1
+        ylim_min = 1
+
+    # Add contour lines for 20%, 40%, 60% contribution ratios
+    x_contour = np.linspace(0, xlim_max, 100)
+    contour_ratios = [20, 40, 60]
+    contour_colors = ['#666666', '#444444', '#222222']
+    contour_styles = [':', '--', '-']
+
+    for ratio, color, style in zip(contour_ratios, contour_colors, contour_styles):
+        y_contour = x_contour * (ratio / 100.0)
+        ax.plot(x_contour, y_contour, color=color, linestyle=style,
+               linewidth=1.5, alpha=0.7, label=f'{ratio}% ratio')
+
+    # Add reconstruction data point if enabled
+    if INCLUDE_RECONSTRUCTION:
+        print("\nCalculating reconstruction contribution ratio for scatter plot...")
+        reconstruction_ratio = calculate_reconstruction_contribution_ratio()
+        if reconstruction_ratio is not None:
+            # We need to also get the actual inflow and contribution values
+            # Re-load reconstruction data to get these values
+            reconstruction_file = RECONSTRUCTION_OUTPUT_FNAME
+            if os.path.exists(reconstruction_file):
+                try:
+                    data = pywrdrb.Data()
+                    data.load_output(output_filenames=[reconstruction_file],
+                                    results_sets=['res_storage', 'inflow', 'nyc_release_components'])
+
+                    dataset_name = 'reconstruction'
+                    if dataset_name not in data.res_storage:
+                        available_keys = list(data.res_storage.keys())
+                        if len(available_keys) == 1:
+                            dataset_name = available_keys[0]
+
+                    realization_id = 0
+                    if realization_id not in data.res_storage[dataset_name]:
+                        available_reals = list(data.res_storage[dataset_name].keys())
+                        if len(available_reals) > 0:
+                            realization_id = available_reals[0]
+
+                    # Get storage data to find min date
+                    storage_df = data.res_storage[dataset_name][realization_id]
+                    nyc_storage = storage_df[NYC_RESERVOIRS].sum(axis=1)
+
+                    mask_1964 = (nyc_storage.index.year == 1964)
+                    storage_1964 = nyc_storage[mask_1964]
+
+                    min_storage_threshold = 1.0
+                    low_storage_mask = storage_1964 <= min_storage_threshold
+
+                    if low_storage_mask.any():
+                        min_date = storage_1964[low_storage_mask].index[0]
+                    else:
+                        min_date = storage_1964.idxmin()
+
+                    # Determine start date
+                    if AGGREGATION_METHOD == 'since_june1':
+                        if min_date.month >= 6:
+                            start_date = pd.Timestamp(year=min_date.year, month=6, day=1)
+                        else:
+                            start_date = pd.Timestamp(year=min_date.year - 1, month=6, day=1)
+                    else:
+                        start_date = min_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+
+                    # Get inflow and contribution totals
+                    inflow_df = data.inflow[dataset_name][realization_id]
+                    nyc_inflow = inflow_df[NYC_RESERVOIRS].sum(axis=1)
+
+                    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in NYC_RESERVOIRS]
+                    nyc_contributions = data.nyc_release_components[dataset_name][realization_id].loc[:, contribution_columns].sum(axis=1)
+
+                    inflow_mask = (nyc_inflow.index >= start_date) & (nyc_inflow.index <= min_date)
+                    contribution_mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= min_date)
+
+                    recon_inflow = nyc_inflow[inflow_mask].sum()
+                    recon_contribution = nyc_contributions[contribution_mask].sum()
+
+                    # Plot reconstruction point
+                    ax.scatter([recon_inflow], [recon_contribution],
+                              c='black', s=150, marker='*',
+                              edgecolors='white', linewidth=1,
+                              label='1964 Drought', zorder=10)
+
+                except Exception as e:
+                    print(f"  Warning: Could not plot reconstruction point: {e}")
+
+    # Set axis labels
+    if AGGREGATION_METHOD == 'since_june1':
+        xlabel = 'Total NYC Inflow (June 1 to min zone, MG)'
+        ylabel = 'Total NYC Contributions to Montague (June 1 to min zone, MG)'
+    else:
+        xlabel = f'Total NYC Inflow ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
+        ylabel = f'Total NYC Contributions to Montague ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
+
+    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+    # ax.set_axisbelow(True)
+    ax.set_xlim(left=xlim_min, right=xlim_max)
+    ax.set_ylim(bottom=ylim_min, top=ylim_max)
+    
+    # Make both axis log scale
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+    # Legend with reordered zones - placed below the axes
+    handles, labels = ax.get_legend_handles_labels()
+
+    # Reorder legend: Normal or Above, Drought Warning, Drought Watch, Drought Emergency, contours, 1964 Drought
+    desired_order_keywords = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency',
+                              '20% ratio', '40% ratio', '60% ratio', '1964 Drought']
+
+    # Create ordered lists
+    ordered_handles = []
+    ordered_labels = []
+    for keyword in desired_order_keywords:
+        for idx, label in enumerate(labels):
+            if keyword in label and handles[idx] not in ordered_handles:
+                ordered_handles.append(handles[idx])
+                ordered_labels.append(labels[idx])
+                break
+
+    # Place legend below the axes
+    ax.legend(ordered_handles, ordered_labels, loc='upper center', bbox_to_anchor=(0.5, -0.12),
+              ncol=2, fontsize=9, frameon=True, fancybox=True)
+
+    plt.tight_layout(rect=[0, 0.1, 1, 1])
+
+    # Save
+    fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_inflow_vs_contributions_scatter_{N_MONTHS_PRIOR}M.png"
+    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    print(f"  Saved: {fname}")
+    plt.close()
+
+
 def main(dataset_id):
     """
     Main function to generate water balance by drought zone plots.
@@ -784,6 +1010,7 @@ def main(dataset_id):
     print("\nCreating plots...")
     # plot_distributions_by_zone(categorized_data, dataset_id, dataset_label)
     plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
+    plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_label)
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")
