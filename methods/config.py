@@ -26,6 +26,11 @@ N_YEARS = 70
 START_DATE = '2030-01-01'
 END_DATE = '2099-12-31'
 
+# Period origin for analysis
+# 'jan1' = calendar year (Jan 1 - Dec 31), aligns with FFMP boundaries
+# 'june1' = water year (Jun 1 - May 31)
+PERIOD_ORIGIN = 'june1'
+
 # Validation checks
 assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \
     "TOTAL_REALIZATIONS must be divisible by N_REALIZATIONS_PER_ENSEMBLE_SET"
