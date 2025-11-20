@@ -127,8 +127,8 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 #   - years_trenton_reliable: Alias for years_reliable_trenton
 
 METRICS_TO_PLOT = [
-    'pct_days_storage_below_30',
-    'years_vulnerable',
+    'years_below_30pct',
+    'mean_annual_montague_shortage_mg',
     # 'years_reliable',
     # 'years_high_storage',
     # 'years_above_20pct',
@@ -137,7 +137,7 @@ METRICS_TO_PLOT = [
     # 'years_trenton_reliable',
     'max_consecutive_drought_days',
     # 'mean_annual_nyc_contribution_mg',
-    'pct_days_nyc_contribution',
+    # 'pct_days_nyc_contribution',
 ]
 
 # ============================================================================

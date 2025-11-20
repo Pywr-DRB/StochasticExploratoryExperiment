@@ -48,11 +48,11 @@ def distribute_realizations_across_ranks(realization_ids, rank, num_ranks):
 
 def calculate_water_year_period_index(dates, period='daily', origin='june1'):
     """
-    Map dates to water year period index (1-based).
+    Map dates to water year or calendar year period index (1-based).
 
-    This function converts dates to period indices based on water year
-    starting from June 1. Supports daily (1-366), weekly (1-53), or
-    monthly (1-12) periods.
+    This function converts dates to period indices based on either water year
+    starting from June 1 or calendar year starting from January 1.
+    Supports daily (1-366), weekly (1-53), or monthly (1-12) periods.
 
     Parameters
     ----------
@@ -61,7 +61,7 @@ def calculate_water_year_period_index(dates, period='daily', origin='june1'):
     period : str, default='daily'
         Period type: 'daily', 'weekly', or 'monthly'
     origin : str, default='june1'
-        Water year origin (currently only 'june1' supported)
+        Year origin: 'june1' for water year or 'jan1' for calendar year
 
     Returns
     -------
@@ -71,35 +71,52 @@ def calculate_water_year_period_index(dates, period='daily', origin='june1'):
     Examples
     --------
     >>> dates = pd.date_range('2020-06-01', '2020-06-07')
-    >>> calculate_water_year_period_index(dates, 'daily')
+    >>> calculate_water_year_period_index(dates, 'daily', 'june1')
     array([1, 2, 3, 4, 5, 6, 7])
-    >>> calculate_water_year_period_index(dates, 'weekly')
+    >>> calculate_water_year_period_index(dates, 'weekly', 'june1')
     array([1, 1, 1, 1, 1, 1, 1])
+    >>> dates2 = pd.date_range('2020-01-01', '2020-01-07')
+    >>> calculate_water_year_period_index(dates2, 'daily', 'jan1')
+    array([1, 2, 3, 4, 5, 6, 7])
     """
     dates = pd.DatetimeIndex(dates)
 
     if period not in ('daily', 'weekly', 'monthly'):
         raise ValueError("period must be one of {'daily','weekly','monthly'}")
 
-    # Calculate June 1 for current and previous year
-    june1_this_year = pd.to_datetime(dates.year.astype(str) + '-06-01')
-    is_after_june1 = dates >= june1_this_year
-    june1_prev_year = pd.to_datetime((dates.year - 1).astype(str) + '-06-01')
+    if origin not in ('june1', 'jan1'):
+        raise ValueError("origin must be one of {'june1', 'jan1'}")
 
-    # Day of water year (1-based)
-    day_of_wy = np.where(
-        is_after_june1,
-        (dates - june1_this_year).days + 1,
-        (dates - june1_prev_year).days + 1
-    )
+    if origin == 'june1':
+        # Water year starting June 1
+        june1_this_year = pd.to_datetime(dates.year.astype(str) + '-06-01')
+        is_after_june1 = dates >= june1_this_year
+        june1_prev_year = pd.to_datetime((dates.year - 1).astype(str) + '-06-01')
 
+        # Day of water year (1-based)
+        day_of_year = np.where(
+            is_after_june1,
+            (dates - june1_this_year).days + 1,
+            (dates - june1_prev_year).days + 1
+        )
+
+        if period == 'monthly':
+            year_month = ((dates.month - 6) % 12) + 1
+            return year_month
+
+    else:  # origin == 'jan1'
+        # Calendar year starting January 1
+        jan1_this_year = pd.to_datetime(dates.year.astype(str) + '-01-01')
+        day_of_year = (dates - jan1_this_year).days + 1
+
+        if period == 'monthly':
+            return dates.month
+
+    # Common processing for daily and weekly periods
     if period == 'daily':
-        return day_of_wy
+        return day_of_year
     elif period == 'weekly':
-        return ((day_of_wy - 1) // 7) + 1
-    else:  # monthly
-        wy_month = ((dates.month - 6) % 12) + 1
-        return wy_month
+        return ((day_of_year - 1) // 7) + 1
 
 
 def get_nyc_storage_capacities():

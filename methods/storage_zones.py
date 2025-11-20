@@ -14,7 +14,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from .config import NYC_TOTAL_CAPACITY
+from .config import NYC_TOTAL_CAPACITY, PERIOD_ORIGIN
 from .load import load_ffmp_boundaries
 from .utils import calculate_water_year_period_index
 from .verification import verify_postprocessing_output
@@ -76,9 +76,9 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     realizations = sorted(data.res_storage[dataset_id].keys())
     print(f"  Found {len(realizations)} realizations")
 
-    # Get period indices
+    # Get period indices (using configured origin)
     sample_storage = data.res_storage[dataset_id][realizations[0]]
-    p_idx = calculate_water_year_period_index(sample_storage.index, period=period, origin='june1')
+    p_idx = calculate_water_year_period_index(sample_storage.index, period=period, origin=PERIOD_ORIGIN)
     periods_sorted = np.sort(np.unique(p_idx))
     P = len(periods_sorted)
 
@@ -115,8 +115,8 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
         nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
         nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
 
-        # Get period index for this realization
-        p_idx_r = calculate_water_year_period_index(nyc_storage.index, period=period, origin='june1')
+        # Get period index for this realization (using configured origin)
+        p_idx_r = calculate_water_year_period_index(nyc_storage.index, period=period, origin=PERIOD_ORIGIN)
 
         # Get FFMP boundaries aligned with storage dates using day-of-year matching
         # This works because FFMP boundaries follow a seasonal pattern that repeats annually

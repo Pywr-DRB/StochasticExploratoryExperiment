@@ -344,6 +344,11 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
                     label=cat_info['label']
                 )
 
+                # Plot mean value line
+                mean_val = df_filtered['inflow_total'].mean()
+                ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                          linewidth=1.5, alpha=0.7)
+
     # X-axis label depends on aggregation method
     if AGGREGATION_METHOD == 'since_june1':
         xlabel = 'Total Inflow (June 1 to min zone, MG)'
@@ -384,6 +389,11 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
                     label=cat_info['label']
                 )
 
+                # Plot mean value line
+                mean_val = df_filtered['contribution_total'].mean()
+                ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                          linewidth=1.5, alpha=0.7)
+
     # X-axis label depends on aggregation method
     if AGGREGATION_METHOD == 'since_june1':
         xlabel = 'Total NYC Contributions to Montague (June 1 to min zone, MG)'
@@ -403,9 +413,22 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     # else:
     #     ax.set_xlim(0, 400000)
 
-    # Single legend at the bottom
+    # Single legend at the bottom with reordered zones
     handles, labels = axes[1].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='lower center', ncol=4,
+
+    # Reorder legend: Normal or Flood, Drought Warning, Drought Watch, Drought Emergency
+    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency']
+
+    # Create ordered lists
+    ordered_handles = []
+    ordered_labels = []
+    for desired_label in desired_order:
+        if desired_label in labels:
+            idx = labels.index(desired_label)
+            ordered_handles.append(handles[idx])
+            ordered_labels.append(labels[idx])
+
+    fig.legend(ordered_handles, ordered_labels, loc='lower center', ncol=4,
                fontsize=11, frameon=True, fancybox=True, bbox_to_anchor=(0.5, -0.02))
 
     # Overall title
@@ -415,7 +438,7 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     plt.tight_layout(rect=[0, 0.03, 1, 0.96])
 
     # Save
-    fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_water_balance_by_drought_zone.png"
+    fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_water_balance_by_drought_zone_{N_MONTHS_PRIOR}M.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
@@ -468,6 +491,11 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
                     label=cat_info['label']
                 )
 
+                # Plot mean value line
+                mean_val = contribution_ratio.mean()
+                ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                          linewidth=1.5, alpha=0.7)
+
     # X-axis label depends on aggregation method
     if AGGREGATION_METHOD == 'since_june1':
         xlabel = 'NYC Contributions / Total Inflow (June 1 to min zone, %)'
@@ -482,13 +510,27 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     ax.set_axisbelow(True)
     ax.set_xlim(left=0)
 
-    # Legend
-    ax.legend(loc='best', fontsize=11, frameon=True, fancybox=True)
+    # Legend with reordered zones
+    handles, labels = ax.get_legend_handles_labels()
+
+    # Reorder legend: Normal or Flood, Drought Warning, Drought Watch, Drought Emergency
+    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency']
+
+    # Create ordered lists
+    ordered_handles = []
+    ordered_labels = []
+    for desired_label in desired_order:
+        if desired_label in labels:
+            idx = labels.index(desired_label)
+            ordered_handles.append(handles[idx])
+            ordered_labels.append(labels[idx])
+
+    ax.legend(ordered_handles, ordered_labels, loc='best', fontsize=11, frameon=True, fancybox=True)
 
     plt.tight_layout()
 
     # Save
-    fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_contribution_ratio_by_drought_zone.png"
+    fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_contribution_ratio_by_drought_zone_{N_MONTHS_PRIOR}M.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
