@@ -59,7 +59,7 @@ os.makedirs(FIG_DIR_WATER_BALANCE, exist_ok=True)
 AGGREGATION_METHOD = 'since_june1'  # Options: 'since_june1' or 'n_months_prior'
 
 # Quantile to calculate for each storage bin (0.5 = median, 0.9 = 90th percentile)
-QUANTILE = 0.50  # Use median by default
+QUANTILE = 0.95  # Use median by default
 
 # Number of months prior to minimum storage to analyze (only used if method is 'n_months_prior')
 N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum storage
@@ -67,7 +67,7 @@ N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum s
 # Normalization method for water balance components
 # 'inflow': Express all components as percentage of total inflow
 # 'total': Express all components as percentage of sum of all components
-NORMALIZE_BY = 'inflow'  # Options: 'inflow' or 'total'
+NORMALIZE_BY = 'total'  # Options: 'inflow' or 'total'
 
 # Storage bins (in percentage)
 STORAGE_BINS = [

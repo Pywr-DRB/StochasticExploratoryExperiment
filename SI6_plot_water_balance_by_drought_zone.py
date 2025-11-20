@@ -508,7 +508,7 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
                  fontsize=13, fontweight='bold', pad=15)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-    ax.set_xlim(left=0)
+    ax.set_xlim(left=0, right=100)
 
     # Legend with reordered zones
     handles, labels = ax.get_legend_handles_labels()
@@ -534,65 +534,6 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
-
-
-def print_summary_statistics(categorized_data):
-    """
-    Print summary statistics for each drought zone category.
-
-    Parameters
-    ----------
-    categorized_data : dict
-        Output from categorize_by_drought_zone()
-    """
-    print("\nSummary Statistics by Drought Zone:")
-    print("=" * 80)
-
-    for cat_name in ['emergency', 'watch', 'warning', 'other']:
-        cat_info = DROUGHT_CATEGORIES[cat_name]
-        df = categorized_data[cat_name]
-
-        print(f"\n{cat_info['label']} (n={len(df)} years):")
-        print("-" * 80)
-
-        if len(df) == 0:
-            print("  No years in this category")
-            continue
-
-        # Check for low inflow values
-        low_inflow_count = (df['inflow_total'] <= MIN_INFLOW_THRESHOLD).sum()
-        if low_inflow_count > 0:
-            print(f"  WARNING: {low_inflow_count} years with inflow <= {MIN_INFLOW_THRESHOLD} MG (will be filtered in plots)")
-
-        # Inflow statistics (all data, including near-zero)
-        inflow_mean = df['inflow_total'].mean()
-        inflow_median = df['inflow_total'].median()
-        inflow_std = df['inflow_total'].std()
-        inflow_min = df['inflow_total'].min()
-        inflow_max = df['inflow_total'].max()
-
-        print(f"  Inflow (MG):")
-        print(f"    Mean:   {inflow_mean:>12,.0f}")
-        print(f"    Median: {inflow_median:>12,.0f}")
-        print(f"    Std:    {inflow_std:>12,.0f}")
-        print(f"    Min:    {inflow_min:>12,.2f}")
-        print(f"    Max:    {inflow_max:>12,.0f}")
-
-        # Contribution statistics
-        contrib_mean = df['contribution_total'].mean()
-        contrib_median = df['contribution_total'].median()
-        contrib_std = df['contribution_total'].std()
-        contrib_min = df['contribution_total'].min()
-        contrib_max = df['contribution_total'].max()
-
-        print(f"  NYC Contributions (MG):")
-        print(f"    Mean:   {contrib_mean:>12,.0f}")
-        print(f"    Median: {contrib_median:>12,.0f}")
-        print(f"    Std:    {contrib_std:>12,.0f}")
-        print(f"    Min:    {contrib_min:>12,.2f}")
-        print(f"    Max:    {contrib_max:>12,.0f}")
-
-    print("\n" + "=" * 80)
 
 
 def main(dataset_id):
@@ -657,12 +598,9 @@ def main(dataset_id):
     print("\nCategorizing by drought zone...")
     categorized_data = categorize_by_drought_zone(all_aggregates)
 
-    # Print summary statistics
-    print_summary_statistics(categorized_data)
-
     # Create plots
     print("\nCreating plots...")
-    plot_distributions_by_zone(categorized_data, dataset_id, dataset_label)
+    # plot_distributions_by_zone(categorized_data, dataset_id, dataset_label)
     plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
 
     print("\n" + "=" * 80)

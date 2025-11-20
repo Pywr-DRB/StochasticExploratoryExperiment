@@ -14,8 +14,8 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
-GENERATE=${GENERATE:-true}
-PREP=${PREP:-true}
+GENERATE=${GENERATE:-false}
+PREP=${PREP:-false}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories

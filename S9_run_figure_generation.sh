@@ -23,7 +23,10 @@ PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
 
 
-python3 SI5_plot_water_balance_by_storage.py stationary_ensemble
+# python3 SI6_plot_water_balance_by_drought_zone.py stationary_ensemble
+python3 SI6_plot_water_balance_by_drought_zone.py climate_adjusted_low
+python3 SI6_plot_water_balance_by_drought_zone.py climate_adjusted_high
+
 
 # Ensemble flow distribution and verification plots
 if [ "$PLOT_ENSEMBLE_DIAGNOSTICS" = true ]; then
