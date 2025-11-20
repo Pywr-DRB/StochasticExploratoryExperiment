@@ -63,7 +63,7 @@ def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
             log_threshold = np.log10(threshold)
             # Map [50, 100] to [log(50), log(50) + scaled_range]
             # Scale factor chosen to give adequate visual separation
-            scale_factor = 2.0  # Adjust this to control high-end spread
+            scale_factor = 5  # Adjust this to control high-end spread
             return log_threshold + scale_factor * (x - threshold) / (100 - threshold)
 
     transformed_edges = np.array([transform(x) for x in bin_edges])
@@ -122,30 +122,51 @@ def get_ordered_threshold_columns(ffmp_boundaries):
     return list(med.index)
 
 
-def _period_index(dts: pd.DatetimeIndex, period: str = 'daily', origin: str = 'june1') -> np.ndarray:
+def _period_index(dts: pd.DatetimeIndex, period: str = 'daily', origin: str = 'jan1') -> np.ndarray:
     """Map dates to generic-year period index."""
     dts = pd.DatetimeIndex(dts)
-    june1_this = pd.to_datetime(dts.year.astype(str) + '-06-01')
-    is_after = dts >= june1_this
-    june1_prev = pd.to_datetime((dts.year - 1).astype(str) + '-06-01')
-    
-    doy_wy = np.where(is_after,
-                      (dts - june1_this).days + 1,
-                      (dts - june1_prev).days + 1)
-    
+
+    if origin == 'june1':
+        # Water year starting June 1
+        june1_this = pd.to_datetime(dts.year.astype(str) + '-06-01')
+        is_after = dts >= june1_this
+        june1_prev = pd.to_datetime((dts.year - 1).astype(str) + '-06-01')
+
+        doy = np.where(is_after,
+                       (dts - june1_this).days + 1,
+                       (dts - june1_prev).days + 1)
+
+        if period == 'monthly':
+            return ((dts.month - 6) % 12) + 1
+    else:  # origin == 'jan1'
+        # Calendar year starting January 1
+        jan1_this = pd.to_datetime(dts.year.astype(str) + '-01-01')
+        doy = (dts - jan1_this).days + 1
+
+        if period == 'monthly':
+            return dts.month
+
     if period == 'daily':
-        return doy_wy
+        return doy
     elif period == 'weekly':
-        return ((doy_wy - 1) // 7) + 1
-    else:  # monthly
-        wy_month = ((dts.month - 6) % 12) + 1
-        return wy_month
+        return ((doy - 1) // 7) + 1
 
 
-def build_y_edges_grid(ffmp_boundaries, period='weekly', pct_extents=(0.0, 100.0)):
+def build_y_edges_grid(ffmp_boundaries, period='weekly', origin='jan1', pct_extents=(0.0, 100.0)):
     """
     Build Y-axis edges for pcolormesh from FFMP boundaries.
-    
+
+    Parameters
+    ----------
+    ffmp_boundaries : pd.DataFrame
+        FFMP level boundaries
+    period : str
+        Time aggregation period
+    origin : str
+        Period origin: 'jan1' or 'june1'
+    pct_extents : tuple
+        Min/max storage percentage bounds
+
     Returns
     -------
     y_edges_grid : np.ndarray
@@ -154,9 +175,9 @@ def build_y_edges_grid(ffmp_boundaries, period='weekly', pct_extents=(0.0, 100.0
         Unique period values
     """
     thr_cols = get_ordered_threshold_columns(ffmp_boundaries)
-    
+
     # Get period indices
-    p_idx = _period_index(ffmp_boundaries.index, period=period, origin='june1')
+    p_idx = _period_index(ffmp_boundaries.index, period=period, origin=origin)
     
     # Group by period and get median thresholds
     df_b = ffmp_boundaries.copy()
@@ -199,6 +220,7 @@ def _plot_single_storage_panel(ax,
                                 Y,
                                 cmap,
                                 norm,
+                                origin='jan1',
                                 show_zone_lines=True,
                                 xlabel='',
                                 ylabel='Total NYC storage (% of capacity)'):
@@ -217,6 +239,8 @@ def _plot_single_storage_panel(ax,
         Colormap to use (can be string or colormap object)
     norm : matplotlib normalization
         Color normalization
+    origin : str
+        Period origin: 'jan1' or 'june1'
     show_zone_lines : bool
         Whether to show white zone boundary lines
     xlabel, ylabel : str
@@ -244,11 +268,16 @@ def _plot_single_storage_panel(ax,
     ax.set_xlim(X.min(), X.max())
     ax.set_ylim(0, 100)
 
-    # Set up monthly ticks (water year starts June 1)
-    # Week 1 = June 1, so approximate month boundaries in weeks
-    # Months: Jun, Jul, Aug, Sep, Oct, Nov, Dec, Jan, Feb, Mar, Apr, May
-    month_week_starts = [1, 5, 9, 14, 18, 23, 27, 32, 36, 40, 45, 49]  # Approximate week at start of each month
-    month_labels = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
+    # Set up monthly ticks based on origin
+    # Approximate week at start of each month (4.33 weeks per month)
+    month_week_starts = [1, 5, 9, 14, 18, 23, 27, 32, 36, 40, 45, 49]
+
+    if origin == 'jan1':
+        # Calendar year: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+        month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    else:  # origin == 'june1'
+        # Water year: Jun, Jul, Aug, Sep, Oct, Nov, Dec, Jan, Feb, Mar, Apr, May
+        month_labels = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
 
     ax.set_xticks(month_week_starts)
     ax.set_xticklabels(month_labels)
@@ -263,6 +292,7 @@ def _plot_single_storage_panel(ax,
 def plot_storage_zone_probabilities(prob_df,
                                      ffmp_boundaries,
                                      period='weekly',
+                                     origin=None,
                                      figsize=(14, 6),
                                      cmap='magma_r',
                                      prob_bins=None,
@@ -279,15 +309,21 @@ def plot_storage_zone_probabilities(prob_df,
         FFMP level boundaries for computing Y edges
     period : str
         Time aggregation period
+    origin : str, optional
+        Period origin: 'jan1' or 'june1'. If None, uses PERIOD_ORIGIN from config
     prob_bins : list or array, optional
         Probability bin edges (percent). If None, uses DEFAULT_PROB_BINS
     """
+    # Use configured origin if not specified
+    if origin is None:
+        origin = PERIOD_ORIGIN
+
     # Use default bins if not specified
     if prob_bins is None:
         prob_bins = DEFAULT_PROB_BINS
 
     # Build grids
-    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
+    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period, origin)
     x_edges = build_x_edges(periods_sorted)
 
     # Align probability data to periods_sorted
@@ -310,6 +346,7 @@ def plot_storage_zone_probabilities(prob_df,
         Y=Y,
         cmap=cmap_discrete,
         norm=norm_discrete,
+        origin=origin,
         show_zone_lines=True,
         ylabel='Total NYC storage (% of capacity)'
     )
@@ -331,6 +368,7 @@ def plot_storage_zone_comparison(prob_df_ref,
                                   prob_df_comp,
                                   ffmp_boundaries,
                                   period='weekly',
+                                  origin=None,
                                   figsize=(14, 6),
                                   title=None,
                                   fname=None):
@@ -345,9 +383,17 @@ def plot_storage_zone_comparison(prob_df_ref,
         Comparison zone probabilities
     ffmp_boundaries : pd.DataFrame
         FFMP level boundaries for computing Y edges
+    period : str
+        Time aggregation period
+    origin : str, optional
+        Period origin: 'jan1' or 'june1'. If None, uses PERIOD_ORIGIN from config
     """
+    # Use configured origin if not specified
+    if origin is None:
+        origin = PERIOD_ORIGIN
+
     # Build grids
-    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
+    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period, origin)
     x_edges = build_x_edges(periods_sorted)
 
     # Align data
@@ -376,6 +422,7 @@ def plot_storage_zone_comparison(prob_df_ref,
         Y=Y,
         cmap='BrBG_r',
         norm=norm,
+        origin=origin,
         show_zone_lines=True,
         ylabel='Total NYC storage (% of capacity)'
     )
@@ -394,6 +441,7 @@ def plot_storage_zone_comparison(prob_df_ref,
 
 
 def plot_4panel_storage_comparison(period='weekly',
+                                    origin=None,
                                     figsize=(14, 8),
                                     prob_bins=None,
                                     vmin_diff=-100,
@@ -410,6 +458,8 @@ def plot_4panel_storage_comparison(period='weekly',
     ----------
     period : str
         Time aggregation period ('weekly', 'monthly', 'daily')
+    origin : str, optional
+        Period origin: 'jan1' or 'june1'. If None, uses PERIOD_ORIGIN from config
     figsize : tuple
         Figure size in inches
     prob_bins : list or array, optional
@@ -419,6 +469,10 @@ def plot_4panel_storage_comparison(period='weekly',
     fname : str
         Output filename (if None, will auto-generate)
     """
+    # Use configured origin if not specified
+    if origin is None:
+        origin = PERIOD_ORIGIN
+
     # Use default bins if not specified
     if prob_bins is None:
         prob_bins = DEFAULT_PROB_BINS
@@ -448,7 +502,7 @@ def plot_4panel_storage_comparison(period='weekly',
     ffmp_boundaries = load_ffmp_boundaries()
 
     # Build grids (same for all panels)
-    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period)
+    y_edges_grid, periods_sorted = build_y_edges_grid(ffmp_boundaries, period, origin)
     x_edges = build_x_edges(periods_sorted)
     X = np.tile(x_edges, (y_edges_grid.shape[0], 1))  # (Z+1, P+1)
     Y = y_edges_grid  # (Z+1, P+1)
