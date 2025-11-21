@@ -34,11 +34,12 @@ def calculate_performance_metrics(data, dataset_id, realizations):
     - Water supply reliability (diversions, shortages)
     - Drought characteristics (frequency, duration, severity)
     - System operations (releases, contributions, balances)
+    - Drought zone classifications (watch, warning, emergency)
 
     Parameters
     ----------
     data : pywrdrb.Data
-        Data object with shortage, mrf_target, res_storage, ibt_diversions, ibt_demands, contribution
+        Data object with shortage, mrf_target, res_storage, ibt_diversions, ibt_demands, contribution, res_level
     dataset_id : str
         Dataset identifier
     realizations : list
@@ -78,6 +79,11 @@ def calculate_performance_metrics(data, dataset_id, realizations):
 
         # NYC contributions to downstream targets
         total_nyc_contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+
+        # NYC drought zone levels (if available)
+        nyc_zone_level = None
+        if hasattr(data, 'res_level') and dataset_id in data.res_level and r in data.res_level[dataset_id]:
+            nyc_zone_level = data.res_level[dataset_id][r]['nyc']
 
         # =====================================================================
         # CATEGORY 1: FLOW RELIABILITY METRICS
@@ -216,6 +222,38 @@ def calculate_performance_metrics(data, dataset_id, realizations):
         combined_stress_days = ((nyc_diversion_shortage > 0) & (montague_shortage > 0)).sum()
         pct_days_combined_stress = 100.0 * combined_stress_days / len(nyc_diversion_shortage)
 
+        # Maximum Montague shortage metrics (1-day, 3-day, 7-day rolling means)
+        max_1day_montague_shortage_mg = montague_shortage.max()
+        max_3day_montague_shortage_mg = montague_shortage.rolling(window=3, min_periods=1).mean().max()
+        max_7day_montague_shortage_mg = montague_shortage.rolling(window=7, min_periods=1).mean().max()
+
+        # =====================================================================
+        # CATEGORY 4b: DROUGHT ZONE CLASSIFICATIONS
+        # =====================================================================
+
+        # NYC drought zone year counts (based on res_level data)
+        # Zone definitions: 6=Emergency, 5=Watch, 4=Warning, 3=Normal, 1-2=Flood
+        if nyc_zone_level is not None:
+            # Get maximum zone reached in each year
+            annual_max_zone = nyc_zone_level.resample('YS').max()
+
+            # Count years reaching each drought zone level
+            years_drought_emergency = (annual_max_zone >= 6).sum()  # Zone 6
+            years_drought_watch = (annual_max_zone >= 5).sum()  # Zone 5 or higher
+            years_drought_warning = (annual_max_zone >= 4).sum()  # Zone 4 or higher
+
+            # Count years reaching exactly each zone (not higher)
+            years_exactly_emergency = (annual_max_zone == 6).sum()
+            years_exactly_watch = (annual_max_zone == 5).sum()
+            years_exactly_warning = (annual_max_zone == 4).sum()
+        else:
+            years_drought_emergency = np.nan
+            years_drought_watch = np.nan
+            years_drought_warning = np.nan
+            years_exactly_emergency = np.nan
+            years_exactly_watch = np.nan
+            years_exactly_warning = np.nan
+
         # =====================================================================
         # CATEGORY 5: NYC CONTRIBUTION TO DOWNSTREAM TARGETS
         # =====================================================================
@@ -323,6 +361,19 @@ def calculate_performance_metrics(data, dataset_id, realizations):
             # System Stress
             'pct_days_combined_stress': pct_days_combined_stress,
 
+            # Maximum Montague Shortage (rolling means)
+            'max_1day_montague_shortage_mg': max_1day_montague_shortage_mg,
+            'max_3day_montague_shortage_mg': max_3day_montague_shortage_mg,
+            'max_7day_montague_shortage_mg': max_7day_montague_shortage_mg,
+
+            # Drought Zone Classifications
+            'years_drought_emergency': years_drought_emergency,
+            'years_drought_watch': years_drought_watch,
+            'years_drought_warning': years_drought_warning,
+            'years_exactly_emergency': years_exactly_emergency,
+            'years_exactly_watch': years_exactly_watch,
+            'years_exactly_warning': years_exactly_warning,
+
             # NYC Contributions
             'mean_annual_nyc_contribution_mg': mean_annual_nyc_contribution_mg,
             'max_annual_nyc_contribution_mg': max_annual_nyc_contribution_mg,
@@ -396,6 +447,17 @@ def save_performance_metrics(metrics_df, dataset_id, output_dir):
                 print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
             else:
                 print(f"    {metric:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
+
+    print(f"\n  Drought Zone & Shortage Metrics Summary:")
+    print(f"  {'='*60}")
+    zone_metrics = ['years_drought_emergency', 'years_drought_watch', 'years_drought_warning',
+                    'max_1day_montague_shortage_mg', 'max_3day_montague_shortage_mg', 'max_7day_montague_shortage_mg']
+    for metric in zone_metrics:
+        if metric in metrics_df.columns:
+            p5 = metrics_df[metric].quantile(0.05)
+            p50 = metrics_df[metric].quantile(0.50)
+            p95 = metrics_df[metric].quantile(0.95)
+            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
 
 
 def calculate_and_save_performance_metrics(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):

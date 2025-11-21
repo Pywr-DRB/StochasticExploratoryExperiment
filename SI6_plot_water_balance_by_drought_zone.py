@@ -59,7 +59,7 @@ os.makedirs(FIG_DIR_DROUGHT_ZONE, exist_ok=True)
 AGGREGATION_METHOD = 'n_months_prior' #'n_months_prior'  # Options: 'since_june1' or 'n_months_prior'
 
 # Number of months prior to minimum zone to analyze (only used if method is 'n_months_prior')
-N_MONTHS_PRIOR = 9  # Analyze water balance for N months leading up to minimum zone
+N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum zone
 
 # Drop "Normal or Above" category from plots
 DROP_NORMAL = False  # Set to False to include "Normal or Above" category
@@ -907,8 +907,8 @@ def plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_l
     ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     # ax.set_axisbelow(True)
-    ax.set_xlim(left=xlim_min, right=xlim_max)
-    ax.set_ylim(bottom=ylim_min, top=ylim_max)
+    # ax.set_xlim(left=xlim_min, right=xlim_max)
+    # ax.set_ylim(bottom=ylim_min, top=ylim_max)
     
     # Make both axis log scale
     ax.set_xscale('log')
@@ -942,6 +942,267 @@ def plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_l
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
+
+
+def plot_drought_timeseries(data, dataset_id, realization_id, start_date, end_date,
+                            zone_category=None, save_path=None):
+    """
+    Create 3-panel timeseries plot for drought analysis.
+
+    Panels:
+    1. Top: NYC storage as % of capacity
+    2. Middle: NYC releases for downstream flow targets as % of total release
+    3. Bottom: NYC downstream contribution as % of total Montague streamflow
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object containing res_storage, nyc_release_components, major_flow, contribution
+    dataset_id : str
+        Dataset identifier
+    realization_id : int
+        Realization identifier
+    start_date : str or pd.Timestamp
+        Start date for plotting
+    end_date : str or pd.Timestamp
+        End date for plotting
+    zone_category : str, optional
+        Drought zone category name for title (e.g., 'Drought Emergency')
+    save_path : str, optional
+        Path to save figure. If None, displays interactively.
+    """
+    print(f"Creating drought timeseries plot for realization {realization_id}...")
+
+    # Convert dates
+    start_date = pd.Timestamp(start_date)
+    end_date = pd.Timestamp(end_date)
+
+    # Create figure with 3 vertically stacked panels
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+
+    # Get data for this realization
+    # Panel 1: NYC storage as % of capacity
+    storage_df = data.res_storage[dataset_id][realization_id]
+    nyc_storage = storage_df[NYC_RESERVOIRS].sum(axis=1)
+    nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+    # Filter to date range
+    mask = (nyc_storage_pct.index >= start_date) & (nyc_storage_pct.index <= end_date)
+    nyc_storage_pct_filtered = nyc_storage_pct[mask]
+
+    ax = axes[0]
+    ax.plot(nyc_storage_pct_filtered.index, nyc_storage_pct_filtered.values,
+           color='steelblue', linewidth=1.5)
+    ax.set_ylabel('NYC Storage\n(% of capacity)', fontsize=11, fontweight='bold')
+    ax.set_ylim(0, 100)
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    # Panel 2: NYC releases for downstream targets as % of total release
+    # Get nyc_release_components data
+    nyc_release_df = data.nyc_release_components[dataset_id][realization_id]
+
+    # Calculate total releases for downstream flow targets (Montague contributions)
+    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in NYC_RESERVOIRS]
+    downstream_releases = nyc_release_df[contribution_columns].sum(axis=1)
+
+    # Calculate total releases (sum of all release components)
+    # Total release includes: spill, delivery (NYC supply), and downstream contributions
+    total_release_columns = [col for col in nyc_release_df.columns if any(res in col for res in NYC_RESERVOIRS)]
+    total_releases = nyc_release_df[total_release_columns].sum(axis=1)
+
+    # Calculate percentage (handle division by zero)
+    downstream_pct = np.where(total_releases > 0,
+                              100.0 * downstream_releases / total_releases,
+                              0)
+    downstream_pct_series = pd.Series(downstream_pct, index=nyc_release_df.index)
+
+    # Filter to date range
+    mask = (downstream_pct_series.index >= start_date) & (downstream_pct_series.index <= end_date)
+    downstream_pct_filtered = downstream_pct_series[mask]
+
+    ax = axes[1]
+    ax.plot(downstream_pct_filtered.index, downstream_pct_filtered.values,
+           color='darkorange', linewidth=1.5)
+    ax.set_ylabel('NYC Downstream Releases\n(% of total release)', fontsize=11, fontweight='bold')
+    ax.set_ylim(0, 100)
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    # Panel 3: NYC contribution as % of total Montague streamflow
+    # Get contribution data
+    contribution_df = data.contribution[dataset_id][realization_id]
+    nyc_contribution = contribution_df['mrf_montagueTrenton_nyc']
+
+    # Get Montague flow from major_flow
+    major_flow_df = data.major_flow[dataset_id][realization_id]
+    montague_flow = major_flow_df['delMontague']
+
+    # Calculate percentage (handle division by zero)
+    contrib_pct = np.where(montague_flow > 0,
+                           100.0 * nyc_contribution / montague_flow,
+                           0)
+    contrib_pct_series = pd.Series(contrib_pct, index=nyc_contribution.index)
+
+    # Filter to date range
+    mask = (contrib_pct_series.index >= start_date) & (contrib_pct_series.index <= end_date)
+    contrib_pct_filtered = contrib_pct_series[mask]
+
+    ax = axes[2]
+    ax.plot(contrib_pct_filtered.index, contrib_pct_filtered.values,
+           color='darkgreen', linewidth=1.5)
+    ax.set_ylabel('NYC Contribution\n(% of Montague flow)', fontsize=11, fontweight='bold')
+    ax.set_ylim(0, 100)
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    ax.set_xlabel('Date', fontsize=11, fontweight='bold')
+
+    # Format x-axis
+    ax.xaxis.set_major_locator(plt.matplotlib.dates.MonthLocator(interval=1))
+    ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%b %Y'))
+    plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+    # Title
+    if zone_category:
+        title = f'Drought Timeseries - {zone_category}\nRealization {realization_id}, {start_date.date()} to {end_date.date()}'
+    else:
+        title = f'Drought Timeseries\nRealization {realization_id}, {start_date.date()} to {end_date.date()}'
+    fig.suptitle(title, fontsize=13, fontweight='bold', y=0.98)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # Save or show
+    if save_path:
+        plt.savefig(save_path, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"  Saved: {save_path}")
+        plt.close()
+    else:
+        plt.show()
+
+    return fig, axes
+
+
+def find_representative_years(categorized_data, data, dataset_id):
+    """
+    Find representative realization/year pairs that are closest to each KDE mean.
+
+    For each drought zone category, finds the year with contribution ratio
+    closest to the mean ratio for that category.
+
+    Parameters
+    ----------
+    categorized_data : dict
+        Output from categorize_by_drought_zone()
+    data : pywrdrb.Data
+        Data object containing res_level for finding min zone dates
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    representative_years : dict
+        Dictionary mapping category -> {realization_id, year, ratio, mean_ratio, min_zone_date}
+    """
+    representative_years = {}
+
+    # Categories to analyze (skip 'other' if DROP_NORMAL, but include it for representative years)
+    categories = ['emergency', 'watch', 'warning', 'other']
+
+    for cat in categories:
+        cat_info = DROUGHT_CATEGORIES[cat]
+        df = categorized_data[cat].copy()
+
+        if len(df) == 0:
+            continue
+
+        # Filter out low inflow values
+        df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
+
+        if len(df_filtered) == 0:
+            continue
+
+        # Calculate contribution ratio for each year
+        df_filtered = df_filtered.copy()
+        df_filtered['contribution_ratio'] = 100.0 * df_filtered['contribution_total'] / df_filtered['inflow_total']
+
+        # Calculate mean ratio
+        mean_ratio = df_filtered['contribution_ratio'].mean()
+
+        # Find year closest to mean
+        df_filtered['distance_to_mean'] = abs(df_filtered['contribution_ratio'] - mean_ratio)
+        closest_idx = df_filtered['distance_to_mean'].idxmin()
+        closest_row = df_filtered.loc[closest_idx]
+
+        realization_id = int(closest_row['realization_id'])
+        year = int(closest_row['year'])
+
+        # Find the actual min zone date for this realization/year
+        res_level_df = data.res_level[dataset_id][realization_id]
+        year_data = res_level_df[res_level_df.index.year == year]
+        max_zone = year_data['nyc'].max()
+        min_zone_date = year_data[year_data['nyc'] == max_zone].index[0]
+
+        representative_years[cat] = {
+            'realization_id': realization_id,
+            'year': year,
+            'ratio': closest_row['contribution_ratio'],
+            'mean_ratio': mean_ratio,
+            'min_zone': int(closest_row['min_zone']),
+            'min_zone_date': min_zone_date,
+            'label': cat_info['label']
+        }
+
+        print(f"  {cat_info['label']}: Realization {realization_id}, "
+              f"Year {year}, Ratio {closest_row['contribution_ratio']:.1f}% "
+              f"(mean: {mean_ratio:.1f}%), Min zone date: {min_zone_date.date()}")
+
+    return representative_years
+
+
+def plot_representative_drought_timeseries(data, dataset_id, representative_years):
+    """
+    Plot drought timeseries for each representative year.
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with required results sets
+    dataset_id : str
+        Dataset identifier
+    representative_years : dict
+        Output from find_representative_years()
+    """
+    print("\nPlotting representative drought timeseries...")
+
+    for cat, info in representative_years.items():
+        realization_id = info['realization_id']
+        year = info['year']
+        label = info['label']
+        min_zone_date = info['min_zone_date']
+
+        # Determine date range based on aggregation method
+        if AGGREGATION_METHOD == 'since_june1':
+            start_date = pd.Timestamp(year=year, month=6, day=1)
+            # End date is the min zone date
+            end_date = min_zone_date
+        else:
+            # For n_months_prior, show from N months prior to min zone date
+            start_date = min_zone_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+            end_date = min_zone_date
+
+        # Save path
+        save_path = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_drought_timeseries_{cat}_{year}_r{realization_id}.png"
+
+        # Plot
+        plot_drought_timeseries(
+            data=data,
+            dataset_id=dataset_id,
+            realization_id=realization_id,
+            start_date=start_date,
+            end_date=end_date,
+            zone_category=f"{label} (Year {year})",
+            save_path=save_path
+        )
 
 
 def main(dataset_id):
@@ -993,7 +1254,8 @@ def main(dataset_id):
     data = pywrdrb.Data()
     data.load_from_export(
         fname,
-        results_sets=['res_level', 'inflow', 'contribution']
+        results_sets=['res_level', 'inflow', 'contribution', 'res_storage',
+                      'nyc_release_components', 'major_flow']
     )
     print("  Data loaded successfully")
 
@@ -1011,6 +1273,13 @@ def main(dataset_id):
     # plot_distributions_by_zone(categorized_data, dataset_id, dataset_label)
     plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_label)
+
+    # Find representative years and plot drought timeseries
+    print("\nFinding representative years for each drought zone...")
+    representative_years = find_representative_years(categorized_data, data, dataset_id)
+
+    # Plot representative drought timeseries
+    plot_representative_drought_timeseries(data, dataset_id, representative_years)
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")

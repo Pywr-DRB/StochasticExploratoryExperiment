@@ -17,20 +17,23 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
 # DATASET COLORS
 # =============================================================================
 
-# Primary color scheme for datasets
+# Primary color scheme for datasets - Colorblind-friendly palette
+# Based on Wong (2011) "Points of view: Color blindness" Nature Methods
+# These colors are distinguishable for deuteranopia, protanopia, and tritanopia
 DATASET_COLORS = {
-    'stationary_ensemble': '#1f77b4',           # Blue
-    'climate_adjusted_low': '#d62728',          # Red (Dry scenario)
-    'climate_adjusted_medium': '#9467bd',       # Purple (Medium scenario)
-    'climate_adjusted_high': '#2ca02c',         # Green (Wet scenario)
+    'stationary_ensemble': '#0072B2',           # Blue (baseline/reference)
+    'climate_adjusted_low': '#D55E00',          # Vermilion/Orange (Dry scenario)
+    'climate_adjusted_medium': '#CC79A7',       # Reddish purple (Medium scenario)
+    'climate_adjusted_high': '#009E73',         # Bluish green (Wet scenario)
 }
 
-# Alternative color scheme (if needed for specific plots)
+# Alternative color scheme - also colorblind-friendly
+# Using IBM Design Language accessible palette
 DATASET_COLORS_ALT = {
-    'stationary_ensemble': '#2E86AB',           # Blue (alternative)
-    'climate_adjusted_low': '#C73E1D',          # Red-orange (Dry)
-    'climate_adjusted_medium': '#A23B72',       # Magenta-purple (Medium)
-    'climate_adjusted_high': '#06A77D',         # Teal (Wet)
+    'stationary_ensemble': '#648FFF',           # Ultramarine blue (baseline)
+    'climate_adjusted_low': '#FE6100',          # Orange (Dry)
+    'climate_adjusted_medium': '#DC267F',       # Magenta (Medium)
+    'climate_adjusted_high': '#785EF0',         # Purple (Wet)
 }
 
 # Historic/observed data color
