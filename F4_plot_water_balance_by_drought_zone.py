@@ -73,10 +73,10 @@ MIN_INFLOW_THRESHOLD = 1000  # Filter out years with total inflow below this val
 
 # X-axis maximum limit configuration
 # Set to None to use quantile-based limit, or a number for manual limit
-XLIM_MAX_MANUAL = 100  # e.g., 100 for fixed limit, None for auto
+XLIM_MAX_MANUAL = None  # e.g., 100 for fixed limit, None for auto
 
 # Quantile for determining x-axis max when XLIM_MAX_MANUAL is None
-XLIM_QUANTILE = 1  # Use 95th percentile of max values across categories
+XLIM_QUANTILE = 0.999  # Use 95th percentile of max values across categories
 
 # Include 1960s reconstruction data point
 INCLUDE_RECONSTRUCTION = True  # Set to True to add 1964 drought data point
@@ -638,6 +638,8 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
             print(f"  X-axis max set to {XLIM_QUANTILE*100:.0f}th percentile: {xlim_max:.1f}%")
         else:
             xlim_max = 100  # Fallback
+    
+
 
     # Second pass: plot the distributions
     for cat in categories:
@@ -687,6 +689,12 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     else:
         xlabel = f'NYC Contributions / Total Inflow ({N_MONTHS_PRIOR}-month prior to min zone, %)'
 
+        # if reconstruction is included, extend xlim_max if needed
+    if INCLUDE_RECONSTRUCTION:
+        if reconstruction_ratio is not None and reconstruction_ratio > xlim_max:
+            xlim_max = reconstruction_ratio * 1.1  # Add 10% margin
+            print(f"  Adjusted x-axis max to include reconstruction ratio: {xlim_max:.1f}%")
+
     ax.set_xlabel(xlabel, fontsize=12)
     ax.set_ylabel('Density', fontsize=12)
     ax.set_axisbelow(True)
@@ -731,6 +739,9 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
     2. All KDEs (>= Normal + all drought zone KDEs)
     3. All KDEs + means of the KDEs
     4. All KDEs + means of the KDEs + 1964 drought year (full figure)
+
+    All versions are saved WITHOUT legends to ensure consistent axes sizes.
+    A separate legend-only image is saved for manual stitching.
 
     Parameters
     ----------
@@ -793,10 +804,16 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
         {'name': 'v4_full', 'categories': categories, 'show_means': True, 'show_1964': True},
     ]
 
+    # Fixed figure size and axes position for consistent output
+    fig_width, fig_height = 10, 7
+    # Define fixed axes position: [left, bottom, width, height] in figure coordinates
+    axes_rect = [0.12, 0.12, 0.85, 0.85]
+
     for version in versions:
         print(f"  Creating {version['name']}...")
 
-        fig, ax = plt.subplots(1, 1, figsize=(10, 9))
+        fig = plt.figure(figsize=(fig_width, fig_height))
+        ax = fig.add_axes(axes_rect)
 
         # Plot KDEs for specified categories
         for cat in version['categories']:
@@ -807,7 +824,7 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
             contribution_ratio = category_data[cat]['ratio']
             n = category_data[cat]['n']
 
-            # Create label with sample size
+            # Create label with sample size (for legend-only figure)
             if cat == 'other':
                 label = f"Years with Normal or Above (n = {n})"
             else:
@@ -828,7 +845,7 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
                 ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
                           linewidth=1.5, alpha=0.7)
 
-        # Add legend entry for mean lines if showing means
+        # Add legend entry for mean lines if showing means (for legend-only figure)
         if version['show_means']:
             ax.axvline(np.nan, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, label='KDE Mean')
 
@@ -847,30 +864,54 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
         ax.set_ylabel('Density', fontsize=12)
         ax.set_axisbelow(True)
         ax.set_xlim(left=0, right=xlim_max)
-
-        # Legend ordering
-        handles, labels = ax.get_legend_handles_labels()
-        desired_order_keywords = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency', 'KDE Mean', '1964 Drought']
-
-        ordered_handles = []
-        ordered_labels = []
-        for keyword in desired_order_keywords:
-            for idx, label in enumerate(labels):
-                if keyword in label and handles[idx] not in ordered_handles:
-                    ordered_handles.append(handles[idx])
-                    ordered_labels.append(labels[idx])
-                    break
-
-        ax.legend(ordered_handles, ordered_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15),
-                  ncol=1, fontsize=10, frameon=True, fancybox=True)
         ax.set_ylim(bottom=0)
-        plt.tight_layout(rect=[0, 0.1, 1, 1])
 
-        # Save to AGU2025 folder
+        # NO legend on the plot - save without legend for consistent axes size
+        # Save to AGU2025 folder (no bbox_inches='tight' to maintain fixed size)
         fname = f"{FIG_DIR_AGU2025}/{dataset_id}_contribution_ratio_{version['name']}_{N_MONTHS_PRIOR}M.png"
-        plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        plt.savefig(fname, dpi=DPI_HIGH)
         print(f"    Saved: {fname}")
         plt.close()
+
+    # Create a separate legend-only figure with all legend entries
+    print("  Creating legend-only figure...")
+    fig_legend = plt.figure(figsize=(6, 3))
+
+    # Create dummy artists for the legend
+    legend_elements = []
+    legend_labels = []
+
+    # Add category entries in desired order
+    desired_order = ['other', 'warning', 'watch', 'emergency']
+    for cat in desired_order:
+        if cat in category_data:
+            cat_info = DROUGHT_CATEGORIES[cat]
+            n = category_data[cat]['n']
+            if cat == 'other':
+                label = f"Years with Normal or Above (n = {n})"
+            else:
+                label = f"Years with {cat_info['label']} (n = {n})"
+            legend_elements.append(plt.Line2D([0], [0], color=cat_info['color'], linewidth=2.5, alpha=0.8))
+            legend_labels.append(label)
+
+    # Add KDE Mean entry
+    legend_elements.append(plt.Line2D([0], [0], color='gray', linestyle='--', linewidth=1.5, alpha=0.7))
+    legend_labels.append('KDE Mean')
+
+    # Add 1964 Drought entry if applicable
+    if reconstruction_ratio is not None:
+        legend_elements.append(plt.Line2D([0], [0], color='black', linestyle='-', linewidth=2.5, alpha=0.9))
+        legend_labels.append('1964 Drought')
+
+    # Create legend
+    fig_legend.legend(legend_elements, legend_labels, loc='center', ncol=1, fontsize=10,
+                      frameon=True, fancybox=True)
+
+    # Save legend-only figure
+    fname_legend = f"{FIG_DIR_AGU2025}/{dataset_id}_contribution_ratio_legend_{N_MONTHS_PRIOR}M.png"
+    plt.savefig(fname_legend, dpi=DPI_HIGH, bbox_inches='tight')
+    print(f"    Saved: {fname_legend}")
+    plt.close()
 
     print("  All iterative versions created successfully!")
 
@@ -1436,11 +1477,11 @@ def main(dataset_id):
     plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dataset_label)
 
     # Find representative years and plot drought timeseries
-    print("\nFinding representative years for each drought zone...")
-    representative_years = find_representative_years(categorized_data, data, dataset_id)
+    # print("\nFinding representative years for each drought zone...")
+    # representative_years = find_representative_years(categorized_data, data, dataset_id)
 
     # Plot representative drought timeseries
-    plot_representative_drought_timeseries(data, dataset_id, representative_years)
+    # plot_representative_drought_timeseries(data, dataset_id, representative_years)
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")
