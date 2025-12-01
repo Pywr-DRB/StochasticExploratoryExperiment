@@ -73,7 +73,7 @@ MIN_INFLOW_THRESHOLD = 1000  # Filter out years with total inflow below this val
 
 # X-axis maximum limit configuration
 # Set to None to use quantile-based limit, or a number for manual limit
-XLIM_MAX_MANUAL = None  # e.g., 100 for fixed limit, None for auto
+XLIM_MAX_MANUAL = 100  # e.g., 100 for fixed limit, None for auto
 
 # Quantile for determining x-axis max when XLIM_MAX_MANUAL is None
 XLIM_QUANTILE = 0.999  # Use 95th percentile of max values across categories
