@@ -61,7 +61,7 @@ MIN_INFLOW_THRESHOLD = 1000
 #   [6]: Only years with Drought Emergency
 #   [5, 6]: Only years with Drought Watch or Emergency
 #   [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
-FILTER_BY_ZONES = [4, 5, 6]  # Set to list of zones or None for all years
+FILTER_BY_ZONES = [3]   # Set to list of zones or None for all years
 
 # Drought zone mapping (from SI6)
 ZONE_NAMES = {

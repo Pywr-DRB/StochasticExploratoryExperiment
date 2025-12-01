@@ -497,10 +497,10 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     else:
         xlabel = f'Total Inflow ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
 
-    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
-    ax.set_ylabel('Density', fontsize=12, fontweight='bold')
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel('Density', fontsize=12)
     ax.set_title('NYC Inflow Distribution by Drought Zone',
-                 fontsize=13, fontweight='bold', pad=15)
+                 fontsize=13, pad=15)
     ax.set_axisbelow(True)
 
     # Plot contribution distributions
@@ -535,10 +535,10 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
     else:
         xlabel = f'Total NYC Contributions to Montague ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
 
-    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
-    ax.set_ylabel('Density', fontsize=12, fontweight='bold')
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel('Density', fontsize=12)
     ax.set_title('NYC Contributions Distribution by Drought Zone',
-                 fontsize=13, fontweight='bold', pad=15)
+                 fontsize=13, pad=15)
     ax.set_axisbelow(True)
 
     # Single legend at the bottom with reordered zones
@@ -561,7 +561,7 @@ def plot_distributions_by_zone(categorized_data, dataset_id, dataset_label):
 
     # Overall title
     fig.suptitle(f'Water Balance Distributions by Drought Zone\n{dataset_label}',
-                 fontsize=14, fontweight='bold', y=0.98)
+                 fontsize=14, y=0.98)
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.96])
 
@@ -687,8 +687,8 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     else:
         xlabel = f'NYC Contributions / Total Inflow ({N_MONTHS_PRIOR}-month prior to min zone, %)'
 
-    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
-    ax.set_ylabel('Density', fontsize=12, fontweight='bold')
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel('Density', fontsize=12)
     ax.set_axisbelow(True)
     ax.set_xlim(left=0, right=xlim_max)
 
@@ -714,7 +714,7 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
               ncol=1, fontsize=10, frameon=True, fancybox=True)
 
     plt.tight_layout(rect=[0, 0.1, 1, 1])
-
+    ax.set_ylim(bottom=0)
     # Save
     fname = f"{FIG_DIR_DROUGHT_ZONE}/{dataset_id}_contribution_ratio_by_drought_zone_{N_MONTHS_PRIOR}M.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
@@ -843,8 +843,8 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
         else:
             xlabel = f'NYC Contributions / Total Inflow ({N_MONTHS_PRIOR}-month prior to min zone, %)'
 
-        ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
-        ax.set_ylabel('Density', fontsize=12, fontweight='bold')
+        ax.set_xlabel(xlabel, fontsize=12)
+        ax.set_ylabel('Density', fontsize=12)
         ax.set_axisbelow(True)
         ax.set_xlim(left=0, right=xlim_max)
 
@@ -863,7 +863,7 @@ def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dat
 
         ax.legend(ordered_handles, ordered_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15),
                   ncol=1, fontsize=10, frameon=True, fancybox=True)
-
+        ax.set_ylim(bottom=0)
         plt.tight_layout(rect=[0, 0.1, 1, 1])
 
         # Save to AGU2025 folder
@@ -1060,8 +1060,8 @@ def plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_l
         xlabel = f'Total NYC Inflow ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
         ylabel = f'Total NYC Contributions to Montague ({N_MONTHS_PRIOR}-month prior to min zone, MG)'
 
-    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
-    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     # ax.set_axisbelow(True)
     # ax.set_xlim(left=xlim_min, right=xlim_max)
@@ -1150,7 +1150,7 @@ def plot_drought_timeseries(data, dataset_id, realization_id, start_date, end_da
     ax = axes[0]
     ax.plot(nyc_storage_pct_filtered.index, nyc_storage_pct_filtered.values,
            color='steelblue', linewidth=1.5)
-    ax.set_ylabel('NYC Storage\n(% of capacity)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('NYC Storage\n(% of capacity)', fontsize=11)
     ax.set_ylim(0, 100)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -1181,7 +1181,7 @@ def plot_drought_timeseries(data, dataset_id, realization_id, start_date, end_da
     ax = axes[1]
     ax.plot(downstream_pct_filtered.index, downstream_pct_filtered.values,
            color='darkorange', linewidth=1.5)
-    ax.set_ylabel('NYC Downstream Releases\n(% of total release)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('NYC Downstream Releases\n(% of total release)', fontsize=11)
     ax.set_ylim(0, 100)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -1208,11 +1208,11 @@ def plot_drought_timeseries(data, dataset_id, realization_id, start_date, end_da
     ax = axes[2]
     ax.plot(contrib_pct_filtered.index, contrib_pct_filtered.values,
            color='darkgreen', linewidth=1.5)
-    ax.set_ylabel('NYC Contribution\n(% of Montague flow)', fontsize=11, fontweight='bold')
+    ax.set_ylabel('NYC Contribution\n(% of Montague flow)', fontsize=11)
     ax.set_ylim(0, 100)
     ax.grid(axis='both', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-    ax.set_xlabel('Date', fontsize=11, fontweight='bold')
+    ax.set_xlabel('Date', fontsize=11)
 
     # Format x-axis
     ax.xaxis.set_major_locator(plt.matplotlib.dates.MonthLocator(interval=1))
@@ -1224,7 +1224,7 @@ def plot_drought_timeseries(data, dataset_id, realization_id, start_date, end_da
         title = f'Drought Timeseries - {zone_category}\nRealization {realization_id}, {start_date.date()} to {end_date.date()}'
     else:
         title = f'Drought Timeseries\nRealization {realization_id}, {start_date.date()} to {end_date.date()}'
-    fig.suptitle(title, fontsize=13, fontweight='bold', y=0.98)
+    fig.suptitle(title, fontsize=13, y=0.98)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
 
