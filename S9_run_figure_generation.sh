@@ -23,7 +23,11 @@ PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
 
 
-# python3 SI6_plot_water_balance_by_drought_zone.py stationary_ensemble
+# python3 SI7_plot_nyc_contribution_timeseries.py stationary_ensemble
+# python3 SI7_plot_nyc_contribution_timeseries.py climate_adjusted_low
+# python3 SI7_plot_nyc_contribution_timeseries.py climate_adjusted_high
+
+python3 SI6_plot_water_balance_by_drought_zone.py stationary_ensemble
 python3 SI6_plot_water_balance_by_drought_zone.py climate_adjusted_low
 python3 SI6_plot_water_balance_by_drought_zone.py climate_adjusted_high
 
