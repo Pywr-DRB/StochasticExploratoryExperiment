@@ -127,8 +127,10 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 #   - years_trenton_reliable: Alias for years_reliable_trenton
 
 METRICS_TO_PLOT = [
-    'years_below_30pct',
-    'mean_annual_montague_shortage_mg',
+    'years_drought_emergency',
+    'max_1day_montague_shortage_mg',
+    # 'years_below_30pct',
+    # 'mean_annual_montague_shortage_mg',
     # 'years_reliable',
     # 'years_high_storage',
     # 'years_above_20pct',

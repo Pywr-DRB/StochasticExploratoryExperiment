@@ -258,6 +258,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     ibt_demands_dict = {}
     mrf_target_dict = {}
     res_level_dict = {}
+    nyc_release_components_dict = {}
 
     for model in ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016', dataset_id]:
         if model in data.inflow:
@@ -268,6 +269,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
             ibt_demands_dict[model] = data.ibt_demands[model]
             mrf_target_dict[model] = data.mrf_target[model]
             res_level_dict[model] = data.res_level[model]
+            nyc_release_components_dict[model] = data.nyc_release_components[model]
 
     keep_data.inflow = inflow_dict
     keep_data.major_flow = major_flow_dict
@@ -276,6 +278,7 @@ def combine_ensemble_sets_and_calculate_metrics(dataset_id):
     keep_data.res_level = res_level_dict
     keep_data.ibt_demands = ibt_demands_dict
     keep_data.mrf_target = mrf_target_dict
+    keep_data.nyc_release_components = nyc_release_components_dict
 
     ### Export the new data object to HDF5
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
@@ -342,7 +345,7 @@ def process_dataset(dataset_id, recombine_sets=True):
 
         # Load only the results_sets needed for metric calculations
         required_results_sets = ['shortage', 'mrf_target', 'res_storage',
-                                 'ibt_diversions', 'ibt_demands', 'contribution']
+                                 'ibt_diversions', 'ibt_demands', 'contribution', 'res_level']
 
         keep_data = pywrdrb.Data()
         keep_data.load_from_export(fname, results_sets=required_results_sets)

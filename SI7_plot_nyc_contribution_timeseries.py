@@ -8,7 +8,18 @@ Features:
 - Shows Jan-Dec timeseries (day of year)
 - Distribution bands: 5-95% (light fill), 25-75% (darker fill), and median line
 - Aggregates across all realizations and years in the ensemble
+- Optional filtering by NYC storage drought zone classification
 - Clean, publication-quality styling
+
+Drought Zone Filtering:
+- Set FILTER_BY_ZONES to filter years by drought severity
+- None: Include all years (default behavior)
+- [6]: Only years with Drought Emergency
+- [5, 6]: Only years with Drought Watch or Emergency
+- [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
+
+Configuration:
+- Edit FILTER_BY_ZONES constant in the script to change zone filtering
 
 Usage:
     python SI7_plot_nyc_contribution_timeseries.py <dataset_id>
@@ -40,26 +51,113 @@ NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
 # Minimum inflow threshold for filtering (MG) - same as SI6
 MIN_INFLOW_THRESHOLD = 1000
 
+# ============================================================================
+# DROUGHT ZONE FILTERING CONFIGURATION
+# ============================================================================
 
-def calculate_daily_contribution_percentage(data, dataset_id):
+# Filter years by drought zone (set to None to include all years)
+# Options:
+#   None: Include all years (default behavior)
+#   [6]: Only years with Drought Emergency
+#   [5, 6]: Only years with Drought Watch or Emergency
+#   [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
+FILTER_BY_ZONES = [4, 5, 6]  # Set to list of zones or None for all years
+
+# Drought zone mapping (from SI6)
+ZONE_NAMES = {
+    6: 'Drought Emergency',
+    5: 'Drought Watch',
+    4: 'Drought Warning',
+    3: 'Normal',
+    2: 'Flood Watch',
+    1: 'Flood Warning',
+}
+
+
+def classify_years_by_max_zone(res_level_df):
+    """
+    Classify each year by the maximum drought zone reached (most severe drought).
+
+    Based on SI6's classify_years_by_min_zone function.
+
+    Parameters
+    ----------
+    res_level_df : pd.DataFrame
+        Reservoir level DataFrame with 'nyc' column and datetime index
+
+    Returns
+    -------
+    year_classifications : dict
+        Dictionary mapping year -> max_zone (int)
+    """
+    df = res_level_df.copy()
+    df['year'] = df.index.year
+
+    year_classifications = {}
+
+    for year in df['year'].unique():
+        year_data = df[df['year'] == year]
+        # Find maximum zone value (higher zone = more severe drought)
+        max_zone = year_data['nyc'].max()
+        year_classifications[year] = max_zone
+
+    return year_classifications
+
+
+def get_zone_filter_label(zone_list):
+    """
+    Generate a human-readable label for a zone filter.
+
+    Parameters
+    ----------
+    zone_list : list of int
+        List of zone numbers
+
+    Returns
+    -------
+    str
+        Human-readable label
+    """
+    if zone_list is None:
+        return "All Years"
+
+    zone_labels = [ZONE_NAMES.get(z, f"Zone {z}") for z in sorted(zone_list, reverse=True)]
+
+    if len(zone_labels) == 1:
+        return f"Years with {zone_labels[0]}"
+    else:
+        return f"Years with {', '.join(zone_labels[:-1])}, or {zone_labels[-1]}"
+
+
+def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     """
     Calculate NYC contribution as percentage of Montague flow for each day.
 
     Parameters
     ----------
     data : pywrdrb.Data
-        Data object containing contribution and major_flow
+        Data object containing contribution, major_flow, and optionally res_level
     dataset_id : str
         Dataset identifier
+    zone_filter : list of int or None
+        If provided, only include years where NYC reservoirs experienced
+        one of these drought zones. Requires res_level data to be loaded.
+        None means include all years.
 
     Returns
     -------
     all_years_data : pd.DataFrame
         DataFrame with day_of_year as index and each column as a year-realization
+    n_years_total : int
+        Total number of years before filtering
+    n_years_filtered : int
+        Number of years after filtering
     """
     realization_ids = list(data.contribution[dataset_id].keys())
 
     all_series = []
+    n_years_total = 0
+    n_years_filtered = 0
 
     for real_id in realization_ids:
         # Get contribution data
@@ -79,7 +177,28 @@ def calculate_daily_contribution_percentage(data, dataset_id):
         # Get unique years
         years = contrib_pct_series.index.year.unique()
 
+        # If zone filtering is enabled, classify years by drought zone
+        year_zone_map = None
+        if zone_filter is not None:
+            if not hasattr(data, 'res_level') or dataset_id not in data.res_level:
+                raise ValueError(
+                    "Zone filtering requires res_level data to be loaded. "
+                    "Please load res_level results set."
+                )
+            res_level_df = data.res_level[dataset_id][real_id]
+            year_zone_map = classify_years_by_max_zone(res_level_df)
+
         for year in years:
+            n_years_total += 1
+
+            # Apply zone filter if specified
+            if zone_filter is not None:
+                max_zone = year_zone_map.get(year)
+                if max_zone not in zone_filter:
+                    continue
+
+            n_years_filtered += 1
+
             year_data = contrib_pct_series[contrib_pct_series.index.year == year]
 
             # Create day of year index (1-366)
@@ -91,7 +210,7 @@ def calculate_daily_contribution_percentage(data, dataset_id):
     # Combine all series into DataFrame
     all_years_df = pd.concat(all_series, axis=1)
 
-    return all_years_df
+    return all_years_df, n_years_total, n_years_filtered
 
 
 def get_1964_reconstruction_contribution_trace():
@@ -281,7 +400,8 @@ def find_representative_drought_emergency_year(data, dataset_id):
 
 
 def plot_contribution_timeseries(all_years_df, dataset_id, dataset_label,
-                                  trace_1964=None, representative_emergency=None):
+                                  trace_1964=None, representative_emergency=None,
+                                  zone_filter=None, n_years_total=None, n_years_filtered=None):
     """
     Create publication-quality timeseries plot with distribution bands.
 
@@ -297,6 +417,12 @@ def plot_contribution_timeseries(all_years_df, dataset_id, dataset_label,
         1964 reconstruction daily contribution trace
     representative_emergency : dict, optional
         Dictionary with representative Drought Emergency year info and trace
+    zone_filter : list of int or None
+        Zone filter applied (for filename and title)
+    n_years_total : int, optional
+        Total years before filtering
+    n_years_filtered : int, optional
+        Total years after filtering
     """
     print("Creating NYC contribution timeseries plot...")
 
@@ -357,17 +483,30 @@ def plot_contribution_timeseries(all_years_df, dataset_id, dataset_label,
     # Legend
     ax.legend(loc='upper right', fontsize=9, frameon=True, fancybox=True)
 
-    # Add sample size annotation
+    # Add sample size annotation with zone filter info
     n_samples = all_years_df.shape[1]
-    ax.text(0.02, 0.98, f'n = {n_samples} year-realizations',
+    if zone_filter is not None and n_years_total is not None and n_years_filtered is not None:
+        zone_label = get_zone_filter_label(zone_filter)
+        annotation_text = (f'{zone_label}\n'
+                          f'n = {n_years_filtered} / {n_years_total} year-realizations')
+    else:
+        annotation_text = f'n = {n_samples} year-realizations'
+
+    ax.text(0.02, 0.98, annotation_text,
            transform=ax.transAxes, fontsize=9,
            verticalalignment='top',
            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
 
     plt.tight_layout()
 
+    # Generate filename based on zone filter
+    if zone_filter is not None:
+        zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True)))
+    else:
+        zone_suffix = ''
+
     # Save
-    fname = f"{FIG_DIR_CONTRIBUTION}/{dataset_id}_nyc_contribution_timeseries.png"
+    fname = f"{FIG_DIR_CONTRIBUTION}/{dataset_id}_nyc_contribution_timeseries{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")
     plt.close()
@@ -386,6 +525,14 @@ def main(dataset_id):
     print(f"NYC CONTRIBUTION TIMESERIES: {dataset_id}")
     print("=" * 80)
 
+    # Print zone filter configuration
+    if FILTER_BY_ZONES is not None:
+        zone_label = get_zone_filter_label(FILTER_BY_ZONES)
+        print(f"\nZone Filter: {zone_label}")
+        print(f"  Filtering to zones: {FILTER_BY_ZONES}")
+    else:
+        print("\nZone Filter: None (including all years)")
+
     # Verify dataset
     verify_dataset_id(dataset_id)
     dataset_config = DATASET_CONFIGS[dataset_id]
@@ -403,7 +550,7 @@ def main(dataset_id):
 
     print(f"  Loading from: {fname}")
     data = pywrdrb.Data()
-    # Load additional results sets needed for representative year finding
+    # Load additional results sets needed for representative year finding and zone filtering
     data.load_from_export(
         fname,
         results_sets=['contribution', 'major_flow', 'res_level', 'inflow']
@@ -412,8 +559,14 @@ def main(dataset_id):
 
     # Calculate daily contribution percentages
     print("\nCalculating daily contribution percentages...")
-    all_years_df = calculate_daily_contribution_percentage(data, dataset_id)
-    print(f"  Total year-realizations: {all_years_df.shape[1]}")
+    all_years_df, n_years_total, n_years_filtered = calculate_daily_contribution_percentage(
+        data, dataset_id, zone_filter=FILTER_BY_ZONES
+    )
+    print(f"  Total year-realizations before filtering: {n_years_total}")
+    print(f"  Total year-realizations after filtering: {n_years_filtered}")
+    if FILTER_BY_ZONES is not None:
+        pct_kept = 100.0 * n_years_filtered / n_years_total if n_years_total > 0 else 0
+        print(f"  Percentage kept: {pct_kept:.1f}%")
 
     # Get 1964 reconstruction trace
     print("\nLoading 1964 reconstruction trace...")
@@ -425,9 +578,14 @@ def main(dataset_id):
 
     # Create plot
     print("\nCreating plot...")
-    plot_contribution_timeseries(all_years_df, dataset_id, dataset_label,
-                                  trace_1964=None,
-                                  representative_emergency=representative_emergency)
+    plot_contribution_timeseries(
+        all_years_df, dataset_id, dataset_label,
+        trace_1964=None,
+        representative_emergency=representative_emergency,
+        zone_filter=FILTER_BY_ZONES,
+        n_years_total=n_years_total,
+        n_years_filtered=n_years_filtered
+    )
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE!")

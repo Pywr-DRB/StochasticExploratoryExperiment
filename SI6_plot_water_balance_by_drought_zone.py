@@ -49,6 +49,10 @@ from methods.config import NYC_TOTAL_CAPACITY, WRF1960s_OUTPUT_FNAME
 FIG_DIR_DROUGHT_ZONE = f"{FIG_DIR}/water_balance_by_drought_zone"
 os.makedirs(FIG_DIR_DROUGHT_ZONE, exist_ok=True)
 
+# AGU2025 presentation output directory
+FIG_DIR_AGU2025 = f"{FIG_DIR}/AGU2025"
+os.makedirs(FIG_DIR_AGU2025, exist_ok=True)
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -59,7 +63,7 @@ os.makedirs(FIG_DIR_DROUGHT_ZONE, exist_ok=True)
 AGGREGATION_METHOD = 'n_months_prior' #'n_months_prior'  # Options: 'since_june1' or 'n_months_prior'
 
 # Number of months prior to minimum zone to analyze (only used if method is 'n_months_prior')
-N_MONTHS_PRIOR = 6  # Analyze water balance for N months leading up to minimum zone
+N_MONTHS_PRIOR = 9  # Analyze water balance for N months leading up to minimum zone
 
 # Drop "Normal or Above" category from plots
 DROP_NORMAL = False  # Set to False to include "Normal or Above" category
@@ -718,6 +722,159 @@ def plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     plt.close()
 
 
+def plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dataset_label):
+    """
+    Create 4 iterative versions of the contribution ratio KDE plot for presentations.
+
+    Versions:
+    1. KDE for all >= Normal years only
+    2. All KDEs (>= Normal + all drought zone KDEs)
+    3. All KDEs + means of the KDEs
+    4. All KDEs + means of the KDEs + 1964 drought year (full figure)
+
+    Parameters
+    ----------
+    categorized_data : dict
+        Output from categorize_by_drought_zone()
+    dataset_id : str
+        Dataset identifier
+    dataset_label : str
+        Dataset display label
+    """
+    print("Creating iterative contribution ratio KDE plots for AGU2025...")
+
+    # Prepare data for plotting (same as original function)
+    if DROP_NORMAL:
+        categories = ['emergency', 'watch', 'warning']
+    else:
+        categories = ['emergency', 'watch', 'warning', 'other']
+
+    # First pass: calculate contribution ratios and collect all values
+    all_contribution_ratios = []
+    category_data = {}
+    sample_sizes = {}
+
+    for cat in categories:
+        cat_info = DROUGHT_CATEGORIES[cat]
+        df = categorized_data[cat].copy()
+
+        if len(df) > 0:
+            df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
+
+            if len(df_filtered) > 0:
+                sample_sizes[cat] = len(df_filtered)
+                contribution_ratio = 100.0 * df_filtered['contribution_total'] / df_filtered['inflow_total']
+                category_data[cat] = {
+                    'ratio': contribution_ratio,
+                    'n': len(df_filtered)
+                }
+                all_contribution_ratios.extend(contribution_ratio.values)
+
+    # Determine x-axis max limit
+    if XLIM_MAX_MANUAL is not None:
+        xlim_max = XLIM_MAX_MANUAL
+    else:
+        if len(all_contribution_ratios) > 0:
+            xlim_max = np.quantile(all_contribution_ratios, XLIM_QUANTILE)
+        else:
+            xlim_max = 100
+
+    # Calculate reconstruction ratio once
+    reconstruction_ratio = None
+    if INCLUDE_RECONSTRUCTION:
+        print("  Calculating reconstruction contribution ratio...")
+        reconstruction_ratio = calculate_reconstruction_contribution_ratio()
+
+    # Define the 4 versions
+    versions = [
+        {'name': 'v1_normal_only', 'categories': ['other'], 'show_means': False, 'show_1964': False},
+        {'name': 'v2_all_kdes', 'categories': categories, 'show_means': False, 'show_1964': False},
+        {'name': 'v3_kdes_with_means', 'categories': categories, 'show_means': True, 'show_1964': False},
+        {'name': 'v4_full', 'categories': categories, 'show_means': True, 'show_1964': True},
+    ]
+
+    for version in versions:
+        print(f"  Creating {version['name']}...")
+
+        fig, ax = plt.subplots(1, 1, figsize=(10, 9))
+
+        # Plot KDEs for specified categories
+        for cat in version['categories']:
+            if cat not in category_data:
+                continue
+
+            cat_info = DROUGHT_CATEGORIES[cat]
+            contribution_ratio = category_data[cat]['ratio']
+            n = category_data[cat]['n']
+
+            # Create label with sample size
+            if cat == 'other':
+                label = f"Years with Normal or Above (n = {n})"
+            else:
+                label = f"Years with {cat_info['label']} (n = {n})"
+
+            # Plot KDE
+            contribution_ratio.plot.kde(
+                ax=ax,
+                color=cat_info['color'],
+                linewidth=2.5,
+                alpha=0.8,
+                label=label
+            )
+
+            # Plot mean value line if requested
+            if version['show_means']:
+                mean_val = contribution_ratio.mean()
+                ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                          linewidth=1.5, alpha=0.7)
+
+        # Add legend entry for mean lines if showing means
+        if version['show_means']:
+            ax.axvline(np.nan, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, label='KDE Mean')
+
+        # Add 1964 drought line if requested
+        if version['show_1964'] and reconstruction_ratio is not None:
+            ax.axvline(reconstruction_ratio, color='black', linestyle='-',
+                      linewidth=2.5, alpha=0.9, label='1964 Drought')
+
+        # X-axis label
+        if AGGREGATION_METHOD == 'since_june1':
+            xlabel = 'NYC Contributions / Total Inflow (June 1 to min zone, %)'
+        else:
+            xlabel = f'NYC Contributions / Total Inflow ({N_MONTHS_PRIOR}-month prior to min zone, %)'
+
+        ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Density', fontsize=12, fontweight='bold')
+        ax.set_axisbelow(True)
+        ax.set_xlim(left=0, right=xlim_max)
+
+        # Legend ordering
+        handles, labels = ax.get_legend_handles_labels()
+        desired_order_keywords = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency', 'KDE Mean', '1964 Drought']
+
+        ordered_handles = []
+        ordered_labels = []
+        for keyword in desired_order_keywords:
+            for idx, label in enumerate(labels):
+                if keyword in label and handles[idx] not in ordered_handles:
+                    ordered_handles.append(handles[idx])
+                    ordered_labels.append(labels[idx])
+                    break
+
+        ax.legend(ordered_handles, ordered_labels, loc='upper center', bbox_to_anchor=(0.5, -0.15),
+                  ncol=1, fontsize=10, frameon=True, fancybox=True)
+
+        plt.tight_layout(rect=[0, 0.1, 1, 1])
+
+        # Save to AGU2025 folder
+        fname = f"{FIG_DIR_AGU2025}/{dataset_id}_contribution_ratio_{version['name']}_{N_MONTHS_PRIOR}M.png"
+        plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"    Saved: {fname}")
+        plt.close()
+
+    print("  All iterative versions created successfully!")
+
+
 def plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_label):
     """
     Create scatter plot of NYC inflow vs contributions, colored by drought zone.
@@ -1273,6 +1430,10 @@ def main(dataset_id):
     # plot_distributions_by_zone(categorized_data, dataset_id, dataset_label)
     plot_contribution_ratio_by_zone(categorized_data, dataset_id, dataset_label)
     plot_inflow_vs_contributions_scatter(categorized_data, dataset_id, dataset_label)
+
+    # Create iterative versions for AGU2025 presentation
+    print("\nCreating AGU2025 iterative plots...")
+    plot_contribution_ratio_iterative_versions(categorized_data, dataset_id, dataset_label)
 
     # Find representative years and plot drought timeseries
     print("\nFinding representative years for each drought zone...")
