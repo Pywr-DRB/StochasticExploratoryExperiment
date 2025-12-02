@@ -252,10 +252,10 @@ def _plot_single_storage_panel(ax,
 
     pcm = ax.pcolormesh(X, Y, M, cmap=cmap_obj, norm=norm, shading='flat')
 
-    # Zone boundary lines
+    # FFMP zone boundary lines (horizontal)
     if show_zone_lines:
-        for j in range(Y.shape[1]):
-            ax.plot(X[:, j], Y[:, j], color='white', linewidth=0.6, alpha=0.7)
+        for i in range(1, Y.shape[0] - 1):  # Skip first (0%) and last (100%) boundaries
+            ax.plot(X[i, :], Y[i, :], color='black', linewidth=0.8, alpha=0.8)
 
     ax.set_xlim(X.min(), X.max())
     ax.set_ylim(0, 100)
@@ -434,7 +434,7 @@ def plot_storage_zone_comparison(prob_df_ref,
 
 def plot_4panel_storage_comparison(period='weekly',
                                     origin=None,
-                                    figsize=(14, 8),
+                                    figsize=(12, 6),
                                     prob_bins=None,
                                     vmin_diff=-100,
                                     vmax_diff=100,
@@ -536,7 +536,7 @@ def plot_4panel_storage_comparison(period='weekly',
     cmap_abs, norm_abs = create_discrete_colormap(prob_bins, base_cmap='magma_r')
 
     # Right panels: percentage difference (diverging colormap - continuous)
-    cmap_diff = 'BrBG_r'
+    cmap_diff = 'BrBG'
     norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
 
     # Storage for pcolormeshes
@@ -574,15 +574,25 @@ def plot_4panel_storage_comparison(period='weekly',
                 ylabel=''  # No ylabel for right panels
             )
 
-    # Add two colorbars at bottom
-    # Left colorbar for absolute probability
-    cbar_abs_ax = fig.add_axes([0.08, 0.04, 0.35, 0.02])
-    cbar_abs = fig.colorbar(pm_abs, cax=cbar_abs_ax, orientation='horizontal', extend='max')
+    # Add two colorbars at bottom, centered under each panel
+    # Get the actual panel positions for proper centering
+    pos_left = ax_stat.get_position()
+    pos_right = ax_high.get_position()
+
+    cbar_width = 0.35
+    cbar_height = 0.02
+    cbar_y = 0.04
+
+    # Left colorbar for absolute probability - centered under left panel
+    left_center = pos_left.x0 + pos_left.width / 2
+    cbar_abs_ax = fig.add_axes([left_center - cbar_width/2, cbar_y, cbar_width, cbar_height])
+    cbar_abs = fig.colorbar(pm_abs, cax=cbar_abs_ax, orientation='horizontal', extend='neither')
     cbar_abs.set_label('Probability (%)', fontsize=11, fontweight='bold')
     cbar_abs.ax.tick_params(labelsize=9)
 
-    # Right colorbar for percentage difference
-    cbar_diff_ax = fig.add_axes([0.56, 0.04, 0.35, 0.02])
+    # Right colorbar for percentage difference - centered under right panels
+    right_center = pos_right.x0 + pos_right.width / 2
+    cbar_diff_ax = fig.add_axes([right_center - cbar_width/2, cbar_y, cbar_width, cbar_height])
     cbar_diff = fig.colorbar(pm_diff, cax=cbar_diff_ax, orientation='horizontal', extend='both')
     cbar_diff.set_label('Δ Probability (%)', fontsize=11, fontweight='bold')
     cbar_diff.ax.tick_params(labelsize=9)

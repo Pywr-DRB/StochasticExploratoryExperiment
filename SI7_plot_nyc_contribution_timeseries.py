@@ -40,6 +40,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -804,11 +805,15 @@ def _plot_subplots_linked(contrib_df, storage_df, dataset_id,
     contrib_max = mean_contributions.max()
     contrib_range = contrib_max - contrib_min if contrib_max > contrib_min else 1
 
-    # Create figure with 2 rows
-    fig, (ax_storage, ax_contrib) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    # Create figure with 2 rows, extra space on right for colorbar
+    fig, (ax_storage, ax_contrib) = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+    # Adjust subplot to make room for colorbar and annotation on the right
+    fig.subplots_adjust(right=0.85)
 
     # Plot each year-realization with color based on mean contribution
-    for col in ranked_columns:
+    # Reverse order so that highest contribution traces are plotted LAST (on top)
+    # ranked_columns is sorted highest to lowest, so reverse it
+    for col in reversed(ranked_columns):
         # Get normalized position for colormap (0 = low contribution, 1 = high contribution)
         norm_val = (mean_contributions[col] - contrib_min) / contrib_range
         color = cmap(norm_val)
@@ -846,7 +851,6 @@ def _plot_subplots_linked(contrib_df, storage_df, dataset_id,
     ax_storage.set_axisbelow(True)
     ax_storage.text(0.02, 0.95, '(a)', transform=ax_storage.transAxes, fontsize=12,
                     fontweight='bold', verticalalignment='top')
-    ax_storage.legend(loc='lower right', fontsize=8, frameon=True, fancybox=True)
 
     # Format bottom panel (Contribution)
     _format_xaxis(ax_contrib)
@@ -858,22 +862,29 @@ def _plot_subplots_linked(contrib_df, storage_df, dataset_id,
     ax_contrib.set_axisbelow(True)
     ax_contrib.text(0.02, 0.95, '(b)', transform=ax_contrib.transAxes, fontsize=12,
                     fontweight='bold', verticalalignment='top')
-    ax_contrib.legend(loc='upper right', fontsize=8, frameon=True, fancybox=True)
 
-    # Add colorbar
+    # Add colorbar to the right of the figure (outside axes)
+    cbar_ax = fig.add_axes([0.87, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=contrib_min, vmax=contrib_max))
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=[ax_storage, ax_contrib], location='right', pad=0.02, aspect=30)
+    cbar = fig.colorbar(sm, cax=cbar_ax)
     cbar.set_label('Mean NYC Contribution (%)', fontsize=10, fontweight='bold')
 
-    # Annotation on bottom panel
+    # Add legend outside the axes (below colorbar)
+    # Create custom legend handles
+    legend_elements = [Line2D([0], [0], color='black', linewidth=2, label='Median')]
+    fig.legend(handles=legend_elements, loc='lower right', bbox_to_anchor=(0.98, 0.02),
+               fontsize=9, frameon=True, fancybox=True)
+
+    # Annotation text below the figure
     annotation_text = _get_annotation_text(zone_filter, n_years_total, n_years_filtered,
                                            contrib_df.shape[1])
-    ax_contrib.text(0.98, 0.02, annotation_text, transform=ax_contrib.transAxes, fontsize=9,
-                    verticalalignment='bottom', horizontalalignment='right',
-                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    fig.text(0.5, 0.02, annotation_text, ha='center', va='bottom', fontsize=9,
+             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
 
-    plt.tight_layout()
+    # Adjust layout - don't use tight_layout as it conflicts with manual positioning
+    # Instead, adjust bottom margin to make room for annotation
+    fig.subplots_adjust(bottom=0.12)
 
     # Save
     fname = _get_output_filename(dataset_id, zone_filter, '_storage_linked')
