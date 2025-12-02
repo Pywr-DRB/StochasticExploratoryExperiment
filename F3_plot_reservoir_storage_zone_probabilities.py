@@ -22,60 +22,52 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from methods.config import *
 
-# Default probability bins (percent) - configurable
-DEFAULT_PROB_BINS = [0.1, 1, 2.5, 5, 10, 25, 50, 75, 90, 95]
+# Default probability bins (percent) - log-scale discrete bins
+# Designed to emphasize low probability values (<5%) while covering full range
+DEFAULT_PROB_BINS = [0.01, 0.1,  1, 5, 10, 25, 50, 75, 99]
 
 
 def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
     """
-    Create a discrete colormap with segments sized proportionally to bin widths.
+    Create a discrete colormap with log-scale spacing for better low-value visibility.
+
+    The colormap samples colors at log-scaled positions, giving more visual
+    distinction to low probability values (e.g., <5%) while still representing
+    the full range up to 99%.
 
     Parameters
     ----------
     bin_edges : list or array
-        Bin edges (e.g., [0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 100])
+        Bin edges (e.g., [0.1, 1, 5, 10, 25, 50, 75, 99])
     base_cmap : str or colormap
         Base colormap to sample from
 
     Returns
     -------
     cmap : ListedColormap
-        Discrete colormap with colors proportional to bin widths
+        Discrete colormap with colors sampled at log-scaled positions
     norm : BoundaryNorm
         Normalization for the discrete bins
     """
     bin_edges = np.array(bin_edges)
     n_bins = len(bin_edges) - 1
 
-    # Use a hybrid approach: log scale for low values, linear for high values
-    # This gives better visual separation across the full range
+    # Use log10 transform for color sampling positions
+    # This gives more visual separation to low values
+    log_edges = np.log10(np.maximum(bin_edges, 0.01))
 
-    # Transform bin edges to a perceptually-scaled space
-    def transform(x):
-        """Hybrid log-linear transform for better color distribution."""
-        # Use log scale up to 50%, then linear after that
-        threshold = 50.0
-        if x <= threshold:
-            # Log scale for 0.1 to 50: emphasize low probability differences
-            return np.log10(np.maximum(x, 0.01))
-        else:
-            # Linear scale for 50 to 100: spread out high probabilities
-            log_threshold = np.log10(threshold)
-            # Map [50, 100] to [log(50), log(50) + scaled_range]
-            # Scale factor chosen to give adequate visual separation
-            scale_factor = 5  # Adjust this to control high-end spread
-            return log_threshold + scale_factor * (x - threshold) / (100 - threshold)
+    # Normalize log-transformed edges to [0, 1] for colormap sampling
+    log_min = log_edges[0]
+    log_max = log_edges[-1]
+    normalized_positions = (log_edges - log_min) / (log_max - log_min)
 
-    transformed_edges = np.array([transform(x) for x in bin_edges])
-    transformed_widths = np.diff(transformed_edges)
+    # Sample colors at the midpoint of each bin (in log space)
+    # This gives each bin a representative color
+    bin_midpoints = 0.5 * (normalized_positions[:-1] + normalized_positions[1:])
 
-    # Normalize to [0, 1] for sampling the base colormap
-    cumulative_widths = np.cumsum(transformed_widths)
-    cumulative_widths = cumulative_widths / cumulative_widths[-1]
-
-    # Sample colors from base colormap at proportional positions
+    # Sample colors from base colormap
     base_cmap_obj = plt.get_cmap(base_cmap)
-    colors_list = [base_cmap_obj(pos) for pos in cumulative_widths]
+    colors_list = [base_cmap_obj(pos) for pos in bin_midpoints]
 
     # Create discrete colormap
     cmap = ListedColormap(colors_list)
@@ -538,7 +530,6 @@ def plot_4panel_storage_comparison(period='weekly',
 
     axes = [ax_stat, ax_low, ax_high]
     dataset_list = list(datasets.keys())
-    panel_labels = ['(a)', '(b)', '(c)']
 
     # Set up colormaps and norms
     # Left panel: absolute probability (discrete colormap)
@@ -553,7 +544,7 @@ def plot_4panel_storage_comparison(period='weekly',
     pm_diff = None
 
     # Plot each panel
-    for idx, (ax, dataset_id, panel_label) in enumerate(zip(axes, dataset_list, panel_labels)):
+    for idx, (ax, dataset_id) in enumerate(zip(axes, dataset_list)):
 
         if idx == 0:  # Stationary panel (absolute values)
             M = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
@@ -582,13 +573,6 @@ def plot_4panel_storage_comparison(period='weekly',
                 show_zone_lines=True,
                 ylabel=''  # No ylabel for right panels
             )
-
-        # Panel title
-        title_text = datasets[dataset_id]
-        ax.text(0.02, 0.98, f"{panel_label} {title_text}",
-               transform=ax.transAxes, fontsize=13, fontweight='bold',
-               verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.3))
 
     # Add two colorbars at bottom
     # Left colorbar for absolute probability
