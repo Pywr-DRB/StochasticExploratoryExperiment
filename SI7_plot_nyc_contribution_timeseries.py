@@ -81,7 +81,7 @@ MIN_DAYS_FOR_COMPLETE_WATER_YEAR = 360
 #   [6]: Only years with Drought Emergency
 #   [5, 6]: Only years with Drought Watch or Emergency
 #   [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
-FILTER_BY_ZONES = [4,5,6]  # Set to list of zones or None for all years
+FILTER_BY_ZONES = None #[4,5,6]  # Set to list of zones or None for all years
 
 # Representative year trace (shows contribution for year closest to mean)
 SHOW_REPRESENTATIVE_YEAR = True
@@ -158,6 +158,7 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     Calculate NYC contribution as percentage of Montague flow for each day.
 
     Uses water years (June 1 - May 31) for analysis and day-of-water-year indexing.
+    Optimized for performance with vectorized operations.
 
     Returns
     -------
@@ -184,9 +185,26 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
         contrib_pct = np.where(montague_flow > 0,
                                100.0 * nyc_contribution / montague_flow,
                                np.nan)
-        contrib_pct_series = pd.Series(contrib_pct, index=nyc_contribution.index)
 
-        water_years = contrib_pct_series.index.map(get_water_year).unique()
+        # Vectorized water year and day-of-water-year calculation
+        dates = nyc_contribution.index
+        months = dates.month.values
+        years = dates.year.values
+        water_years_arr = np.where(months >= 6, years, years - 1)
+
+        # Compute day-of-water-year vectorized using numpy
+        # June 1 of water year is day 1
+        june1_dates = pd.DatetimeIndex(
+            pd.to_datetime({'year': water_years_arr, 'month': 6, 'day': 1})
+        )
+        doy_arr = (dates - june1_dates).days.values + 1
+
+        # Build DataFrame for vectorized groupby
+        df_temp = pd.DataFrame({
+            'contrib_pct': contrib_pct,
+            'water_year': water_years_arr,
+            'doy': doy_arr
+        }, index=dates)
 
         wy_zone_map = None
         if zone_filter is not None:
@@ -195,11 +213,9 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
             res_level_df = data.res_level[dataset_id][real_id]
             wy_zone_map = classify_water_years_by_max_zone(res_level_df)
 
-        for wy in water_years:
-            wy_mask = contrib_pct_series.index.map(get_water_year) == wy
-            wy_data = contrib_pct_series[wy_mask]
-
-            if len(wy_data) < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
+        # Group by water year
+        for wy, group in df_temp.groupby('water_year'):
+            if len(group) < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
                 continue
 
             n_years_total += 1
@@ -211,8 +227,8 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
 
             n_years_filtered += 1
 
-            doy = wy_data.index.map(get_water_year_doy)
-            wy_series = pd.Series(wy_data.values, index=doy, name=f"r{real_id}_wy{wy}")
+            wy_series = pd.Series(group['contrib_pct'].values, index=group['doy'].values,
+                                  name=f"r{real_id}_wy{wy}")
             wy_series = wy_series.sort_index()
             all_series.append(wy_series)
 
@@ -350,48 +366,34 @@ def _calculate_pairwise_difference_percentiles(baseline_df, comparison_df):
     1. Compute quantiles (0-100%) for both baseline and comparison
     2. Compute differences at each quantile level (comparison - baseline)
     3. Return percentiles of those differences (1%, 25%, 50%, 75%, 99%)
+
+    Vectorized implementation for performance.
     """
     common_idx = baseline_df.index.intersection(comparison_df.index)
-    baseline_df = baseline_df.loc[common_idx]
-    comparison_df = comparison_df.loc[common_idx]
+    baseline_arr = baseline_df.loc[common_idx].values  # (n_days, n_realizations)
+    comparison_arr = comparison_df.loc[common_idx].values
 
     quantile_levels = np.linspace(0, 1, 101)
+    output_percentiles = np.array([0.01, 0.25, 0.50, 0.75, 0.99])
 
-    n_days = len(common_idx)
-    diff_1 = np.zeros(n_days)
-    diff_25 = np.zeros(n_days)
-    diff_50 = np.zeros(n_days)
-    diff_75 = np.zeros(n_days)
-    diff_99 = np.zeros(n_days)
+    # Compute quantiles for all days at once using nanquantile
+    # Shape: (101, n_days)
+    baseline_quantiles = np.nanquantile(baseline_arr, quantile_levels, axis=1)
+    comparison_quantiles = np.nanquantile(comparison_arr, quantile_levels, axis=1)
 
-    for i, day in enumerate(common_idx):
-        baseline_vals = baseline_df.loc[day].dropna().values
-        comparison_vals = comparison_df.loc[day].dropna().values
+    # Differences at each quantile level: shape (101, n_days)
+    differences = comparison_quantiles - baseline_quantiles
 
-        if len(baseline_vals) == 0 or len(comparison_vals) == 0:
-            diff_1[i] = np.nan
-            diff_25[i] = np.nan
-            diff_50[i] = np.nan
-            diff_75[i] = np.nan
-            diff_99[i] = np.nan
-            continue
-
-        baseline_quantiles = np.quantile(baseline_vals, quantile_levels)
-        comparison_quantiles = np.quantile(comparison_vals, quantile_levels)
-        differences = comparison_quantiles - baseline_quantiles
-
-        diff_1[i] = np.percentile(differences, 1)
-        diff_25[i] = np.percentile(differences, 25)
-        diff_50[i] = np.percentile(differences, 50)
-        diff_75[i] = np.percentile(differences, 75)
-        diff_99[i] = np.percentile(differences, 99)
+    # Compute output percentiles of the differences for each day
+    # Shape: (5, n_days)
+    diff_percentiles = np.percentile(differences, output_percentiles * 100, axis=0)
 
     return pd.DataFrame({
-        '1%': diff_1,
-        '25%': diff_25,
-        '50%': diff_50,
-        '75%': diff_75,
-        '99%': diff_99
+        '1%': diff_percentiles[0],
+        '25%': diff_percentiles[1],
+        '50%': diff_percentiles[2],
+        '75%': diff_percentiles[3],
+        '99%': diff_percentiles[4]
     }, index=common_idx)
 
 
@@ -495,7 +497,12 @@ def main_single(dataset_id):
 
     verify_dataset_id(dataset_id)
 
-    results_sets = ['contribution', 'major_flow', 'res_level', 'inflow']
+    # Only load what we need
+    results_sets = ['contribution', 'major_flow']
+    if FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR:
+        results_sets.append('res_level')
+    if SHOW_REPRESENTATIVE_YEAR:
+        results_sets.append('inflow')
 
     print("\nLoading data...")
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
@@ -591,7 +598,10 @@ def main_comparison(baseline_id, comparison_id):
     verify_dataset_id(baseline_id)
     verify_dataset_id(comparison_id)
 
-    results_sets = ['contribution', 'major_flow', 'res_level', 'inflow']
+    # Only load what we need
+    results_sets = ['contribution', 'major_flow']
+    if FILTER_BY_ZONES is not None:
+        results_sets.append('res_level')
 
     print("\nLoading baseline data...")
     baseline_fname = f'./pywrdrb/outputs/{baseline_id}_with_postprocessing.hdf5'
@@ -640,6 +650,30 @@ def main_comparison(baseline_id, comparison_id):
 # MULTI-PANEL COMPARISON MODE
 # ============================================================================
 
+def _load_and_process_dataset(args):
+    """Helper function to load and process a single dataset (for parallel execution)."""
+    dataset_id, label, zone_filter = args
+
+    # Only load what we need - res_level only needed for zone filtering
+    if zone_filter is not None:
+        results_sets = ['contribution', 'major_flow', 'res_level']
+    else:
+        results_sets = ['contribution', 'major_flow']
+
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    if not os.path.exists(fname):
+        raise FileNotFoundError(f"Data not found: {fname}")
+
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=results_sets)
+
+    contrib_df, n_total, n_filtered = calculate_daily_contribution_percentage(
+        data, dataset_id, zone_filter=zone_filter
+    )
+
+    return dataset_id, label, contrib_df, n_total, n_filtered
+
+
 def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     """
     Create a 3-panel comparison figure.
@@ -648,6 +682,8 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     - Left panel: Stationary ensemble (absolute distribution)
     - Right panels (stacked): Low, High climate scenarios (difference from stationary)
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     print("=" * 80)
     print("Creating Multi-Panel NYC Contribution Comparison")
     print("=" * 80)
@@ -658,23 +694,17 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         'climate_adjusted_high': 'High Climate'
     }
 
-    results_sets = ['contribution', 'major_flow', 'res_level', 'inflow']
-
-    # Load all datasets
+    # Load all datasets in parallel
+    print("\nLoading datasets in parallel...")
     all_contrib_dfs = {}
-    for dataset_id, label in datasets.items():
-        print(f"\nLoading {dataset_id} ({label})...")
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-        if not os.path.exists(fname):
-            raise FileNotFoundError(f"Data not found: {fname}")
 
-        data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=results_sets)
+    args_list = [(dataset_id, label, zone_filter) for dataset_id, label in datasets.items()]
 
-        contrib_df, n_total, n_filtered = calculate_daily_contribution_percentage(
-            data, dataset_id, zone_filter=zone_filter
-        )
-        print(f"  {n_filtered} / {n_total} year-realizations")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(_load_and_process_dataset, args_list))
+
+    for dataset_id, label, contrib_df, n_total, n_filtered in results:
+        print(f"  {dataset_id} ({label}): {n_filtered} / {n_total} year-realizations")
         all_contrib_dfs[dataset_id] = contrib_df
 
     # Calculate percentiles for stationary
