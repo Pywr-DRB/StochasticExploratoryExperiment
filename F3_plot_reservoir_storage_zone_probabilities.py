@@ -556,6 +556,7 @@ def plot_4panel_storage_comparison(period='weekly',
                 Y=Y,
                 cmap=cmap_abs,
                 norm=norm_abs,
+                origin=origin,
                 show_zone_lines=True,
                 ylabel='Total NYC storage (% of capacity)'
             )
@@ -570,6 +571,7 @@ def plot_4panel_storage_comparison(period='weekly',
                 Y=Y,
                 cmap=cmap_diff,
                 norm=norm_diff,
+                origin=origin,
                 show_zone_lines=True,
                 ylabel=''  # No ylabel for right panels
             )
