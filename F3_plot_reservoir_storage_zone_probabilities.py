@@ -436,15 +436,16 @@ def plot_4panel_storage_comparison(period='weekly',
                                     origin=None,
                                     figsize=(12, 6),
                                     prob_bins=None,
-                                    vmin_diff=-100,
-                                    vmax_diff=100,
+                                    diff_mode='ratio',
+                                    vmin_diff=None,
+                                    vmax_diff=None,
                                     fname=None):
     """
     Create a 3-panel comparison figure showing storage zone probabilities for selected scenarios.
 
     Layout:
     - Left panel: Stationary ensemble (absolute probability)
-    - Right panels (stacked): Low, High climate scenarios (% difference from stationary)
+    - Right panels (stacked): Low, High climate scenarios (difference from stationary)
 
     Parameters
     ----------
@@ -456,8 +457,18 @@ def plot_4panel_storage_comparison(period='weekly',
         Figure size in inches
     prob_bins : list or array, optional
         Probability bin edges (percent) for discrete colormap. If None, uses DEFAULT_PROB_BINS
-    vmin_diff, vmax_diff : float
-        Color scale limits for percentage difference (right panels)
+    diff_mode : str
+        Difference mode for right panels:
+        - 'ratio': Probability ratio = P_climate / P_stationary (default)
+          e.g., 2 = twice as likely, 0.5 = half as likely
+        - 'relative': Relative % change = (comp - ref) / ref * 100
+          e.g., 100 = doubled, -50 = halved
+        - 'absolute': Absolute probability difference in percentage points
+    vmin_diff, vmax_diff : float, optional
+        Color scale limits for difference (right panels). If None, uses mode-specific defaults:
+        - 'ratio': 0.25 to 4 (0.25x to 4x)
+        - 'relative': -100 to 100 (percent change)
+        - 'absolute': -50 to 50 (percentage points)
     fname : str
         Output filename (if None, will auto-generate)
     """
@@ -468,6 +479,18 @@ def plot_4panel_storage_comparison(period='weekly',
     # Use default bins if not specified
     if prob_bins is None:
         prob_bins = DEFAULT_PROB_BINS
+
+    # Set mode-specific default limits
+    if vmin_diff is None or vmax_diff is None:
+        if diff_mode == 'ratio':
+            vmin_diff = vmin_diff if vmin_diff is not None else 0.25
+            vmax_diff = vmax_diff if vmax_diff is not None else 4.0
+        elif diff_mode == 'relative':
+            vmin_diff = vmin_diff if vmin_diff is not None else -100
+            vmax_diff = vmax_diff if vmax_diff is not None else 100
+        else:  # absolute
+            vmin_diff = vmin_diff if vmin_diff is not None else -50
+            vmax_diff = vmax_diff if vmax_diff is not None else 50
 
     print(f"\n{'='*60}")
     print("Creating 3-Panel Storage Zone Comparison Figure")
@@ -499,9 +522,9 @@ def plot_4panel_storage_comparison(period='weekly',
     X = np.tile(x_edges, (y_edges_grid.shape[0], 1))  # (Z+1, P+1)
     Y = y_edges_grid  # (Z+1, P+1)
 
-    # Calculate percentage differences for climate scenarios
+    # Calculate differences for climate scenarios
     print(f"\n{'='*60}")
-    print("Calculating percentage differences from stationary...")
+    print(f"Calculating differences from stationary (mode: {diff_mode})...")
     print(f"{'='*60}")
 
     M_ref = all_prob_dfs['stationary_ensemble'].loc[periods_sorted].to_numpy().T  # (Z, P)
@@ -510,7 +533,15 @@ def plot_4panel_storage_comparison(period='weekly',
     diff_matrices = {}
     for dataset_id in ['climate_adjusted_low', 'climate_adjusted_high']:
         M_comp = all_prob_dfs[dataset_id].loc[periods_sorted].to_numpy().T  # (Z, P)
-        prob_diff = 100.0 * (M_comp - M_ref) / np.maximum(M_ref, eps)
+        if diff_mode == 'ratio':
+            # Ratio: P_climate / P_stationary (e.g., 2 = twice as likely)
+            prob_diff = M_comp / np.maximum(M_ref, eps)
+        elif diff_mode == 'relative':
+            # Relative % change: (P_climate - P_stationary) / P_stationary * 100
+            prob_diff = 100.0 * (M_comp - M_ref) / np.maximum(M_ref, eps)
+        else:
+            # Absolute difference in percentage points
+            prob_diff = M_comp - M_ref
         diff_matrices[dataset_id] = prob_diff
 
     print(f"\n{'='*60}")
@@ -525,19 +556,34 @@ def plot_4panel_storage_comparison(period='weekly',
 
     # Create axes
     ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans both rows
-    ax_low = fig.add_subplot(gs[0, 1])   # Top right
-    ax_high = fig.add_subplot(gs[1, 1])  # Bottom right
+    ax_high = fig.add_subplot(gs[1, 1])  # Bottom right (create first for sharex)
+    ax_low = fig.add_subplot(gs[0, 1], sharex=ax_high)   # Top right shares x with bottom
 
-    axes = [ax_stat, ax_low, ax_high]
+    # Hide x-tick labels on top right panel (shared axis)
+    plt.setp(ax_low.get_xticklabels(), visible=False)
+
+    # Order: stationary -> ax_stat, climate_adjusted_low -> ax_high (bottom), climate_adjusted_high -> ax_low (top)
+    axes = [ax_stat, ax_high, ax_low]
     dataset_list = list(datasets.keys())
 
     # Set up colormaps and norms
     # Left panel: absolute probability (discrete colormap)
     cmap_abs, norm_abs = create_discrete_colormap(prob_bins, base_cmap='magma_r')
 
-    # Right panels: percentage difference (diverging colormap - continuous)
+    # Right panels: difference (diverging colormap)
     cmap_diff = 'BrBG'
-    norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
+    if diff_mode == 'ratio':
+        # Ratio mode: linear diverging scale centered at 1 (no change)
+        # e.g., vmin=0.25, vmax=4 means 0.25x to 4x
+        norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=1.0, vmax=vmax_diff)
+    elif diff_mode == 'relative':
+        # Relative % change: linear diverging scale centered at 0
+        norm_diff = TwoSlopeNorm(vmin=vmin_diff, vcenter=0, vmax=vmax_diff)
+    else:
+        # For absolute mode, use symmetric log scale to show both positive and negative
+        # values while emphasizing small differences
+        norm_diff = colors.SymLogNorm(linthresh=0.1, linscale=0.5,
+                                       vmin=vmin_diff, vmax=vmax_diff, base=10)
 
     # Storage for pcolormeshes
     pm_abs = None
@@ -592,16 +638,27 @@ def plot_4panel_storage_comparison(period='weekly',
     cbar_abs.set_label('Probability (%)', fontsize=11, fontweight='bold')
     cbar_abs.ax.tick_params(labelsize=9)
 
-    # Right colorbar for percentage difference - centered under right panels
+    # Right colorbar for difference - centered under right panels
     right_center = pos_right.x0 + pos_right.width / 2
     cbar_diff_ax = fig.add_axes([right_center - cbar_width/2, cbar_y, cbar_width, cbar_height])
     cbar_diff = fig.colorbar(pm_diff, cax=cbar_diff_ax, orientation='horizontal', extend='both')
-    cbar_diff.set_label('Δ Probability (%)', fontsize=11, fontweight='bold')
+    if diff_mode == 'ratio':
+        cbar_diff.set_label('Probability Ratio (Climate / Stationary)', fontsize=11, fontweight='bold')
+        # Set explicit tick locations for ratio scale
+        ratio_ticks = [vmin_diff, 0.5, 1.0, 2.0, vmax_diff]
+        # Filter ticks to be within range
+        ratio_ticks = [t for t in ratio_ticks if vmin_diff <= t <= vmax_diff]
+        cbar_diff.set_ticks(ratio_ticks)
+        cbar_diff.set_ticklabels([f'{t:g}' for t in ratio_ticks])
+    elif diff_mode == 'relative':
+        cbar_diff.set_label('% Change in Probability', fontsize=11, fontweight='bold')
+    else:
+        cbar_diff.set_label('Δ Probability (pp)', fontsize=11, fontweight='bold')
     cbar_diff.ax.tick_params(labelsize=9)
 
     # Save figure
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/comparison_3panel_storage_zone_probabilities_{period}.png"
+        fname = f"{FIG_OUTPUT_DIR}/comparison_3panel_storage_zone_probabilities_{period}_{diff_mode}.png"
 
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     # Also save vector version
@@ -717,7 +774,7 @@ def main():
         print("=" * 60)
         print("PLOTTING 3-PANEL STORAGE ZONE COMPARISON")
         print("=" * 60)
-        plot_4panel_storage_comparison(period=period)
+        plot_4panel_storage_comparison(period=period, diff_mode='relative')
         print("=" * 60)
         print("3-panel comparison figure completed successfully!")
         return
