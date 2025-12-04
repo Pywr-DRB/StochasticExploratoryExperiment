@@ -693,8 +693,6 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     - Left panel: Stationary ensemble (absolute distribution)
     - Right panels (stacked): Low, High climate scenarios (difference from stationary)
     """
-    from concurrent.futures import ThreadPoolExecutor
-
     print("=" * 80)
     print("Creating Multi-Panel NYC Contribution Comparison")
     print("=" * 80)
@@ -708,16 +706,13 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         'climate_adjusted_high': 'High Climate'
     }
 
-    # Load all datasets in parallel
-    print("\nLoading datasets in parallel...")
+    # Load datasets sequentially (HDF5 is not thread-safe)
+    print("\nLoading datasets...")
     all_contrib_dfs = {}
 
-    args_list = [(dataset_id, label, zone_filter) for dataset_id, label in datasets.items()]
-
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = list(executor.map(_load_and_process_dataset, args_list))
-
-    for dataset_id, label, contrib_df, n_total, n_filtered in results:
+    for dataset_id, label in datasets.items():
+        args = (dataset_id, label, zone_filter)
+        dataset_id, label, contrib_df, n_total, n_filtered = _load_and_process_dataset(args)
         print(f"  {dataset_id} ({label}): {n_filtered} / {n_total} year-realizations")
         all_contrib_dfs[dataset_id] = contrib_df
 
