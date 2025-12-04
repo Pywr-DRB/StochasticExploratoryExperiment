@@ -14,6 +14,7 @@ Features:
 - Optional filtering by NYC storage drought zone classification
 - Optional representative year trace overlay
 - Clean, publication-quality styling
+- OPTIMIZED: Column-specific loading and optional weekly resampling for faster runtime
 
 Difference Calculation:
 - For each day of year, creates a matrix of quantiles (101 values from 0-100%)
@@ -52,7 +53,6 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from methods.config import *
 from methods.plotting.styles import DPI_HIGH
 
@@ -66,10 +66,11 @@ NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
 # Minimum inflow threshold for filtering (MG) - same as SI6
 MIN_INFLOW_THRESHOLD = 1000
 
-# Minimum number of days required for a water year to be considered complete
-# A full water year has 365-366 days; this threshold filters out partial years
+# Minimum number of time periods required for a water year to be considered complete
+# A full water year has 365-366 days (or ~52 weeks); this threshold filters out partial years
 # at the beginning/end of the simulation period
-MIN_DAYS_FOR_COMPLETE_WATER_YEAR = 360
+MIN_DAYS_FOR_COMPLETE_WATER_YEAR = 360  # For daily data
+MIN_WEEKS_FOR_COMPLETE_WATER_YEAR = 50  # For weekly data (~52 weeks per year)
 
 # ============================================================================
 # CONFIGURATION
@@ -89,6 +90,10 @@ SHOW_REPRESENTATIVE_YEAR = True
 # Y-axis scaling
 Y_SCALE_FIXED = True  # True for 0-100%, False for auto-scale
 
+# Performance optimization: Use weekly resampling instead of daily
+# Set to True to resample to weekly data before processing (faster but less granular)
+USE_WEEKLY_RESAMPLING = False  # Default: daily data for full resolution
+
 # Drought zone mapping (from SI6)
 ZONE_NAMES = {
     6: 'Drought Emergency',
@@ -98,6 +103,171 @@ ZONE_NAMES = {
     2: 'Flood Watch',
     1: 'Flood Warning',
 }
+
+
+# ============================================================================
+# OPTIMIZED DATA LOADING
+# ============================================================================
+
+def load_optimized_data(hdf5_file, dataset_id, results_sets, columns_map=None):
+    """
+    Load only the required columns from HDF5 file for faster I/O and lower memory.
+
+    Parameters
+    ----------
+    hdf5_file : str
+        Path to the HDF5 file
+    dataset_id : str
+        Dataset identifier (e.g., 'stationary_ensemble')
+    results_sets : list
+        List of result sets to load (e.g., ['contribution', 'major_flow'])
+    columns_map : dict, optional
+        Dict mapping results_set -> list of columns to load.
+        If None or missing for a results_set, loads all columns.
+        Example: {'major_flow': ['delMontague'], 'res_level': ['nyc']}
+
+    Returns
+    -------
+    dict
+        Dictionary with structure: {results_set: {realization_id: DataFrame}}
+    """
+    if columns_map is None:
+        columns_map = {}
+
+    data = {}
+
+    with pd.HDFStore(hdf5_file, 'r') as store:
+        # Get all keys in the file
+        all_keys = store.keys()
+
+        for results_set in results_sets:
+            data[results_set] = {}
+
+            # Find keys matching this results_set and dataset_id
+            prefix = f"/{results_set}/{dataset_id}/"
+            matching_keys = [k for k in all_keys if k.startswith(prefix)]
+
+            cols_to_load = columns_map.get(results_set, None)
+
+            for key in matching_keys:
+                # Extract realization ID from key
+                real_id = key.split('/')[-1]
+                try:
+                    real_id = int(real_id)
+                except ValueError:
+                    pass
+
+                # Load DataFrame and filter columns afterwards
+                # (HDF5 Fixed format doesn't support column selection during read)
+                df = store[key]
+                if cols_to_load is not None:
+                    available_cols = [c for c in cols_to_load if c in df.columns]
+                    df = df[available_cols]
+
+                data[results_set][real_id] = df
+
+    return data
+
+
+def resample_to_weekly(data_dict):
+    """
+    Resample all DataFrames in a data dictionary from daily to weekly.
+
+    Uses sum for flow-type variables, mean for level/zone variables.
+
+    Parameters
+    ----------
+    data_dict : dict
+        Dictionary with structure: {results_set: {realization_id: DataFrame}}
+
+    Returns
+    -------
+    dict
+        Same structure with weekly-resampled DataFrames
+    """
+    # Determine aggregation method based on results_set
+    sum_sets = {'contribution', 'major_flow', 'inflow'}  # Flow volumes - sum
+    mean_sets = {'res_level', 'res_storage'}  # Levels/storage - mean
+    max_sets = set()  # Zone classifications - max (if needed)
+
+    resampled = {}
+    for results_set, realizations in data_dict.items():
+        resampled[results_set] = {}
+
+        if results_set in sum_sets:
+            agg_func = 'sum'
+        elif results_set in mean_sets:
+            agg_func = 'mean'
+        elif results_set in max_sets:
+            agg_func = 'max'
+        else:
+            agg_func = 'mean'  # Default
+
+        for real_id, df in realizations.items():
+            # Resample to weekly frequency (Week starting Sunday)
+            resampled[results_set][real_id] = df.resample('W').agg(agg_func)
+
+    return resampled
+
+
+class OptimizedDataContainer:
+    """
+    Simple container to hold optimized data in the same structure expected by
+    the existing calculation functions.
+
+    Attributes are accessed as: container.contribution[dataset_id][real_id]
+    """
+    def __init__(self):
+        self.contribution = {}
+        self.major_flow = {}
+        self.res_level = {}
+        self.inflow = {}
+
+    def load_for_contribution_analysis(self, hdf5_file, dataset_id,
+                                        need_res_level=False, need_inflow=False,
+                                        use_weekly=False):
+        """
+        Load only the data needed for NYC contribution analysis.
+
+        Parameters
+        ----------
+        hdf5_file : str
+            Path to HDF5 file
+        dataset_id : str
+            Dataset identifier
+        need_res_level : bool
+            Whether to load res_level data (for zone filtering)
+        need_inflow : bool
+            Whether to load inflow data (for representative year finding)
+        use_weekly : bool
+            Whether to resample to weekly data
+        """
+        results_sets = ['contribution', 'major_flow']
+        columns_map = {
+            'contribution': ['mrf_montagueTrenton_nyc'],
+            'major_flow': ['delMontague'],
+        }
+
+        if need_res_level:
+            results_sets.append('res_level')
+            columns_map['res_level'] = ['nyc']
+
+        if need_inflow:
+            results_sets.append('inflow')
+            columns_map['inflow'] = NYC_RESERVOIRS  # ['cannonsville', 'pepacton', 'neversink']
+
+        data = load_optimized_data(hdf5_file, dataset_id, results_sets, columns_map)
+
+        if use_weekly:
+            data = resample_to_weekly(data)
+
+        # Store in expected structure
+        self.contribution[dataset_id] = data.get('contribution', {})
+        self.major_flow[dataset_id] = data.get('major_flow', {})
+        if need_res_level:
+            self.res_level[dataset_id] = data.get('res_level', {})
+        if need_inflow:
+            self.inflow[dataset_id] = data.get('inflow', {})
 
 
 def get_water_year(date):
@@ -155,15 +325,17 @@ def get_zone_filter_label(zone_list):
 
 def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     """
-    Calculate NYC contribution as percentage of Montague flow for each day.
+    Calculate NYC contribution as percentage of Montague flow for each time period.
 
     Uses water years (June 1 - May 31) for analysis and day-of-water-year indexing.
     Optimized for performance with vectorized operations.
+    Supports both daily and weekly resampled data.
 
     Returns
     -------
     all_years_data : pd.DataFrame
-        DataFrame with day_of_water_year as index (1-366) and each column as a year-realization
+        DataFrame with day_of_water_year as index (1-366 for daily, 1-52 for weekly)
+        and each column as a year-realization
     n_years_total : int
         Total number of water years before filtering
     n_years_filtered : int
@@ -175,6 +347,13 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     n_years_total = 0
     n_years_filtered = 0
 
+    # Determine minimum periods threshold based on data frequency
+    # Check the first realization to determine frequency
+    first_real_id = realization_ids[0]
+    sample_df = data.contribution[dataset_id][first_real_id]
+    is_weekly = len(sample_df) < 10000  # Weekly data has ~3600 rows vs ~25000 for daily
+    min_periods = MIN_WEEKS_FOR_COMPLETE_WATER_YEAR if is_weekly else MIN_DAYS_FOR_COMPLETE_WATER_YEAR
+
     for real_id in realization_ids:
         contribution_df = data.contribution[dataset_id][real_id]
         nyc_contribution = contribution_df['mrf_montagueTrenton_nyc']
@@ -182,6 +361,7 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
         major_flow_df = data.major_flow[dataset_id][real_id]
         montague_flow = major_flow_df['delMontague']
 
+        # For weekly data with sum aggregation, calculate percentage from totals
         contrib_pct = np.where(montague_flow > 0,
                                100.0 * nyc_contribution / montague_flow,
                                np.nan)
@@ -192,12 +372,16 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
         years = dates.year.values
         water_years_arr = np.where(months >= 6, years, years - 1)
 
-        # Compute day-of-water-year vectorized using numpy
+        # Compute day-of-water-year (or week-of-water-year) vectorized using numpy
         # June 1 of water year is day 1
         june1_dates = pd.DatetimeIndex(
             pd.to_datetime({'year': water_years_arr, 'month': 6, 'day': 1})
         )
         doy_arr = (dates - june1_dates).days.values + 1
+
+        # For weekly data, convert to week-of-water-year
+        if is_weekly:
+            doy_arr = (doy_arr - 1) // 7 + 1  # Convert days to weeks (1-52)
 
         # Build DataFrame for vectorized groupby
         df_temp = pd.DataFrame({
@@ -215,7 +399,7 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
 
         # Group by water year
         for wy, group in df_temp.groupby('water_year'):
-            if len(group) < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
+            if len(group) < min_periods:
                 continue
 
             n_years_total += 1
@@ -340,16 +524,24 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
 # ============================================================================
 
 # Month boundaries for x-axis formatting (water year: June 1 - May 31)
+# Daily data: days 1-366
 MONTH_STARTS_WY = [1, 31, 62, 93, 123, 154, 184, 215, 246, 274, 305, 335]
 MONTH_LABELS_WY = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
                    'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
+# Weekly data: weeks 1-52
+MONTH_STARTS_WY_WEEKLY = [1, 5, 9, 14, 18, 22, 27, 31, 36, 40, 44, 48]
 
 
-def _format_xaxis(ax):
+def _format_xaxis(ax, is_weekly=False):
     """Format x-axis with month labels for water year (June-May)."""
-    ax.set_xticks(MONTH_STARTS_WY)
-    ax.set_xticklabels(MONTH_LABELS_WY, fontsize=10)
-    ax.set_xlim(1, 366)
+    if is_weekly:
+        ax.set_xticks(MONTH_STARTS_WY_WEEKLY)
+        ax.set_xticklabels(MONTH_LABELS_WY, fontsize=10)
+        ax.set_xlim(1, 52)
+    else:
+        ax.set_xticks(MONTH_STARTS_WY)
+        ax.set_xticklabels(MONTH_LABELS_WY, fontsize=10)
+        ax.set_xlim(1, 366)
 
 
 def _calculate_percentiles(df):
@@ -450,11 +642,14 @@ def plot_single_dataset(contrib_df, dataset_id, representative_year=None,
 
     percentiles = _calculate_percentiles(contrib_df)
 
+    # Detect if using weekly data based on index range
+    is_weekly = contrib_df.index.max() <= 52
+
     _, ax = plt.subplots(1, 1, figsize=(12, 5))
 
     _plot_contribution_bands(ax, percentiles, representative_year=representative_year)
 
-    _format_xaxis(ax)
+    _format_xaxis(ax, is_weekly=is_weekly)
     ax.set_xlabel('Month', fontsize=12, fontweight='bold')
     ax.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12, fontweight='bold')
 
@@ -494,23 +689,25 @@ def main_single(dataset_id):
     print("\nConfiguration:")
     print(f"  Zone Filter: {get_zone_filter_label(FILTER_BY_ZONES)}")
     print(f"  Show Representative Year: {SHOW_REPRESENTATIVE_YEAR}")
+    print(f"  Weekly Resampling: {USE_WEEKLY_RESAMPLING}")
 
     verify_dataset_id(dataset_id)
 
-    # Only load what we need
-    results_sets = ['contribution', 'major_flow']
-    if FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR:
-        results_sets.append('res_level')
-    if SHOW_REPRESENTATIVE_YEAR:
-        results_sets.append('inflow')
-
-    print("\nLoading data...")
+    # Use optimized loading
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
 
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=results_sets)
+    print("\nLoading data (optimized)...")
+    data = OptimizedDataContainer()
+    need_res_level = FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR
+    need_inflow = SHOW_REPRESENTATIVE_YEAR
+    data.load_for_contribution_analysis(
+        fname, dataset_id,
+        need_res_level=need_res_level,
+        need_inflow=need_inflow,
+        use_weekly=USE_WEEKLY_RESAMPLING
+    )
     print(f"  Data loaded: {dataset_id}")
 
     print("\nCalculating contribution percentages...")
@@ -556,12 +753,15 @@ def plot_comparison(baseline_contrib, comparison_contrib,
     print("  Computing pairwise quantile differences...")
     contrib_diff = _calculate_pairwise_difference_percentiles(baseline_contrib, comparison_contrib)
 
+    # Detect if using weekly data based on index range
+    is_weekly = baseline_contrib.index.max() <= 52
+
     _, ax = plt.subplots(1, 1, figsize=(12, 5))
 
     _plot_difference_bands(ax, contrib_diff, color='steelblue', label_prefix='')
 
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
-    _format_xaxis(ax)
+    _format_xaxis(ax, is_weekly=is_weekly)
     ax.set_xlabel('Month', fontsize=12, fontweight='bold')
     ax.set_ylabel('Contribution Change (% points)', fontsize=12, fontweight='bold')
     ax.grid(axis='y', alpha=0.3, linestyle='--')
@@ -594,31 +794,39 @@ def main_comparison(baseline_id, comparison_id):
 
     print("\nConfiguration:")
     print(f"  Zone Filter: {get_zone_filter_label(FILTER_BY_ZONES)}")
+    print(f"  Weekly Resampling: {USE_WEEKLY_RESAMPLING}")
 
     verify_dataset_id(baseline_id)
     verify_dataset_id(comparison_id)
 
-    # Only load what we need
-    results_sets = ['contribution', 'major_flow']
-    if FILTER_BY_ZONES is not None:
-        results_sets.append('res_level')
+    need_res_level = FILTER_BY_ZONES is not None
 
-    print("\nLoading baseline data...")
+    print("\nLoading baseline data (optimized)...")
     baseline_fname = f'./pywrdrb/outputs/{baseline_id}_with_postprocessing.hdf5'
     if not os.path.exists(baseline_fname):
         raise FileNotFoundError(f"Baseline data not found: {baseline_fname}")
 
-    baseline_data = pywrdrb.Data()
-    baseline_data.load_from_export(baseline_fname, results_sets=results_sets)
+    baseline_data = OptimizedDataContainer()
+    baseline_data.load_for_contribution_analysis(
+        baseline_fname, baseline_id,
+        need_res_level=need_res_level,
+        need_inflow=False,
+        use_weekly=USE_WEEKLY_RESAMPLING
+    )
     print(f"  Baseline loaded: {baseline_id}")
 
-    print("\nLoading comparison data...")
+    print("\nLoading comparison data (optimized)...")
     comparison_fname = f'./pywrdrb/outputs/{comparison_id}_with_postprocessing.hdf5'
     if not os.path.exists(comparison_fname):
         raise FileNotFoundError(f"Comparison data not found: {comparison_fname}")
 
-    comparison_data = pywrdrb.Data()
-    comparison_data.load_from_export(comparison_fname, results_sets=results_sets)
+    comparison_data = OptimizedDataContainer()
+    comparison_data.load_for_contribution_analysis(
+        comparison_fname, comparison_id,
+        need_res_level=need_res_level,
+        need_inflow=False,
+        use_weekly=USE_WEEKLY_RESAMPLING
+    )
     print(f"  Comparison loaded: {comparison_id}")
 
     print("\nCalculating contribution percentages...")
@@ -652,20 +860,20 @@ def main_comparison(baseline_id, comparison_id):
 
 def _load_and_process_dataset(args):
     """Helper function to load and process a single dataset (for parallel execution)."""
-    dataset_id, label, zone_filter = args
-
-    # Only load what we need - res_level only needed for zone filtering
-    if zone_filter is not None:
-        results_sets = ['contribution', 'major_flow', 'res_level']
-    else:
-        results_sets = ['contribution', 'major_flow']
+    dataset_id, label, zone_filter, use_weekly = args
 
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
 
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=results_sets)
+    # Use optimized loading
+    data = OptimizedDataContainer()
+    data.load_for_contribution_analysis(
+        fname, dataset_id,
+        need_res_level=(zone_filter is not None),
+        need_inflow=False,
+        use_weekly=use_weekly
+    )
 
     contrib_df, n_total, n_filtered = calculate_daily_contribution_percentage(
         data, dataset_id, zone_filter=zone_filter
@@ -688,17 +896,21 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     print("Creating Multi-Panel NYC Contribution Comparison")
     print("=" * 80)
 
+    print("\nConfiguration:")
+    print(f"  Zone Filter: {get_zone_filter_label(zone_filter)}")
+    print(f"  Weekly Resampling: {USE_WEEKLY_RESAMPLING}")
+
     datasets = {
         'stationary_ensemble': 'Stationary',
         'climate_adjusted_low': 'Low Climate',
         'climate_adjusted_high': 'High Climate'
     }
 
-    # Load all datasets in parallel
-    print("\nLoading datasets in parallel...")
+    # Load all datasets in parallel (using optimized loading)
+    print("\nLoading datasets in parallel (optimized)...")
     all_contrib_dfs = {}
 
-    args_list = [(dataset_id, label, zone_filter) for dataset_id, label in datasets.items()]
+    args_list = [(dataset_id, label, zone_filter, USE_WEEKLY_RESAMPLING) for dataset_id, label in datasets.items()]
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         results = list(executor.map(_load_and_process_dataset, args_list))
@@ -722,6 +934,9 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         all_contrib_dfs['climate_adjusted_high']
     )
 
+    # Detect if using weekly data based on index range
+    is_weekly = all_contrib_dfs['stationary_ensemble'].index.max() <= 52
+
     # Create figure with GridSpec
     print("\nCreating multi-panel figure...")
     fig = plt.figure(figsize=figsize)
@@ -739,7 +954,7 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
 
     # Left panel: Stationary distribution
     _plot_contribution_bands(ax_stat, stationary_percentiles, color='steelblue')
-    _format_xaxis(ax_stat)
+    _format_xaxis(ax_stat, is_weekly=is_weekly)
     ax_stat.set_xlabel('Month', fontsize=12, fontweight='bold')
     ax_stat.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12, fontweight='bold')
     if Y_SCALE_FIXED:
@@ -761,7 +976,7 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     # Bottom right panel: Low climate difference
     _plot_difference_bands(ax_low, diff_low, color='darkorange', label_prefix='')
     ax_low.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
-    _format_xaxis(ax_low)
+    _format_xaxis(ax_low, is_weekly=is_weekly)
     ax_low.set_xlabel('Month', fontsize=12, fontweight='bold')
     ax_low.set_ylabel('Δ Contribution\n(% points)', fontsize=10, fontweight='bold')
     ax_low.grid(axis='y', alpha=0.3, linestyle='--')
