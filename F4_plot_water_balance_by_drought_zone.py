@@ -34,9 +34,11 @@ Example:
 
 import sys
 import os
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -101,6 +103,37 @@ DROUGHT_CATEGORIES = {
     'warning': {'zones': [4], 'label': 'Drought Warning', 'color': '#FFA500'},
     'other': {'zones': [1, 2, 3], 'label': 'Normal or Above', 'color': '#4682B4'},
 }
+
+# Scenario labels for multipanel figure
+SCENARIO_LABELS = {
+    'climate_adjusted_high': 'Wetter all year',
+    'climate_adjusted_low': 'Wetter winter, drier summer',
+    'stationary_ensemble': 'Stationary'
+}
+
+
+def compute_kde_on_grid(data, x_grid, bw_method='scott'):
+    """
+    Compute KDE values on a specified x-grid.
+
+    Parameters
+    ----------
+    data : array-like
+        Input data for KDE estimation
+    x_grid : array-like
+        X values at which to evaluate the KDE
+    bw_method : str, optional
+        Bandwidth estimation method (default: 'scott')
+
+    Returns
+    -------
+    kde_values : np.ndarray
+        KDE density values evaluated at x_grid points
+    """
+    if len(data) < 2:
+        return np.zeros_like(x_grid)
+    kde = gaussian_kde(data, bw_method=bw_method)
+    return kde(x_grid)
 
 
 def classify_years_by_min_zone(res_level_df):
@@ -1403,6 +1436,307 @@ def plot_representative_drought_timeseries(data, dataset_id, representative_year
         )
 
 
+def load_scenario_data(dataset_id):
+    """
+    Load and process data for a single scenario.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    categorized_data : dict
+        Dictionary mapping category name -> DataFrame subset with contribution ratios
+    """
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Postprocessed data not found: {fname}\n"
+            "Run 04_postprocess_data.py first!"
+        )
+
+    print(f"  Loading {dataset_id} from: {fname}")
+    data = pywrdrb.Data()
+    data.load_from_export(
+        fname,
+        results_sets=['res_level', 'inflow', 'contribution']
+    )
+
+    # Aggregate across realizations
+    all_aggregates = aggregate_across_realizations(data, dataset_id)
+
+    # Categorize by drought zone
+    categorized_data = categorize_by_drought_zone(all_aggregates)
+
+    return categorized_data
+
+
+def load_all_scenario_data():
+    """
+    Load data for all scenarios needed for multipanel comparison.
+
+    Returns
+    -------
+    all_scenario_data : dict
+        Dictionary mapping dataset_id -> categorized_data
+    """
+    scenarios = ['stationary_ensemble', 'climate_adjusted_high', 'climate_adjusted_low']
+
+    all_scenario_data = {}
+
+    for dataset_id in scenarios:
+        print(f"\nLoading scenario: {dataset_id}")
+        verify_dataset_id(dataset_id)
+        all_scenario_data[dataset_id] = load_scenario_data(dataset_id)
+
+    return all_scenario_data
+
+
+def plot_multipanel_contribution_ratio_comparison():
+    """
+    Create 3-panel figure comparing contribution ratio distributions across scenarios.
+
+    Left panel: KDE distributions for stationary ensemble with 1964 reconstruction
+    Upper-right panel: KDE difference curves for 'Wetter all year' (high) scenario
+    Lower-right panel: KDE difference curves for 'Wetter winter, drier summer' (low) scenario
+    """
+    print("=" * 80)
+    print("MULTIPANEL CONTRIBUTION RATIO COMPARISON")
+    print("=" * 80)
+
+    # Print configuration
+    print("\nConfiguration:")
+    print(f"  Aggregation method: {AGGREGATION_METHOD}")
+    if AGGREGATION_METHOD == 'since_june1':
+        print(f"    -> Aggregating from June 1 to minimum zone date")
+    else:
+        print(f"    -> Aggregating {N_MONTHS_PRIOR} months prior to minimum zone date")
+
+    # Load all scenario data
+    print("\nLoading data for all scenarios...")
+    all_scenario_data = load_all_scenario_data()
+
+    # Prepare categories
+    if DROP_NORMAL:
+        categories = ['emergency', 'watch', 'warning']
+    else:
+        categories = ['emergency', 'watch', 'warning', 'other']
+
+    # First pass: compute contribution ratios and determine x-axis limits
+    print("\nComputing contribution ratios...")
+    scenario_ratios = {}  # {dataset_id: {category: Series of ratios}}
+    all_ratios = []
+
+    for dataset_id, categorized_data in all_scenario_data.items():
+        scenario_ratios[dataset_id] = {}
+
+        for cat in categories:
+            df = categorized_data[cat].copy()
+            if len(df) > 0:
+                df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
+                if len(df_filtered) > 0:
+                    ratios = 100.0 * df_filtered['contribution_total'] / df_filtered['inflow_total']
+                    scenario_ratios[dataset_id][cat] = ratios
+                    all_ratios.extend(ratios.values)
+
+    # Determine x-axis limits
+    if XLIM_MAX_MANUAL is not None:
+        xlim_max = XLIM_MAX_MANUAL
+    else:
+        if len(all_ratios) > 0:
+            xlim_max = np.quantile(all_ratios, XLIM_QUANTILE)
+        else:
+            xlim_max = 100
+
+    # Common x-grid for KDE evaluation
+    x_grid = np.linspace(0, xlim_max, 500)
+
+    # Get reconstruction ratio for left panel
+    reconstruction_ratio = None
+    if INCLUDE_RECONSTRUCTION:
+        print("\nCalculating reconstruction contribution ratio...")
+        reconstruction_ratio = calculate_reconstruction_contribution_ratio()
+
+    # Adjust xlim if reconstruction exceeds it
+    if reconstruction_ratio is not None and reconstruction_ratio > xlim_max:
+        xlim_max = reconstruction_ratio * 1.1
+        x_grid = np.linspace(0, xlim_max, 500)
+
+    # Set up 3-panel figure with GridSpec
+    print("\nCreating multipanel figure...")
+    fig = plt.figure(figsize=(14, 10))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1],
+                          hspace=0.15, wspace=0.25,
+                          left=0.08, right=0.95, top=0.92, bottom=0.12)
+
+    ax_stat = fig.add_subplot(gs[:, 0])      # Left panel spans both rows
+    ax_high = fig.add_subplot(gs[0, 1])      # Upper-right (Wetter all year)
+    ax_low = fig.add_subplot(gs[1, 1], sharex=ax_high)   # Lower-right
+
+    # Hide x-tick labels on upper-right panel
+    plt.setp(ax_high.get_xticklabels(), visible=False)
+
+    # =========================================================================
+    # LEFT PANEL: Stationary ensemble KDEs
+    # =========================================================================
+    print("  Plotting left panel (stationary ensemble)...")
+    ax = ax_stat
+    stat_data = scenario_ratios['stationary_ensemble']
+
+    for cat in categories:
+        if cat not in stat_data:
+            continue
+
+        cat_info = DROUGHT_CATEGORIES[cat]
+        ratios = stat_data[cat]
+        n = len(ratios)
+
+        # Create label with sample size
+        if cat == 'other':
+            label = f"Normal or Above (n={n})"
+        else:
+            label = f"{cat_info['label']} (n={n})"
+
+        # Plot KDE
+        ratios.plot.kde(
+            ax=ax,
+            color=cat_info['color'],
+            linewidth=2.5,
+            alpha=0.8,
+            label=label
+        )
+
+        # Plot mean value line
+        mean_val = ratios.mean()
+        ax.axvline(mean_val, color=cat_info['color'], linestyle='--',
+                  linewidth=1.5, alpha=0.7)
+
+    # Add legend entry for mean lines
+    ax.axvline(np.nan, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, label='Mean')
+
+    # Add 1964 reconstruction line
+    if reconstruction_ratio is not None:
+        ax.axvline(reconstruction_ratio, color='black', linestyle='-',
+                  linewidth=2.5, alpha=0.9, label='1964 Drought')
+
+    # Left panel formatting
+    if AGGREGATION_METHOD == 'since_june1':
+        xlabel = 'NYC Contributions / Total Inflow (%)'
+    else:
+        xlabel = f'NYC Contributions / Total Inflow (%)'
+
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel('Density', fontsize=11)
+    ax.set_title('Stationary Ensemble', fontsize=12, fontweight='bold')
+    ax.set_xlim(left=0, right=xlim_max)
+    ax.set_ylim(bottom=0)
+    ax.set_axisbelow(True)
+    ax.grid(axis='both', alpha=0.3, linestyle='--')
+
+    # Legend for left panel
+    handles, labels = ax.get_legend_handles_labels()
+    # Reorder: Normal, Warning, Watch, Emergency, Mean, 1964
+    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency', 'Mean', '1964']
+    ordered_handles = []
+    ordered_labels = []
+    for keyword in desired_order:
+        for idx, lbl in enumerate(labels):
+            if keyword in lbl and handles[idx] not in ordered_handles:
+                ordered_handles.append(handles[idx])
+                ordered_labels.append(labels[idx])
+                break
+    ax.legend(ordered_handles, ordered_labels, loc='upper right', fontsize=9, frameon=True)
+
+    # =========================================================================
+    # RIGHT PANELS: KDE differences for climate scenarios
+    # =========================================================================
+    climate_scenarios = [
+        ('climate_adjusted_high', ax_high, 'Wetter all year'),
+        ('climate_adjusted_low', ax_low, 'Wetter winter, drier summer')
+    ]
+
+    for dataset_id, ax, title in climate_scenarios:
+        print(f"  Plotting {title} panel...")
+
+        climate_data = scenario_ratios[dataset_id]
+
+        for cat in categories:
+            if cat not in stat_data or cat not in climate_data:
+                continue
+
+            cat_info = DROUGHT_CATEGORIES[cat]
+            stat_ratios = stat_data[cat].values
+            clim_ratios = climate_data[cat].values
+
+            # Compute KDEs on common grid
+            kde_stat = compute_kde_on_grid(stat_ratios, x_grid)
+            kde_clim = compute_kde_on_grid(clim_ratios, x_grid)
+
+            # Plot KDE difference
+            kde_diff = kde_clim - kde_stat
+            ax.plot(x_grid, kde_diff, color=cat_info['color'], linewidth=2.5,
+                   alpha=0.8, label=cat_info['label'])
+
+            # Plot mean shift as vertical line
+            stat_mean = np.mean(stat_ratios)
+            clim_mean = np.mean(clim_ratios)
+            ax.axvline(clim_mean, color=cat_info['color'], linestyle='--',
+                      linewidth=1.5, alpha=0.7)
+
+        # Add horizontal reference line at y=0
+        ax.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+        # Formatting
+        ax.set_title(title, fontsize=12, fontweight='bold')
+        ax.set_xlim(left=0, right=xlim_max)
+        ax.set_axisbelow(True)
+        ax.grid(axis='both', alpha=0.3, linestyle='--')
+
+    # Y-axis labels for right panels
+    ax_high.set_ylabel('Density Difference', fontsize=11)
+    ax_low.set_ylabel('Density Difference', fontsize=11)
+    ax_low.set_xlabel(xlabel, fontsize=11)
+
+    # Shared legend for right panels at bottom
+    handles, labels = ax_low.get_legend_handles_labels()
+    # Reorder legend
+    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency']
+    ordered_handles = []
+    ordered_labels = []
+    for keyword in desired_order:
+        for idx, lbl in enumerate(labels):
+            if keyword in lbl and handles[idx] not in ordered_handles:
+                ordered_handles.append(handles[idx])
+                ordered_labels.append(labels[idx])
+                break
+
+    # Add note about dashed lines
+    ordered_handles.append(plt.Line2D([0], [0], color='gray', linestyle='--', linewidth=1.5))
+    ordered_labels.append('Climate scenario mean')
+
+    fig.legend(ordered_handles, ordered_labels, loc='lower center',
+               bbox_to_anchor=(0.725, 0.02), ncol=3, fontsize=9, frameon=True)
+
+    # Save figure
+    fname = f"{FIG_DIR_DROUGHT_ZONE}/multipanel_contribution_ratio_comparison_{N_MONTHS_PRIOR}M.png"
+    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    print(f"\n  Saved: {fname}")
+
+    # Also save SVG
+    base = fname.rsplit('.', 1)[0]
+    plt.savefig(f"{base}.svg", bbox_inches='tight')
+    print(f"  Saved: {base}.svg")
+
+    plt.close()
+
+    print("\n" + "=" * 80)
+    print("MULTIPANEL FIGURE COMPLETE!")
+    print("=" * 80)
+
+
 def main(dataset_id):
     """
     Main function to generate water balance by drought zone plots.
@@ -1489,12 +1823,27 @@ def main(dataset_id):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(__doc__)
-        print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument('dataset_id', nargs='?', default=None,
+                        help='Dataset identifier (not needed for --multipanel)')
+    parser.add_argument('--multipanel', action='store_true',
+                        help='Create 3-panel comparison figure across scenarios')
 
-    dataset_id = sys.argv[1]
-    verify_dataset_id(dataset_id)
+    args = parser.parse_args()
 
-    main(dataset_id)
+    if args.multipanel:
+        # Multipanel mode: compare stationary vs climate scenarios
+        plot_multipanel_contribution_ratio_comparison()
+    else:
+        # Single dataset mode
+        if args.dataset_id is None:
+            print("Error: dataset_id required when not using --multipanel")
+            print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
+            print("\nOr use --multipanel for scenario comparison figure")
+            sys.exit(1)
+
+        verify_dataset_id(args.dataset_id)
+        main(args.dataset_id)
