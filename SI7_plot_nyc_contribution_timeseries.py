@@ -53,6 +53,7 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 
+import pywrdrb
 from methods.config import *
 from methods.plotting.styles import DPI_HIGH
 
@@ -103,171 +104,6 @@ ZONE_NAMES = {
     2: 'Flood Watch',
     1: 'Flood Warning',
 }
-
-
-# ============================================================================
-# OPTIMIZED DATA LOADING
-# ============================================================================
-
-def load_optimized_data(hdf5_file, dataset_id, results_sets, columns_map=None):
-    """
-    Load only the required columns from HDF5 file for faster I/O and lower memory.
-
-    Parameters
-    ----------
-    hdf5_file : str
-        Path to the HDF5 file
-    dataset_id : str
-        Dataset identifier (e.g., 'stationary_ensemble')
-    results_sets : list
-        List of result sets to load (e.g., ['contribution', 'major_flow'])
-    columns_map : dict, optional
-        Dict mapping results_set -> list of columns to load.
-        If None or missing for a results_set, loads all columns.
-        Example: {'major_flow': ['delMontague'], 'res_level': ['nyc']}
-
-    Returns
-    -------
-    dict
-        Dictionary with structure: {results_set: {realization_id: DataFrame}}
-    """
-    if columns_map is None:
-        columns_map = {}
-
-    data = {}
-
-    with pd.HDFStore(hdf5_file, 'r') as store:
-        # Get all keys in the file
-        all_keys = store.keys()
-
-        for results_set in results_sets:
-            data[results_set] = {}
-
-            # Find keys matching this results_set and dataset_id
-            prefix = f"/{results_set}/{dataset_id}/"
-            matching_keys = [k for k in all_keys if k.startswith(prefix)]
-
-            cols_to_load = columns_map.get(results_set, None)
-
-            for key in matching_keys:
-                # Extract realization ID from key
-                real_id = key.split('/')[-1]
-                try:
-                    real_id = int(real_id)
-                except ValueError:
-                    pass
-
-                # Load DataFrame and filter columns afterwards
-                # (HDF5 Fixed format doesn't support column selection during read)
-                df = store[key]
-                if cols_to_load is not None:
-                    available_cols = [c for c in cols_to_load if c in df.columns]
-                    df = df[available_cols]
-
-                data[results_set][real_id] = df
-
-    return data
-
-
-def resample_to_weekly(data_dict):
-    """
-    Resample all DataFrames in a data dictionary from daily to weekly.
-
-    Uses sum for flow-type variables, mean for level/zone variables.
-
-    Parameters
-    ----------
-    data_dict : dict
-        Dictionary with structure: {results_set: {realization_id: DataFrame}}
-
-    Returns
-    -------
-    dict
-        Same structure with weekly-resampled DataFrames
-    """
-    # Determine aggregation method based on results_set
-    sum_sets = {'contribution', 'major_flow', 'inflow'}  # Flow volumes - sum
-    mean_sets = {'res_level', 'res_storage'}  # Levels/storage - mean
-    max_sets = set()  # Zone classifications - max (if needed)
-
-    resampled = {}
-    for results_set, realizations in data_dict.items():
-        resampled[results_set] = {}
-
-        if results_set in sum_sets:
-            agg_func = 'sum'
-        elif results_set in mean_sets:
-            agg_func = 'mean'
-        elif results_set in max_sets:
-            agg_func = 'max'
-        else:
-            agg_func = 'mean'  # Default
-
-        for real_id, df in realizations.items():
-            # Resample to weekly frequency (Week starting Sunday)
-            resampled[results_set][real_id] = df.resample('W').agg(agg_func)
-
-    return resampled
-
-
-class OptimizedDataContainer:
-    """
-    Simple container to hold optimized data in the same structure expected by
-    the existing calculation functions.
-
-    Attributes are accessed as: container.contribution[dataset_id][real_id]
-    """
-    def __init__(self):
-        self.contribution = {}
-        self.major_flow = {}
-        self.res_level = {}
-        self.inflow = {}
-
-    def load_for_contribution_analysis(self, hdf5_file, dataset_id,
-                                        need_res_level=False, need_inflow=False,
-                                        use_weekly=False):
-        """
-        Load only the data needed for NYC contribution analysis.
-
-        Parameters
-        ----------
-        hdf5_file : str
-            Path to HDF5 file
-        dataset_id : str
-            Dataset identifier
-        need_res_level : bool
-            Whether to load res_level data (for zone filtering)
-        need_inflow : bool
-            Whether to load inflow data (for representative year finding)
-        use_weekly : bool
-            Whether to resample to weekly data
-        """
-        results_sets = ['contribution', 'major_flow']
-        columns_map = {
-            'contribution': ['mrf_montagueTrenton_nyc'],
-            'major_flow': ['delMontague'],
-        }
-
-        if need_res_level:
-            results_sets.append('res_level')
-            columns_map['res_level'] = ['nyc']
-
-        if need_inflow:
-            results_sets.append('inflow')
-            columns_map['inflow'] = NYC_RESERVOIRS  # ['cannonsville', 'pepacton', 'neversink']
-
-        data = load_optimized_data(hdf5_file, dataset_id, results_sets, columns_map)
-
-        if use_weekly:
-            data = resample_to_weekly(data)
-
-        # Store in expected structure
-        self.contribution[dataset_id] = data.get('contribution', {})
-        self.major_flow[dataset_id] = data.get('major_flow', {})
-        if need_res_level:
-            self.res_level[dataset_id] = data.get('res_level', {})
-        if need_inflow:
-            self.inflow[dataset_id] = data.get('inflow', {})
 
 
 def get_water_year(date):
@@ -425,6 +261,9 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
     Find the realization/water year with contribution ratio closest to mean.
 
     Returns contribution trace for the representative year.
+
+    Optimized version: computes water years vectorized once per realization,
+    avoiding repeated .map() calls inside loops.
     """
     zone_label = get_zone_filter_label(zone_filter)
     print(f"  Finding representative water year for {zone_label}...")
@@ -440,12 +279,18 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
         nyc_inflow = inflow_df[NYC_RESERVOIRS].sum(axis=1)
         nyc_contributions = contribution_df['mrf_montagueTrenton_nyc']
 
-        water_years = res_level_df.index.map(get_water_year).unique()
+        # Compute water years vectorized ONCE (not inside loop)
+        dates = res_level_df.index
+        months = dates.month.values
+        years = dates.year.values
+        water_years_arr = np.where(months >= 6, years, years - 1)
 
-        for wy in water_years:
-            wy_mask = res_level_df.index.map(get_water_year) == wy
-            wy_data = res_level_df[wy_mask]
+        # Add water year column to work with
+        res_level_df = res_level_df.copy()
+        res_level_df['water_year'] = water_years_arr
 
+        # Group by water year for efficient processing
+        for wy, wy_data in res_level_df.groupby('water_year'):
             if len(wy_data) < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
                 continue
 
@@ -458,11 +303,8 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
             max_zone_date = wy_data[wy_data['nyc'] == max_zone].index[0]
             start_date = max_zone_date - pd.DateOffset(months=6)
 
-            inflow_mask = (nyc_inflow.index >= start_date) & (nyc_inflow.index <= max_zone_date)
-            contribution_mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= max_zone_date)
-
-            inflow_total = nyc_inflow[inflow_mask].sum()
-            contribution_total = nyc_contributions[contribution_mask].sum()
+            inflow_total = nyc_inflow.loc[start_date:max_zone_date].sum()
+            contribution_total = nyc_contributions.loc[start_date:max_zone_date].sum()
 
             if inflow_total <= MIN_INFLOW_THRESHOLD:
                 continue
@@ -503,7 +345,12 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
                            np.nan)
     contrib_pct_series = pd.Series(contrib_pct, index=nyc_contribution.index)
 
-    wy_mask = contrib_pct_series.index.map(get_water_year) == wy
+    # Vectorized water year mask
+    months = contrib_pct_series.index.month.values
+    years = contrib_pct_series.index.year.values
+    wy_arr = np.where(months >= 6, years, years - 1)
+    wy_mask = wy_arr == wy
+
     wy_contrib_data = contrib_pct_series[wy_mask]
     doy_contrib = wy_contrib_data.index.map(get_water_year_doy)
     contribution_trace = pd.Series(wy_contrib_data.values, index=doy_contrib,
@@ -689,25 +536,23 @@ def main_single(dataset_id):
     print("\nConfiguration:")
     print(f"  Zone Filter: {get_zone_filter_label(FILTER_BY_ZONES)}")
     print(f"  Show Representative Year: {SHOW_REPRESENTATIVE_YEAR}")
-    print(f"  Weekly Resampling: {USE_WEEKLY_RESAMPLING}")
 
     verify_dataset_id(dataset_id)
 
-    # Use optimized loading
+    # Determine which results sets to load
+    results_sets = ['contribution', 'major_flow']
+    if FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR:
+        results_sets.append('res_level')
+    if SHOW_REPRESENTATIVE_YEAR:
+        results_sets.append('inflow')
+
+    print("\nLoading data...")
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
 
-    print("\nLoading data (optimized)...")
-    data = OptimizedDataContainer()
-    need_res_level = FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR
-    need_inflow = SHOW_REPRESENTATIVE_YEAR
-    data.load_for_contribution_analysis(
-        fname, dataset_id,
-        need_res_level=need_res_level,
-        need_inflow=need_inflow,
-        use_weekly=USE_WEEKLY_RESAMPLING
-    )
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=results_sets)
     print(f"  Data loaded: {dataset_id}")
 
     print("\nCalculating contribution percentages...")
