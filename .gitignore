@@ -203,3 +203,4 @@ borg.py
 logs/
 /outputs/
 /copula_tests/
+docs/*
