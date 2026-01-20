@@ -618,3 +618,276 @@ def postprocess_dataset(dataset_id, recombine=True):
     print(f"{'='*80}")
 
     return data
+
+
+# =============================================================================
+# EPISODE ANALYSIS PREPROCESSING FUNCTIONS
+# =============================================================================
+
+def preprocess_to_weekly(data, dataset_id, config=None):
+    """
+    Aggregate daily simulation outputs to weekly resolution for episode analysis.
+
+    Creates a unified weekly time series DataFrame with all variables needed
+    for episode identification and characterization.
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with res_storage, res_level, major_flow, mrf_target,
+        shortage, inflow, ibt_diversions, ibt_demands
+    dataset_id : str
+        Dataset identifier
+    config : EpisodeAnalysisConfig, optional
+        Configuration object. If None, uses default values.
+
+    Returns
+    -------
+    weekly_ts : pd.DataFrame
+        Weekly time series with columns:
+        - realization_id, week, year, week_of_year, date
+        - inflow_agg, storage_agg, storage_pct, ffmp_zone
+        - nyc_demand, nyc_diversion, demand_satisfaction
+        - montague_flow, montague_target, flow_satisfaction
+    """
+    from .utils import calculate_water_year_period_index
+
+    # Get configuration defaults
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    nyc_total_capacity = NYC_TOTAL_CAPACITY
+    period_origin = 'june1'
+
+    if config is not None:
+        nyc_reservoirs = config.nyc_reservoirs
+        nyc_total_capacity = config.nyc_total_capacity
+        period_origin = config.period_origin
+
+    realizations = sorted(data.res_storage[dataset_id].keys())
+    print(f"  Preprocessing {len(realizations)} realizations to weekly resolution...")
+
+    all_weekly = []
+
+    for r in realizations:
+        if (r % 100 == 0) and (r > 0):
+            print(f"    Processed {r}/{len(realizations)} realizations...")
+
+        # Extract daily data for this realization
+        storage_daily = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        inflow_daily = data.inflow[dataset_id][r]['nyc']
+
+        # FFMP zone (if available)
+        if hasattr(data, 'res_level') and dataset_id in data.res_level:
+            ffmp_zone_daily = data.res_level[dataset_id][r]['nyc']
+        else:
+            ffmp_zone_daily = pd.Series(3, index=storage_daily.index)  # Default to Normal
+
+        # NYC diversions and demands
+        nyc_diversion_daily = data.ibt_diversions[dataset_id][r]['delivery_nyc']
+        nyc_demand_daily = data.ibt_demands[dataset_id][r]['demand_nyc']
+
+        # Montague flow and target
+        montague_flow_daily = data.major_flow[dataset_id][r]['delMontague']
+        montague_target_daily = data.mrf_target[dataset_id][r]['delMontague']
+
+        # Create daily DataFrame
+        daily_df = pd.DataFrame({
+            'storage_agg': storage_daily,
+            'inflow_agg': inflow_daily,
+            'ffmp_zone': ffmp_zone_daily,
+            'nyc_diversion': nyc_diversion_daily,
+            'nyc_demand': nyc_demand_daily,
+            'montague_flow': montague_flow_daily,
+            'montague_target': montague_target_daily,
+        })
+
+        # Resample to weekly
+        # Use week-ending (Sunday) to align with common conventions
+        weekly_df = daily_df.resample('W').agg({
+            'storage_agg': 'mean',           # Average storage over week
+            'inflow_agg': 'sum',             # Total weekly inflow (MGD -> MG/week)
+            'ffmp_zone': 'max',              # Worst zone during week (higher = worse)
+            'nyc_diversion': 'sum',          # Total weekly diversion
+            'nyc_demand': 'sum',             # Total weekly demand
+            'montague_flow': 'sum',          # Total weekly flow
+            'montague_target': 'sum',        # Total weekly target
+        })
+
+        # Add derived variables
+        weekly_df['storage_pct'] = 100.0 * weekly_df['storage_agg'] / nyc_total_capacity
+        weekly_df['demand_satisfaction'] = (
+            weekly_df['nyc_diversion'] / weekly_df['nyc_demand']
+        ).clip(upper=1.0)
+        weekly_df['flow_satisfaction'] = (
+            weekly_df['montague_flow'] / weekly_df['montague_target']
+        ).clip(upper=1.0)
+
+        # Add temporal indices
+        weekly_df['realization_id'] = r
+        weekly_df['date'] = weekly_df.index
+        weekly_df['year'] = weekly_df.index.year
+        weekly_df['week'] = range(len(weekly_df))  # Absolute week number
+
+        # Week of year (for climatology)
+        weekly_df['week_of_year'] = calculate_water_year_period_index(
+            weekly_df.index, period='weekly', origin=period_origin
+        )
+
+        all_weekly.append(weekly_df)
+
+    # Combine all realizations
+    weekly_ts = pd.concat(all_weekly, ignore_index=True)
+
+    # Reorder columns for clarity
+    col_order = [
+        'realization_id', 'week', 'year', 'week_of_year', 'date',
+        'inflow_agg', 'storage_agg', 'storage_pct', 'ffmp_zone',
+        'nyc_demand', 'nyc_diversion', 'demand_satisfaction',
+        'montague_flow', 'montague_target', 'flow_satisfaction',
+    ]
+    weekly_ts = weekly_ts[col_order]
+
+    print(f"  Created weekly time series: {len(weekly_ts)} rows")
+
+    return weekly_ts
+
+
+def compute_weekly_climatology(weekly_ts, variables=None):
+    """
+    Compute weekly climatology (mean and std) for specified variables.
+
+    Climatology is computed across all realizations and years for each
+    week-of-year, enabling standardization of variables.
+
+    Parameters
+    ----------
+    weekly_ts : pd.DataFrame
+        Weekly time series with 'week_of_year' column
+    variables : list of str, optional
+        Variables to compute climatology for.
+        Default: ['inflow_agg', 'nyc_demand']
+
+    Returns
+    -------
+    climatology : pd.DataFrame
+        Climatology with columns for each variable's mean and std,
+        indexed by week_of_year
+    """
+    if variables is None:
+        variables = ['inflow_agg', 'nyc_demand']
+
+    climatology_dict = {}
+
+    for var in variables:
+        if var not in weekly_ts.columns:
+            print(f"  Warning: Variable '{var}' not found in weekly_ts, skipping")
+            continue
+
+        # Compute mean and std by week of year
+        grouped = weekly_ts.groupby('week_of_year')[var]
+        climatology_dict[f'{var}_mean'] = grouped.mean()
+        climatology_dict[f'{var}_std'] = grouped.std()
+
+    climatology = pd.DataFrame(climatology_dict)
+    climatology.index.name = 'week_of_year'
+
+    print(f"  Computed climatology for {len(variables)} variables, {len(climatology)} weeks")
+
+    return climatology
+
+
+def add_standardized_variables(weekly_ts, climatology):
+    """
+    Add standardized anomaly variables to weekly time series.
+
+    Computes standardized anomalies relative to weekly climatology:
+    - inflow_std: (inflow - mean) / std  [negative = deficit]
+    - demand_std: (demand - mean) / std  [positive = high demand]
+    - combined_stress_std: demand_std - inflow_std  [positive = stressful]
+    - net_stress: demand - inflow  [positive = drawing storage]
+
+    Parameters
+    ----------
+    weekly_ts : pd.DataFrame
+        Weekly time series with week_of_year column
+    climatology : pd.DataFrame
+        Climatology from compute_weekly_climatology()
+
+    Returns
+    -------
+    weekly_ts : pd.DataFrame
+        Weekly time series with added standardized columns
+    """
+    weekly_ts = weekly_ts.copy()
+
+    # Map climatology values to each row
+    inflow_mean = weekly_ts['week_of_year'].map(climatology['inflow_agg_mean'])
+    inflow_std = weekly_ts['week_of_year'].map(climatology['inflow_agg_std'])
+    demand_mean = weekly_ts['week_of_year'].map(climatology['nyc_demand_mean'])
+    demand_std = weekly_ts['week_of_year'].map(climatology['nyc_demand_std'])
+
+    # Compute standardized variables
+    # Avoid division by zero
+    inflow_std_safe = inflow_std.replace(0, np.nan)
+    demand_std_safe = demand_std.replace(0, np.nan)
+
+    weekly_ts['inflow_std'] = (weekly_ts['inflow_agg'] - inflow_mean) / inflow_std_safe
+    weekly_ts['demand_std'] = (weekly_ts['nyc_demand'] - demand_mean) / demand_std_safe
+
+    # Combined stress (positive = stressful: high demand AND/OR low inflow)
+    weekly_ts['combined_stress_std'] = weekly_ts['demand_std'] - weekly_ts['inflow_std']
+
+    # Physical net stress (MGD, positive = net draw on storage)
+    # Note: weekly values are in MG (sum of daily MGD), so divide by 7 for rate
+    weekly_ts['net_stress'] = (weekly_ts['nyc_demand'] - weekly_ts['inflow_agg']) / 7.0
+
+    print(f"  Added standardized variables: inflow_std, demand_std, combined_stress_std, net_stress")
+
+    return weekly_ts
+
+
+def load_episode_analysis_data(dataset_id):
+    """
+    Load required data for episode analysis.
+
+    Loads postprocessed simulation data from HDF5 export file.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    data : pywrdrb.Data
+        Data object with required results sets loaded
+
+    Raises
+    ------
+    FileNotFoundError
+        If postprocessed data file does not exist
+    """
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Postprocessed data not found: {fname}\n"
+            "Run 04_postprocess_data.py first!"
+        )
+
+    print(f"Loading episode analysis data from {fname}...")
+    data = pywrdrb.Data()
+    data.load_from_export(
+        fname,
+        results_sets=[
+            'res_storage',      # Storage levels
+            'res_level',        # FFMP zone levels
+            'major_flow',       # Montague flow
+            'mrf_target',       # Montague targets
+            'shortage',         # Pre-computed shortages
+            'inflow',           # NYC inflows
+            'ibt_diversions',   # NYC diversions
+            'ibt_demands',      # NYC demands
+        ]
+    )
+
+    return data
