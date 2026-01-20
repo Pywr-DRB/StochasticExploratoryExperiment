@@ -43,10 +43,12 @@ from methods.episode import (
     compare_episode_populations,
     fit_cascade_model,
     save_episode_outputs,
+    validate_episode_definitions,
 )
 from methods.episode.io import save_analysis_results
 from methods.episode.linkage import compute_progression_rates
 from methods.episode.characterization import compute_episode_summary_stats
+from methods.episode.validation import suggest_threshold_adjustments
 
 
 def main():
@@ -219,18 +221,40 @@ def main():
     print()
 
     # =========================================================================
-    # Step 8: Save Outputs
+    # Step 8: Validate Episode Definitions
     # =========================================================================
-    print("Step 8: Saving outputs...")
-    save_episode_outputs(weekly_ts, episodes, episode_links, climatology, config)
-    save_analysis_results(comparison_results, cascade_model, config)
+    print("Step 8: Validating episode definitions...")
+    coverage_stats, uncaptured, patterns = validate_episode_definitions(
+        weekly_ts, episodes, config, verbose=True
+    )
+
+    # Get suggestions for threshold adjustments if coverage is low
+    suggestions = suggest_threshold_adjustments(coverage_stats, patterns, config)
+    if suggestions:
+        print("\n  Suggested Adjustments:")
+        for i, suggestion in enumerate(suggestions, 1):
+            print(f"    {i}. {suggestion}")
     print()
 
     # =========================================================================
-    # Step 9: Generate Figures (optional)
+    # Step 9: Save Outputs
+    # =========================================================================
+    print("Step 9: Saving outputs...")
+    save_episode_outputs(weekly_ts, episodes, episode_links, climatology, config)
+    save_analysis_results(comparison_results, cascade_model, config)
+
+    # Save validation results
+    coverage_stats.to_csv(config.output_dir / "coverage_statistics.csv", index=False)
+    for key, df in uncaptured.items():
+        if len(df) > 0:
+            df.to_csv(config.output_dir / f"uncaptured_{key}.csv", index=False)
+    print()
+
+    # =========================================================================
+    # Step 10: Generate Figures (optional)
     # =========================================================================
     if not args.skip_plots:
-        print("Step 9: Generating figures...")
+        print("Step 10: Generating figures...")
         try:
             from methods.plotting.episode import (
                 create_sankey_diagram,
@@ -295,12 +319,67 @@ def main():
                 save_path=fig_dir / f"storage_stress_scatter.{config.figure_format}"
             )
 
-            print(f"  Figures saved to: {fig_dir}")
+            print(f"  Standard figures saved to: {fig_dir}")
 
         except ImportError as e:
-            print(f"  Warning: Could not generate some plots ({e})")
+            print(f"  Warning: Could not generate some standard plots ({e})")
         except Exception as e:
-            print(f"  Warning: Error generating plots ({e})")
+            print(f"  Warning: Error generating standard plots ({e})")
+
+        # Generate trajectory visualizations (publication quality)
+        print("\n  Generating trajectory visualizations...")
+        try:
+            from methods.plotting.episode_trajectories import (
+                create_phase_space_trajectory_figure,
+                create_temporal_trajectory_figure,
+                create_3d_trajectory_figure,
+                create_divergence_point_figure,
+                create_publication_figure_panel,
+            )
+
+            # Phase space trajectories
+            create_phase_space_trajectory_figure(
+                episodes, weekly_ts, config,
+                x_var='storage_pct',
+                y_var='combined_stress_std',
+                save_path=fig_dir / f"trajectory_phase_space.{config.figure_format}"
+            )
+
+            # Temporal trajectory comparison
+            create_temporal_trajectory_figure(
+                episodes, weekly_ts, config,
+                variables=['inflow_std', 'storage_pct', 'demand_satisfaction', 'flow_satisfaction'],
+                save_path=fig_dir / f"trajectory_temporal.{config.figure_format}"
+            )
+
+            # 3D trajectory visualization
+            create_3d_trajectory_figure(
+                episodes, weekly_ts, config,
+                x_var='inflow_std',
+                y_var='storage_pct',
+                z_var='demand_satisfaction',
+                save_path=fig_dir / f"trajectory_3d.{config.figure_format}"
+            )
+
+            # Divergence point analysis
+            create_divergence_point_figure(
+                episodes, weekly_ts, config,
+                variable='storage_pct',
+                save_path=fig_dir / f"trajectory_divergence.{config.figure_format}"
+            )
+
+            # Publication-ready multi-panel figure
+            create_publication_figure_panel(
+                episodes, weekly_ts, config,
+                save_path=fig_dir / f"publication_figure.{config.figure_format}"
+            )
+
+            print(f"  Trajectory figures saved to: {fig_dir}")
+
+        except ImportError as e:
+            print(f"  Warning: Could not generate trajectory plots ({e})")
+        except Exception as e:
+            print(f"  Warning: Error generating trajectory plots ({e})")
         print()
 
     # =========================================================================

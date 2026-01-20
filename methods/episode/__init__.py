@@ -20,6 +20,11 @@ from .io import (
     save_episode_outputs,
     load_episode_outputs,
 )
+from .validation import (
+    validate_episode_definitions,
+    identify_uncaptured_outcomes,
+    compute_coverage_statistics,
+)
 
 __all__ = [
     'EpisodeAnalysisConfig',
@@ -31,4 +36,7 @@ __all__ = [
     'fit_cascade_model',
     'save_episode_outputs',
     'load_episode_outputs',
+    'validate_episode_definitions',
+    'identify_uncaptured_outcomes',
+    'compute_coverage_statistics',
 ]
