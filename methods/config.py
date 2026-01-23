@@ -10,15 +10,15 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 2000
+TOTAL_REALIZATIONS = 5
 BASELINE_DATASET =  'pub_nhmv10_BC_withObsScaled' # 'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
-N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
+N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
 # Pywr-DRB simulation batching (within each ensemble set)
-N_REALIZATIONS_PER_PYWRDRB_BATCH = 10 # Simulation memory limits
+N_REALIZATIONS_PER_PYWRDRB_BATCH = 5 # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
@@ -30,6 +30,9 @@ END_DATE = '2099-12-31'
 # 'jan1' = calendar year (Jan 1 - Dec 31), aligns with FFMP boundaries
 # 'june1' = water year (Jun 1 - May 31)
 PERIOD_ORIGIN = 'june1'
+
+# SSI (Standardized Streamflow Index) window sizes in months
+SSI_WINDOWS = (3, 6, 12)
 
 # Validation checks
 assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \
@@ -272,33 +275,26 @@ NYC_STORAGE_CAPACITIES = {
 NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,837 MG
 
 # =============================================================================
-# DROUGHT COPULA CONFIGURATION
-# =============================================================================
-
-# Marginal distributions for copula fitting
-# Based on comprehensive distribution testing (07_test_copula_distributions.py)
-DROUGHT_MARGINAL_DISTRIBUTIONS = {
-    'severity': 'genexpon',     # Generalized Exponential (best fit for severity)
-    'magnitude': 'truncnorm_0',  # Truncated Normal at 0 (enforces positive support)
-}
-
-# SSI windows to calculate drought metrics for
-SSI_WINDOWS = [3, 6, 12]  # months
-
-# Copula type
-# Options: 'gaussian', 't_copula'
-# Student-t copula captures tail dependence observed in drought data
-DROUGHT_COPULA_TYPE = 't_copula'
-
-# =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def verify_dataset_id(dataset_id):
-    """Verify that the dataset_id is valid"""
-    if dataset_id not in DATASET_CONFIGS:
-        raise ValueError(f"Invalid dataset_id: {dataset_id}. Must be one of {list(DATASET_CONFIGS.keys())}")
-    return True
+# Import verification functions from dedicated module (for backward compatibility)
+# New code should import directly from methods.verification
+from methods.verification import (
+    verify_dataset_id,
+    verify_prep_outputs,
+    verify_simulation_outputs,
+    verify_postprocessing_output,
+    verify_realization_id_consistency,
+    verify_ensemble_outputs,
+)
+
+# Import print summary functions from dedicated module (for backward compatibility)
+# New code should import directly from methods.print_summary
+from methods.print_summary import (
+    print_experiment_summary,
+    print_ensemble_set_summary,
+)
 
 def get_dataset_type(dataset_id):
     """Return 'stationary' or 'climate_adjusted' for a dataset"""
@@ -363,53 +359,6 @@ def get_existing_ensemble_sets(dataset_id):
             existing_sets.append(spec)
     return existing_sets
 
-def print_experiment_summary(dataset_id):
-    """Print comprehensive experiment configuration summary"""
-    verify_dataset_id(dataset_id)
-    dataset_config = DATASET_CONFIGS[dataset_id]
-    generated_sets = get_existing_ensemble_sets(dataset_id)
-    
-    print("=" * 80)
-    print("ENSEMBLE EXPERIMENT CONFIGURATION")
-    print("=" * 80)
-    print(f"Dataset ID: {dataset_id}")
-    print(f"Dataset Type: {dataset_config['type']}")
-    print(f"Description: {dataset_config['description']}")
-    if dataset_config['type'] == 'climate_adjusted':
-        print(f"Monthly % Changes: {dataset_config['monthly_prc_change']}")
-    print()
-    print(f"Total Realizations: {TOTAL_REALIZATIONS:,}")
-    print(f"Ensemble Sets: {N_ENSEMBLE_SETS}")
-    print(f"Realizations per Set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
-    print(f"Years per Realization: {N_YEARS}")
-    print(f"Simulation Period: {START_DATE} to {END_DATE}")
-    print()
-    print("Pywr-DRB Batching:")
-    print(f"  Batches per Set: {N_PYWRDRB_BATCHES_PER_SET}")
-    print(f"  Realizations per Batch: {N_REALIZATIONS_PER_PYWRDRB_BATCH}")
-    print()
-    print("Node Configuration:")
-    print(f"  Nodes to Generate (KN): {len(pywrdrb_nodes_to_generate)}")
-    print(f"  Nodes to Regress: {len(pywrdrb_nodes_to_regress)}")
-    print()
-    print("File Structure:")
-    for i, spec in enumerate(generated_sets):
-        print(f"  Set {i+1}: {spec.directory}")
-        if i >= 2:  # Limit output for large experiments
-            print(f"  ... (and {len(generated_sets)-3} more sets)")
-            break
-    print("=" * 80)
-
-def print_ensemble_set_summary(set_id, dataset_id):
-    """Print summary for a specific ensemble set"""
-    spec = get_ensemble_set_spec(set_id, dataset_id)
-    print(f"\n{dataset_id} Ensemble Set {set_id + 1} Summary:")
-    print(f"  Dataset Type: {spec.ensemble_type}")
-    print(f"  Global Realizations: {spec.start_realization}-{spec.end_realization-1}")
-    print(f"  Directory: {spec.directory}")
-    print(f"  Pywr-DRB Batches: {len(spec.pywrdrb_batches)}")
-    print(f"  Output File: {spec.output_file}")
-
 def validate_configuration():
     """Validate the configuration parameters"""
     errors = []
@@ -445,32 +394,6 @@ def validate_configuration():
         raise ValueError("Configuration errors:\n" + "\n".join(f"  - {e}" for e in errors))
     
     return True
-
-def verify_realization_id_consistency(dataset_id):
-    """
-    Verify that realization IDs are consistent across generation and simulation for a dataset.
-    """
-    verify_dataset_id(dataset_id)
-    print(f"Verifying {dataset_id} realization ID consistency...")
-    
-    for set_id in range(N_ENSEMBLE_SETS):
-        set_spec = get_ensemble_set_spec(set_id, dataset_id)
-        
-        # Check expected vs actual realization IDs
-        expected_ids = set_spec.realizations
-        
-        if os.path.exists(set_spec.files['gage_flow']):
-            actual_ids = get_hdf5_realization_numbers(set_spec.files['gage_flow'])
-            actual_ids = [int(x) for x in actual_ids]
-            
-            if set(expected_ids) != set(actual_ids):
-                print(f"MISMATCH in Set {set_id + 1}:")
-                print(f"  Expected: {expected_ids}")
-                print(f"  Actual:   {actual_ids}")
-            else:
-                print(f"Set {set_id + 1}: OK")
-        else:
-            print(f"Set {set_id + 1}: File not found")
 
 # Backward compatibility mappings (can be removed after migration)
 def get_dataset_id_from_legacy(ensemble_type, climate_scenario=None):

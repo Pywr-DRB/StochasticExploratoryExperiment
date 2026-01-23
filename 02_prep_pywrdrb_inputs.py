@@ -16,6 +16,7 @@ from methods.config import (
     get_existing_ensemble_sets,
     print_experiment_summary
 )
+from methods.print_summary import print_prep_status
 
 
 def parallel_prep_all_sets(dataset_id):
@@ -165,65 +166,6 @@ def parallel_prep_all_sets(dataset_id):
         print("=" * 60)
 
 
-def verify_prep_outputs(dataset_id):
-    """
-    Verify that all ensemble sets have been properly prepared for a dataset
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier to verify
-    """
-
-    verify_dataset_id(dataset_id)
-    print(f"\nVerifying Pywr-DRB input preparation for {dataset_id}...")
-
-    all_prepared = True
-    successful_sets = []
-    failed_sets = []
-    missing_files = {}
-
-    # Required files to check
-    required_files = [
-        'predicted_inflow',
-        'diversion_nyc',
-        'diversion_nj',
-        'predicted_diversions'
-    ]
-
-    for set_id in range(N_ENSEMBLE_SETS):
-        set_spec = get_ensemble_set_spec(set_id, dataset_id)
-        set_complete = True
-        missing_in_set = []
-
-        for file_key in required_files:
-            fname = set_spec.files[file_key]
-            if not os.path.exists(fname):
-                set_complete = False
-                missing_in_set.append(file_key)
-                all_prepared = False
-
-        if set_complete:
-            successful_sets.append(set_id + 1)
-        else:
-            failed_sets.append(set_id + 1)
-            missing_files[set_id + 1] = missing_in_set
-
-    if all_prepared:
-        print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets properly prepared!")
-        print(f"  All required files present:")
-        for file_key in required_files:
-            print(f"    - {file_key}")
-    else:
-        print(f"WARNING: {len(failed_sets)} sets not properly prepared: {failed_sets}")
-        print(f"Successfully prepared: {len(successful_sets)} sets")
-        print(f"\nMissing files by set:")
-        for set_id, missing in missing_files.items():
-            print(f"  Set {set_id}: {missing}")
-
-    return all_prepared
-
-
 def main(dataset_id):
     """Main function (MPI-only)"""
 
@@ -238,9 +180,9 @@ def main(dataset_id):
     # Prepare all ensemble sets in parallel
     parallel_prep_all_sets(dataset_id)
 
-    # Verify outputs (only on rank 0)
+    # Print status (only on rank 0)
     if rank == 0:
-        verify_prep_outputs(dataset_id)
+        print_prep_status(dataset_id)
         print(f"\nPywr-DRB input preparation workflow completed for {dataset_id}!")
 
 

@@ -109,7 +109,7 @@ def load_wrf1960s_historical_flow(gage_flow=True):
 
 
 
-def load_drought_events(dataset_id, ssi_window, observed=False):
+def load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=False):
     """
     Load drought events for a given dataset and SSI window.
 
@@ -119,32 +119,37 @@ def load_drought_events(dataset_id, ssi_window, observed=False):
         Dataset identifier
     ssi_window : int
         SSI window (3, 6, or 12 months)
+    observed : bool
+        If True, load observed droughts instead of ensemble droughts
+    filter_extreme : bool
+        If True, remove droughts with |severity| > 6.0
 
     Returns
     -------
     pd.DataFrame
         Drought events with date columns converted to datetime
     """
-    # Get the root directory (parent of methods/)
-    root_dir = os.path.dirname(file_dir)
     if observed:
         fname = f"{DROUGHT_METRICS_DIR}/observed_ssi{ssi_window}_drought_events.csv"
     else:
         fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
 
     if not os.path.exists(fname):
-        raise FileNotFoundError(f"Drought events file not found: {fname}")
+        raise FileNotFoundError(
+            f"Drought events file not found: {fname}\n"
+            f"Run 05_calculate_ssi_drought_metrics.py first!"
+        )
 
     print(f"Loading drought events from: {fname}")
-    df = pd.read_csv(fname)
+    droughts = pd.read_csv(fname)
 
     # Convert date columns
     date_cols = ['start', 'end', 'max_severity_date']
     for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col])
+        if col in droughts.columns:
+            droughts[col] = pd.to_datetime(droughts[col])
 
-    # Take absolute values and ensure finite
+    # Take absolute values for severity and magnitude
     for metric in ['severity', 'magnitude']:
         if metric in droughts.columns:
             droughts[metric] = droughts[metric].abs()
@@ -153,10 +158,20 @@ def load_drought_events(dataset_id, ssi_window, observed=False):
     droughts = droughts.replace([np.inf, -np.inf], np.nan).dropna(
         subset=['severity', 'magnitude', 'duration']
     )
-    print(f"  Loaded {len(df)} drought events")
-    print(f"  Unique realizations: {df['realization_id'].nunique()}")
 
-    return df
+    # Optionally filter extreme values
+    if filter_extreme:
+        n_before = len(droughts)
+        droughts = droughts[droughts['severity'] <= 6.0]
+        n_after = len(droughts)
+        if n_before > n_after:
+            print(f"  Removed {n_before - n_after} droughts with |severity| > 6.0")
+
+    print(f"  Loaded {len(droughts):,} drought events")
+    if 'realization_id' in droughts.columns:
+        print(f"  Unique realizations: {droughts['realization_id'].nunique()}")
+
+    return droughts
 
 
 def load_ffmp_boundaries():
@@ -381,3 +396,142 @@ def load_ensemble_diversions(dataset_id, loc='nyc'):
                 ensemble_diversions[int(realization_id)] = pd.Series(div_data, index=dates)
 
     return ensemble_diversions
+
+
+def load_zone_probabilities(dataset_id, period='weekly'):
+    """
+    Load zone probabilities from CSV.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    period : str
+        Time period ('daily' or 'weekly')
+
+    Returns
+    -------
+    pd.DataFrame or None
+        Zone probabilities indexed by period, or None if file not found
+    """
+    zone_prob_dir = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
+    csv_file = f"{zone_prob_dir}/{dataset_id}_zone_probs_{period}.csv"
+
+    if not os.path.exists(csv_file):
+        print(f"ERROR: Zone probabilities not found: {csv_file}")
+        print("Run 07_calculate_storage_zone_probabilities.py first!")
+        return None
+
+    df = pd.read_csv(csv_file, index_col='period')
+    return df
+
+
+def load_storage_percentiles(dataset_id, period='weekly'):
+    """
+    Load storage percentiles from CSV.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    period : str
+        Time period ('daily' or 'weekly')
+
+    Returns
+    -------
+    pd.DataFrame or None
+        Storage percentiles indexed by period with columns p1, p5, p10, etc.
+        Returns None if file not found.
+    """
+    zone_prob_dir = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
+    csv_file = f"{zone_prob_dir}/{dataset_id}_storage_percentiles_{period}.csv"
+
+    if not os.path.exists(csv_file):
+        print(f"ERROR: Storage percentiles not found: {csv_file}")
+        print("Run 07_calculate_storage_zone_probabilities.py first!")
+        return None
+
+    df = pd.read_csv(csv_file, index_col='period')
+    return df
+
+
+def load_reservoir_storage(dataset_id):
+    """
+    Load reservoir storage data from postprocessed HDF5 file.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    dict
+        Dictionary mapping realization_id to storage DataFrame
+    """
+    fname = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Postprocessed data file not found: {fname}\n"
+            f"Run 04_postprocess_data.py first!"
+        )
+
+    # Load only reservoir storage data
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=['res_storage'])
+
+    if dataset_id not in data.res_storage:
+        raise KeyError(f"Dataset {dataset_id} not found in res_storage")
+
+    return data.res_storage[dataset_id]
+
+
+def load_satisficing_results(dataset_id, ssi_window):
+    """
+    Load satisficing results from 06_calculate_satisficing_by_drought.py.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    ssi_window : int
+        SSI window (3, 6, or 12 months)
+
+    Returns
+    -------
+    dict
+        Dictionary with keys 'all_years', 'drought', 'non_drought' containing
+        corresponding DataFrames
+    """
+    data_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
+
+    files = {
+        'all_years': f"{data_dir}/{dataset_id}_ssi{ssi_window}_all_years.csv",
+        'drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_during_droughts.csv",
+        'non_drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_non_drought.csv"
+    }
+
+    # Check for alternative naming convention
+    alt_files = {
+        'drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv",
+        'non_drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
+    }
+
+    results = {}
+
+    for condition, fname in files.items():
+        # Try primary filename first, then alternative
+        if not os.path.exists(fname) and condition in alt_files:
+            fname = alt_files[condition]
+
+        if not os.path.exists(fname):
+            raise FileNotFoundError(
+                f"Results file not found: {fname}\n"
+                "Run 06_calculate_satisficing_by_drought.py first!"
+            )
+
+        print(f"Loading {condition}: {fname}")
+        results[condition] = pd.read_csv(fname)
+
+    return results

@@ -1,15 +1,20 @@
 """
-Calculate reservoir storage zone probabilities for all datasets.
+Calculate reservoir storage zone probabilities and percentiles for all datasets.
 
-Efficiently computes zone probabilities by:
+Efficiently computes zone probabilities and storage percentiles by:
 - Loading only res_storage data per dataset
 - Processing realizations iteratively (memory efficient)
 - Caching FFMP boundaries
 - Saving results to CSV for fast reloading
 
+Outputs:
+- Zone probabilities: probability of storage being in each FFMP zone
+- Storage percentiles: 1st, 5th, 10th, 25th, 50th, 75th, 90th, 95th, 99th percentile
+  storage levels for each week of the year
+
 Usage:
-  python 09a_calculate_storage_zone_probabilities.py [dataset_id]
-  python 09a_calculate_storage_zone_probabilities.py --all
+  python 07_calculate_storage_zone_probabilities.py [dataset_id]
+  python 07_calculate_storage_zone_probabilities.py --all
 """
 
 import sys
@@ -21,25 +26,12 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import *
+from methods.save import save_zone_probabilities
 from methods.storage_zones import (
     get_ordered_threshold_columns,
-    calculate_zone_probabilities
+    calculate_zone_probabilities,
+    calculate_storage_percentiles
 )
-
-
-# Output directory for zone probability CSVs
-ZONE_PROB_DIR = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
-os.makedirs(ZONE_PROB_DIR, exist_ok=True)
-
-# Note: get_ordered_threshold_columns and calculate_zone_probabilities are now imported from methods.storage_zones
-
-
-def save_zone_probabilities(df, dataset_id, period='weekly'):
-    """Save zone probabilities to CSV."""
-    output_file = f"{ZONE_PROB_DIR}/{dataset_id}_zone_probs_{period}.csv"
-    df.to_csv(output_file)
-    print(f"  Saved: {output_file}")
-    return output_file
 
 
 def main():
@@ -54,30 +46,38 @@ def main():
     
     if arg == '--all':
         print("=" * 60)
-        print("CALCULATING ZONE PROBABILITIES FOR ALL DATASETS")
+        print("CALCULATING ZONE PROBABILITIES & PERCENTILES FOR ALL DATASETS")
         print("=" * 60)
-        
+
         for dataset_id in DATASET_CONFIGS.keys():
+            # Calculate zone probabilities
             df = calculate_zone_probabilities(dataset_id, period)
             if df is not None:
                 save_zone_probabilities(df, dataset_id, period)
+
+            # Calculate storage percentiles
+            calculate_storage_percentiles(dataset_id, period)
             print()
-        
+
         print("=" * 60)
-        print("All zone probabilities calculated!")
-        
+        print("All zone probabilities and storage percentiles calculated!")
+
     else:
         dataset_id = arg
         verify_dataset_id(dataset_id)
-        
+
         print("=" * 60)
-        print(f"CALCULATING ZONE PROBABILITIES: {dataset_id}")
+        print(f"CALCULATING ZONE PROBABILITIES & PERCENTILES: {dataset_id}")
         print("=" * 60)
-        
+
+        # Calculate zone probabilities
         df = calculate_zone_probabilities(dataset_id, period)
         if df is not None:
             save_zone_probabilities(df, dataset_id, period)
-        
+
+        # Calculate storage percentiles
+        calculate_storage_percentiles(dataset_id, period)
+
         print("=" * 60)
         print("Done!")
 

@@ -36,128 +36,13 @@ import pywrdrb
 from methods.config import *
 from methods.load import load_drought_events
 from methods.verification import verify_postprocessing_output
+from methods.print_summary import print_satisficing_summary
+from methods.save import save_satisficing_results, SATISFICING_ANALYSIS_DIR
 from methods.metrics.satisficing import (
     calculate_satisficing_conditions,
     calculate_satisficing_during_droughts,
     calculate_satisficing_non_drought_periods
 )
-
-# Output directory
-SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
-os.makedirs(SATISFICING_ANALYSIS_DIR, exist_ok=True)
-
-
-def print_summary_statistics(all_years_results, drought_results, non_drought_results,
-                            dataset_id, ssi_window):
-    """
-    Print comprehensive summary statistics comparing satisficing across conditions.
-
-    Parameters
-    ----------
-    all_years_results : pd.DataFrame
-        Satisficing results for all years
-    drought_results : pd.DataFrame
-        Satisficing results for years with drought events
-    non_drought_results : pd.DataFrame
-        Satisficing results for years without drought events
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window
-    """
-    print("\n" + "=" * 80)
-    print(f"SATISFICING ANALYSIS SUMMARY: {dataset_id}, SSI-{ssi_window}")
-    print("=" * 80)
-
-    # Calculate satisficing percentages
-    n_all = len(all_years_results)
-    n_sat_all = all_years_results['satisficing'].sum()
-    pct_sat_all = 100 * n_sat_all / n_all if n_all > 0 else 0
-
-    n_drought = len(drought_results)
-    n_sat_drought = drought_results['satisficing'].sum()
-    pct_sat_drought = 100 * n_sat_drought / n_drought if n_drought > 0 else 0
-
-    n_non_drought = len(non_drought_results)
-    n_sat_non_drought = non_drought_results['satisficing'].sum()
-    pct_sat_non_drought = 100 * n_sat_non_drought / n_non_drought if n_non_drought > 0 else 0
-
-    print("\nOVERALL SATISFICING RATES:")
-    print("-" * 80)
-    print(f"{'Condition':<30} {'Total Years':>15} {'Satisficing':>15} {'%':>10}")
-    print("-" * 80)
-    print(f"{'All Years (Jun-Dec)':<30} {n_all:>15,} {n_sat_all:>15,} {pct_sat_all:>9.1f}%")
-    print(f"{'Years with Droughts':<30} {n_drought:>15,} {n_sat_drought:>15,} {pct_sat_drought:>9.1f}%")
-    print(f"{'Years without Droughts':<30} {n_non_drought:>15,} {n_sat_non_drought:>15,} {pct_sat_non_drought:>9.1f}%")
-    print("-" * 80)
-
-    # Calculate difference
-    diff_drought_vs_all = pct_sat_drought - pct_sat_all
-    diff_non_vs_all = pct_sat_non_drought - pct_sat_all
-    diff_non_vs_drought = pct_sat_non_drought - pct_sat_drought
-
-    print("\nCOMPARISONS:")
-    print("-" * 80)
-    print(f"Years with Droughts vs All Years:       {diff_drought_vs_all:+.1f} percentage points")
-    print(f"Years without Droughts vs All Years:    {diff_non_vs_all:+.1f} percentage points")
-    print(f"Years without vs with Droughts:         {diff_non_vs_drought:+.1f} percentage points")
-    print("-" * 80)
-
-    # Failure breakdown
-    print("\nFAILURE BREAKDOWN BY CONDITION:")
-    print("-" * 80)
-
-    for results, label in [
-        (all_years_results, "All Years"),
-        (drought_results, "Years with Droughts"),
-        (non_drought_results, "Years without Droughts")
-    ]:
-        if len(results) == 0:
-            continue
-
-        n_total = len(results)
-        storage_fail = results['min_storage_pct'] < 20
-        montague_fail = results['max_violation_days'] > 3
-        both_fail = storage_fail & montague_fail
-
-        print(f"\n{label}:")
-        print(f"  Storage < 20% only:        {(storage_fail & ~montague_fail).sum():>6,} "
-              f"({100*(storage_fail & ~montague_fail).sum()/n_total:>5.1f}%)")
-        print(f"  Montague > 3 days only:    {(montague_fail & ~storage_fail).sum():>6,} "
-              f"({100*(montague_fail & ~storage_fail).sum()/n_total:>5.1f}%)")
-        print(f"  Both failures:             {both_fail.sum():>6,} "
-              f"({100*both_fail.sum()/n_total:>5.1f}%)")
-        print(f"  Total non-satisficing:     {(~results['satisficing']).sum():>6,} "
-              f"({100*(~results['satisficing']).sum()/n_total:>5.1f}%)")
-
-    # Storage and violation statistics
-    print("\n" + "=" * 80)
-    print("DETAILED METRICS:")
-    print("=" * 80)
-
-    metrics_summary = []
-    for results, label in [
-        (all_years_results, "All Years"),
-        (drought_results, "Years with Droughts"),
-        (non_drought_results, "Years without Droughts")
-    ]:
-        if len(results) == 0:
-            continue
-
-        metrics_summary.append({
-            'Condition': label,
-            'Mean Min Storage (%)': results['min_storage_pct'].mean(),
-            'Median Min Storage (%)': results['min_storage_pct'].median(),
-            'Mean Max Violations (days)': results['max_violation_days'].mean(),
-            'Median Max Violations (days)': results['max_violation_days'].median(),
-            'Mean NYC Inflow (MG)': results['nyc_inflow'].mean(),
-            'Mean Montague Contrib (MG)': results['montague_contrib'].mean()
-        })
-
-    metrics_df = pd.DataFrame(metrics_summary)
-    print("\n" + metrics_df.to_string(index=False))
-
-    print("\n" + "=" * 80)
 
 
 def calculate_statistical_significance(drought_results, non_drought_results):
@@ -266,69 +151,6 @@ def calculate_statistical_significance(drought_results, non_drought_results):
     return results
 
 
-def save_results(all_years_results, drought_results, non_drought_results,
-                dataset_id, ssi_window):
-    """
-    Save results to CSV files.
-
-    Parameters
-    ----------
-    all_years_results : pd.DataFrame
-        All years results
-    drought_results : pd.DataFrame
-        Years with drought events results
-    non_drought_results : pd.DataFrame
-        Years without drought events results
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window
-    """
-    print("\n" + "=" * 80)
-    print(f"SAVING RESULTS TO CSV (SSI-{ssi_window})")
-    print("=" * 80)
-
-    # Save individual results
-    fnames = []
-
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_all_years.csv"
-    all_years_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
-    drought_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
-    non_drought_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    # Create combined dataset with condition label
-    all_years_labeled = all_years_results.copy()
-    all_years_labeled['condition'] = 'all_years'
-
-    drought_labeled = drought_results.copy()
-    drought_labeled['condition'] = 'drought'
-
-    non_drought_labeled = non_drought_results.copy()
-    non_drought_labeled['condition'] = 'non_drought'
-
-    combined = pd.concat([all_years_labeled, drought_labeled, non_drought_labeled],
-                        ignore_index=True)
-
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_combined.csv"
-    combined.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    print("=" * 80)
-
-    return fnames
-
-
 def process_ssi_window(data, dataset_id, ssi_window, all_years_results=None):
     """
     Process a single SSI window for the given dataset.
@@ -393,16 +215,16 @@ def process_ssi_window(data, dataset_id, ssi_window, all_years_results=None):
     print(f"  Evaluated {len(non_drought_results)} year-realization pairs without droughts")
 
     # Print summary statistics
-    print_summary_statistics(all_years_results, drought_results, non_drought_results,
-                            dataset_id, ssi_window)
+    print_satisficing_summary(all_years_results, drought_results, non_drought_results,
+                              dataset_id, ssi_window)
 
     # Statistical significance tests
     if len(drought_results) > 0 and len(non_drought_results) > 0:
         stat_results = calculate_statistical_significance(drought_results, non_drought_results)
 
     # Save results
-    save_results(all_years_results, drought_results, non_drought_results,
-                dataset_id, ssi_window)
+    save_satisficing_results(all_years_results, drought_results, non_drought_results,
+                             dataset_id, ssi_window)
 
     return all_years_results
 

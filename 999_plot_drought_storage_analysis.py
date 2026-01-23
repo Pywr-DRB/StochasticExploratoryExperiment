@@ -40,14 +40,12 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import *
+from methods.load import load_drought_events as _load_drought_events, load_reservoir_storage
 from methods.plotting.styles import DATASET_COLORS, DATASET_LABELS_SHORT
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/drought_storage_analysis"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-
-# Drought metrics directory
-DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
 
 # Satisficing analysis directory
 SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
@@ -62,83 +60,10 @@ NYC_STORAGE_CAPACITIES = {
 NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,837 MG
 
 
+# Wrapper to use filter_extreme=True by default in this module
 def load_drought_events(dataset_id, ssi_window):
-    """
-    Load drought events from CSV file.
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window size in months (3, 6, or 12)
-
-    Returns:
-    --------
-    pd.DataFrame
-        Drought events with columns: start, end, duration, severity, magnitude, realization_id
-    """
-    fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Drought events file not found: {fname}\n"
-            f"Run 05_calculate_ssi_drought_metrics.py first!"
-        )
-
-    droughts = pd.read_csv(fname)
-    droughts['start'] = pd.to_datetime(droughts['start'])
-    droughts['end'] = pd.to_datetime(droughts['end'])
-
-    # Take absolute values for severity and magnitude
-    for metric in ['severity', 'magnitude']:
-        if metric in droughts.columns:
-            droughts[metric] = droughts[metric].abs()
-
-    # Remove infinite or NaN values
-    droughts = droughts.replace([np.inf, -np.inf], np.nan).dropna(
-        subset=['severity', 'magnitude', 'duration']
-    )
-
-    # Remove droughts with SSI abs(severity) > 6
-    n_before = len(droughts)
-    droughts = droughts[droughts['severity'] <= 6.0]
-    n_after = len(droughts)
-    if n_before > n_after:
-        print(f"    Removed {n_before - n_after} droughts with |severity| > 6.0")
-
-    print(f"  Loaded {len(droughts):,} drought events")
-    return droughts
-
-
-def load_reservoir_storage(dataset_id):
-    """
-    Load reservoir storage data from postprocessed HDF5 file.
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier
-
-    Returns:
-    --------
-    dict
-        Dictionary mapping realization_id to storage DataFrame
-    """
-    fname = f"{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Postprocessed data file not found: {fname}\n"
-            f"Run 04_postprocess_data.py first!"
-        )
-
-    # Load only reservoir storage data
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=['res_storage'])
-
-    print(f"  Loaded storage data for {len(data.res_storage[dataset_id])} realizations")
-    return data.res_storage[dataset_id]
+    """Load drought events with extreme filtering (severity > 6.0 removed)."""
+    return _load_drought_events(dataset_id, ssi_window, filter_extreme=True)
 
 
 def calculate_nyc_storage_pct(storage_df):

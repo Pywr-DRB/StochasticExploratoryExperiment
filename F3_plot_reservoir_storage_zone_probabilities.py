@@ -21,10 +21,192 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import *
+from methods.load import load_zone_probabilities, load_ffmp_boundaries, load_storage_percentiles
 
 # Default probability bins (percent) - log-scale discrete bins
 # Designed to emphasize low probability values (<5%) while covering full range
 DEFAULT_PROB_BINS = [0.01, 0.1,  1, 5, 10, 25, 50, 75, 99]
+
+
+def get_percentile_realization_years(dataset_id, percentiles=[10, 50, 90], metric='min_storage_pct'):
+    """
+    Get (realization_id, year) combinations at specified percentiles of a metric.
+
+    Uses pre-calculated satisficing results which have per-year min_storage_pct.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    percentiles : list
+        Percentiles to find (e.g., [10, 50, 90])
+    metric : str
+        Metric column to use for percentile calculation.
+        Default 'min_storage_pct' selects by minimum storage reached in each year.
+
+    Returns
+    -------
+    dict
+        Dictionary mapping percentile -> (realization_id, year)
+    """
+    # Load satisficing results which have per-(realization, year) data
+    satisficing_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
+    fname = f"{satisficing_dir}/{dataset_id}_ssi6_all_years.csv"
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(f"Satisficing results not found: {fname}")
+
+    df = pd.read_csv(fname)
+
+    result = {}
+    for p in percentiles:
+        # Find the value at this percentile
+        target_val = df[metric].quantile(p / 100.0)
+        # Find the row closest to this percentile value
+        closest_idx = (df[metric] - target_val).abs().idxmin()
+        row = df.loc[closest_idx]
+        actual_val = row[metric]
+        result[p] = (int(row['realization']), int(row['year']))
+        print(f"    p{p}: target={target_val:.1f}%, actual={actual_val:.1f}%")
+
+    return result
+
+
+def load_single_year_trajectories(dataset_id, percentile_realization_years, origin='june1'):
+    """
+    Load storage trajectories for specific (realization, year) combinations.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    percentile_realization_years : dict
+        Dictionary mapping percentile -> (realization_id, year)
+    origin : str
+        Period origin for week-of-year calculation
+
+    Returns
+    -------
+    dict
+        Dictionary mapping percentile -> Series with week_of_year index and storage_pct values
+    """
+    import pywrdrb
+
+    # Load storage data for the needed realizations
+    fname = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=['res_storage'])
+
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+    trajectories = {}
+
+    for percentile, (real_id, target_year) in percentile_realization_years.items():
+        storage_df = data.res_storage[dataset_id][real_id]
+        nyc_storage = storage_df[nyc_reservoirs].sum(axis=1)
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+        # Filter to the target water year
+        if origin == 'june1':
+            # Water year runs June 1 of target_year to May 31 of target_year+1
+            start_date = f"{target_year}-06-01"
+            end_date = f"{target_year + 1}-05-31"
+        else:
+            start_date = f"{target_year}-01-01"
+            end_date = f"{target_year}-12-31"
+
+        year_storage = nyc_storage_pct.loc[start_date:end_date]
+
+        # Convert to weekly
+        weekly_storage = year_storage.resample('W').mean()
+
+        # Add week-of-year index
+        week_idx = _period_index(weekly_storage.index, period='weekly', origin=origin)
+
+        # Create Series with week_of_year index and sort by index to prevent looping
+        traj = pd.Series(weekly_storage.values, index=week_idx)
+        trajectories[percentile] = traj.sort_index()
+
+    return trajectories
+
+
+def load_ensemble_percentile_trajectories(dataset_id, percentiles=[1, 50, 99], period='weekly'):
+    """
+    Load pre-calculated ensemble storage percentiles for plotting.
+
+    These are the Xth percentile storage for each week across all realizations/years,
+    calculated by 07_calculate_storage_zone_probabilities.py.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    percentiles : list
+        Percentiles to extract (e.g., [1, 50, 99])
+    period : str
+        Time period ('weekly')
+
+    Returns
+    -------
+    dict
+        Dictionary mapping percentile -> Series with period index and storage_pct values
+    """
+    # Load storage percentiles CSV
+    percentile_df = load_storage_percentiles(dataset_id, period)
+
+    if percentile_df is None:
+        raise FileNotFoundError(f"Storage percentiles not found for {dataset_id}")
+
+    trajectories = {}
+    for p in percentiles:
+        col_name = f'p{p}'
+        if col_name not in percentile_df.columns:
+            print(f"  Warning: Column {col_name} not in percentiles CSV for {dataset_id}")
+            continue
+        trajectories[p] = percentile_df[col_name]
+
+    return trajectories
+
+
+def load_historical_mean_storage(period='weekly', origin='june1'):
+    """
+    Load mean historical NYC storage by week from reconstruction data (1945-2023).
+
+    Parameters
+    ----------
+    period : str
+        Time period ('weekly')
+    origin : str
+        Period origin for week-of-year calculation ('june1' or 'jan1')
+
+    Returns
+    -------
+    pd.Series
+        Mean storage percentage by week, indexed by period (1-52/53)
+    """
+    # Load reconstruction storage data
+    fname = f"{ROOT_DIR}/pywrdrb/outputs/reconstruction.hdf5"
+    data = pywrdrb.Data()
+    data.load_output(output_filenames=[fname], results_sets=['res_storage'])
+
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+    # Get NYC storage from reconstruction
+    storage_df = data.res_storage['reconstruction'][0]
+    nyc_storage = storage_df[nyc_reservoirs].sum(axis=1)
+    nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+    # Calculate period index
+    week_idx = _period_index(nyc_storage_pct.index, period=period, origin=origin)
+
+    # Group by week and calculate mean
+    storage_with_week = pd.DataFrame({
+        'storage_pct': nyc_storage_pct.values,
+        'week': week_idx
+    })
+    mean_by_week = storage_with_week.groupby('week')['storage_pct'].mean()
+
+    return mean_by_week
 
 
 def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
@@ -80,31 +262,8 @@ def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
 
 
 # Input/output directories
-ZONE_PROB_DIR = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
 FIG_OUTPUT_DIR = f"{FIG_DIR}/storage_zones"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-
-
-def load_zone_probabilities(dataset_id, period='weekly'):
-    """Load zone probabilities from CSV."""
-    csv_file = f"{ZONE_PROB_DIR}/{dataset_id}_zone_probs_{period}.csv"
-    if not os.path.exists(csv_file):
-        print(f"ERROR: Zone probabilities not found: {csv_file}")
-        print("Run 09a_calculate_storage_zone_probabilities.py first!")
-        return None
-    
-    df = pd.read_csv(csv_file, index_col='period')
-    return df
-
-
-def load_ffmp_boundaries():
-    """Load FFMP level boundaries once (cached)."""
-    if not hasattr(load_ffmp_boundaries, '_cache'):
-        ffmp_data = pywrdrb.Data(results_sets=["ffmp_level_boundaries"])
-        ffmp_data.load_output(output_filenames=[RECONSTRUCTION_OUTPUT_FNAME])
-        boundaries = ffmp_data.ffmp_level_boundaries['reconstruction'][0] * 100
-        load_ffmp_boundaries._cache = boundaries
-    return load_ffmp_boundaries._cache
 
 
 def get_ordered_threshold_columns(ffmp_boundaries):
@@ -439,7 +598,14 @@ def plot_4panel_storage_comparison(period='weekly',
                                     diff_mode='ratio',
                                     vmin_diff=None,
                                     vmax_diff=None,
-                                    fname=None):
+                                    fname=None,
+                                    show_percentile_trajectories=False,
+                                    trajectory_mode='ensemble',
+                                    percentiles=[1, 50, 99],
+                                    trajectory_colors=None,
+                                    trajectory_alpha=0.6,
+                                    trajectory_linewidth=1.0,
+                                    show_historical_mean=False):
     """
     Create a 3-panel comparison figure showing storage zone probabilities for selected scenarios.
 
@@ -471,6 +637,25 @@ def plot_4panel_storage_comparison(period='weekly',
         - 'absolute': -50 to 50 (percentage points)
     fname : str
         Output filename (if None, will auto-generate)
+    show_percentile_trajectories : bool
+        If True, overlay storage trajectories at specified percentiles
+    trajectory_mode : str
+        Mode for trajectory calculation:
+        - 'ensemble': Use pre-calculated ensemble percentiles (Xth percentile storage
+          for each week pooled across all realizations/years). Smooth envelope curves.
+        - 'annual': Use specific (realization, year) combinations at the Xth percentile
+          of minimum storage. Shows actual simulated annual trajectories.
+    percentiles : list
+        Percentiles to show (default [1, 50, 99])
+    trajectory_colors : list, optional
+        Colors for each percentile trajectory. If None, uses default white/gray scheme with black edges
+    trajectory_alpha : float
+        Transparency for trajectory lines (default 0.6)
+    trajectory_linewidth : float
+        Line width for trajectories (default 1.0)
+    show_historical_mean : bool
+        If True, overlay mean historical (1945-2023) storage trajectory on all panels.
+        Uses reconstruction data to compute mean storage by week.
     """
     # Use configured origin if not specified
     if origin is None:
@@ -622,6 +807,136 @@ def plot_4panel_storage_comparison(period='weekly',
                 ylabel=''  # No ylabel for right panels
             )
 
+    # Add percentile trajectories to ALL panels if requested
+    # Each panel uses its own dataset-specific data
+    if show_percentile_trajectories:
+        print(f"\nAdding percentile trajectories to all panels (mode: {trajectory_mode})...")
+
+        # Line styles: white/gray fill with black edge, different dash patterns
+        # Each style: (fill_color, linestyle)
+        trajectory_styles = [
+            ('white', '-'),        # 1st percentile: solid
+            ('lightgray', '--'),   # 50th percentile: dashed
+            ('white', ':'),        # 99th percentile: dotted
+        ]
+
+        # Map panels to datasets
+        panel_datasets = [
+            (ax_stat, 'stationary_ensemble', True),   # include legend
+            (ax_low, 'climate_adjusted_low', False),
+            (ax_high, 'climate_adjusted_high', False)
+        ]
+
+        for ax, dataset_id, include_legend in panel_datasets:
+            try:
+                if trajectory_mode == 'ensemble':
+                    # Use pre-calculated ensemble percentiles (smooth curves)
+                    print(f"  Loading ensemble percentiles for {dataset_id}...")
+                    trajectories = load_ensemble_percentile_trajectories(
+                        dataset_id,
+                        percentiles=percentiles,
+                        period=period
+                    )
+                else:
+                    # Use specific (realization, year) combinations (annual mode)
+                    percentile_real_years = get_percentile_realization_years(
+                        dataset_id,
+                        percentiles=percentiles,
+                        metric='min_storage_pct'
+                    )
+                    print(f"  {dataset_id}: {percentile_real_years}")
+
+                    trajectories = load_single_year_trajectories(
+                        dataset_id,
+                        percentile_real_years,
+                        origin=origin
+                    )
+
+                # Plot each percentile trajectory with black edge effect
+                import matplotlib.patheffects as path_effects
+
+                for i, p in enumerate(percentiles):
+                    if p not in trajectories:
+                        continue
+                    traj = trajectories[p]
+                    fill_color, linestyle = trajectory_styles[i % len(trajectory_styles)]
+
+                    # Get correct ordinal suffix (1st, 2nd, 3rd, etc.)
+                    if p % 100 in (11, 12, 13):
+                        suffix = 'th'
+                    elif p % 10 == 1:
+                        suffix = 'st'
+                    elif p % 10 == 2:
+                        suffix = 'nd'
+                    elif p % 10 == 3:
+                        suffix = 'rd'
+                    else:
+                        suffix = 'th'
+
+                    # Label depends on mode
+                    if trajectory_mode == 'ensemble':
+                        label = f'{p}{suffix} Percentile Storage' if include_legend else None
+                    else:
+                        label = f'{p}{suffix} Percentile Min Storage Year' if include_legend else None
+
+                    # Plot with black edge using path_effects
+                    line, = ax.plot(
+                        traj.index,
+                        traj.values,
+                        color=fill_color,
+                        linestyle=linestyle,
+                        linewidth=2.5,
+                        label=label,
+                        zorder=11,
+                        path_effects=[
+                            path_effects.Stroke(linewidth=4, foreground='black'),
+                            path_effects.Normal()
+                        ]
+                    )
+
+                if include_legend:
+                    ax.legend(loc='lower left', fontsize=7, framealpha=0.8)
+
+            except Exception as e:
+                print(f"  Warning: Could not load trajectories for {dataset_id}: {e}")
+
+    # Add historical mean storage trajectory if requested
+    if show_historical_mean:
+        print(f"\nAdding historical mean storage trajectory...")
+        import matplotlib.patheffects as path_effects
+
+        try:
+            hist_mean = load_historical_mean_storage(period=period, origin=origin)
+
+            # Plot on all panels
+            for ax, include_legend in [(ax_stat, True), (ax_low, False), (ax_high, False)]:
+                label = 'Historical Mean (1945-2023)' if include_legend else None
+
+                ax.plot(
+                    hist_mean.index,
+                    hist_mean.values,
+                    color='cyan',
+                    linestyle='-',
+                    linewidth=2.5,
+                    label=label,
+                    zorder=12,
+                    path_effects=[
+                        path_effects.Stroke(linewidth=4, foreground='black'),
+                        path_effects.Normal()
+                    ]
+                )
+
+            # Update legend on stationary panel if it exists
+            if show_percentile_trajectories:
+                ax_stat.legend(loc='lower left', fontsize=7, framealpha=0.8)
+            else:
+                ax_stat.legend(loc='lower left', fontsize=8, framealpha=0.8)
+
+            print(f"  Added historical mean trajectory (min={hist_mean.min():.1f}%, max={hist_mean.max():.1f}%)")
+
+        except Exception as e:
+            print(f"  Warning: Could not load historical mean storage: {e}")
+
     # Add two colorbars at bottom, centered under each panel
     # Get the actual panel positions for proper centering
     pos_left = ax_stat.get_position()
@@ -658,7 +973,13 @@ def plot_4panel_storage_comparison(period='weekly',
 
     # Save figure
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/comparison_3panel_storage_zone_probabilities_{period}_{diff_mode}.png"
+        suffixes = []
+        if show_percentile_trajectories:
+            suffixes.append(f"{trajectory_mode}_trajectories")
+        if show_historical_mean:
+            suffixes.append("historical")
+        suffix_str = "_with_" + "_and_".join(suffixes) if suffixes else ""
+        fname = f"{FIG_OUTPUT_DIR}/comparison_3panel_storage_zone_probabilities_{period}_{diff_mode}{suffix_str}.png"
 
     plt.savefig(fname, dpi=400, bbox_inches='tight')
     # Also save vector version
@@ -761,11 +1082,31 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
-        print("Special option: 'comparison' - generates 3-panel comparison figure")
+        print("Special options:")
+        print("  'comparison' - generates 3-panel comparison figure")
+        print("  '--trajectories' - add percentile trajectories to comparison figure")
+        print("  '--mode=ensemble' - use ensemble percentiles (default)")
+        print("  '--mode=annual' - use annual trajectories (specific realization/year)")
+        print("  '--historical' - add mean historical (1945-2023) storage trajectory")
         sys.exit(1)
 
     arg = sys.argv[1]
     period = 'weekly'
+
+    # Check for --trajectories flag
+    show_trajectories = '--trajectories' in sys.argv
+
+    # Check for --historical flag
+    show_historical = '--historical' in sys.argv
+
+    # Check for --mode flag
+    trajectory_mode = 'ensemble'  # default
+    for a in sys.argv:
+        if a.startswith('--mode='):
+            trajectory_mode = a.split('=')[1]
+            if trajectory_mode not in ['ensemble', 'annual']:
+                print(f"Invalid trajectory mode: {trajectory_mode}. Use 'ensemble' or 'annual'.")
+                sys.exit(1)
 
     figsize = (10, 8)
 
@@ -773,8 +1114,18 @@ def main():
     if arg.lower() == 'comparison':
         print("=" * 60)
         print("PLOTTING 3-PANEL STORAGE ZONE COMPARISON")
+        if show_trajectories:
+            print(f"(with {trajectory_mode} percentile trajectories)")
+        if show_historical:
+            print("(with historical mean storage)")
         print("=" * 60)
-        plot_4panel_storage_comparison(period=period, diff_mode='relative')
+        plot_4panel_storage_comparison(
+            period=period,
+            diff_mode='relative',
+            show_percentile_trajectories=show_trajectories,
+            trajectory_mode=trajectory_mode,
+            show_historical_mean=show_historical
+        )
         print("=" * 60)
         print("3-panel comparison figure completed successfully!")
         return

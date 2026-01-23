@@ -38,7 +38,33 @@ import h5py
 import warnings
 warnings.filterwarnings("ignore")
 
-from mpi4py import MPI
+# =============================================================================
+# MPI CONFIGURATION
+# =============================================================================
+# Set USE_MPI=False to run without MPI (single-process, for small local batches)
+USE_MPI = False
+
+if USE_MPI:
+    from mpi4py import MPI
+else:
+    # Mock MPI communicator for single-process execution
+    class MockComm:
+        def Get_rank(self):
+            return 0
+        def Get_size(self):
+            return 1
+        def Barrier(self):
+            pass
+        def gather(self, data, root=0):
+            return [data]
+        def reduce(self, data, op=None, root=0):
+            return data
+
+    class MockMPI:
+        COMM_WORLD = MockComm()
+        SUM = None
+
+    MPI = MockMPI()
 
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow

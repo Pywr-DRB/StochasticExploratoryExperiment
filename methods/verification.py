@@ -4,11 +4,12 @@ Verification utilities for checking data existence and validity.
 This module provides functions to verify that required files and datasets exist
 before running analysis scripts. These verification functions are used throughout
 the workflow to ensure proper sequencing of operations.
+
+All verify_*() functions should be imported from this module.
 """
 
 import os
 import sys
-from methods.config import ROOT_DIR
 
 
 def verify_file_exists(filepath, error_message=None):
@@ -33,6 +34,36 @@ def verify_file_exists(filepath, error_message=None):
         raise FileNotFoundError(error_message)
 
 
+def verify_dataset_id(dataset_id):
+    """
+    Verify that the dataset_id is valid.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier to verify
+
+    Returns
+    -------
+    bool
+        True if valid
+
+    Raises
+    ------
+    ValueError
+        If dataset_id is not in DATASET_CONFIGS
+    """
+    # Import here to avoid circular imports
+    from methods.config import DATASET_CONFIGS
+
+    if dataset_id not in DATASET_CONFIGS:
+        raise ValueError(
+            f"Invalid dataset_id: {dataset_id}. "
+            f"Must be one of {list(DATASET_CONFIGS.keys())}"
+        )
+    return True
+
+
 def verify_prep_outputs(dataset_id):
     """
     Verify that preprocessing outputs exist for a dataset.
@@ -50,6 +81,10 @@ def verify_prep_outputs(dataset_id):
     FileNotFoundError
         If preprocessing outputs are not found
     """
+    from methods.config import ROOT_DIR
+
+    verify_dataset_id(dataset_id)
+
     # Check for the main prep directory
     prep_dir = f"{ROOT_DIR}/pywrdrb/prep/{dataset_id}"
 
@@ -74,7 +109,7 @@ def verify_prep_outputs(dataset_id):
             f"\n\nRun 02_prep_pywrdrb_inputs.py for {dataset_id} first!"
         )
 
-    print(f"✓ Preprocessing outputs verified for {dataset_id}")
+    print(f"[OK] Preprocessing outputs verified for {dataset_id}")
 
 
 def verify_simulation_outputs(dataset_id):
@@ -94,6 +129,10 @@ def verify_simulation_outputs(dataset_id):
     FileNotFoundError
         If simulation outputs are not found
     """
+    from methods.config import ROOT_DIR
+
+    verify_dataset_id(dataset_id)
+
     output_file = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}.hdf5"
 
     if not os.path.exists(output_file):
@@ -102,7 +141,7 @@ def verify_simulation_outputs(dataset_id):
             f"Run 03_run_pywrdrb_simulations.py for {dataset_id} first!"
         )
 
-    print(f"✓ Simulation outputs verified for {dataset_id}")
+    print(f"[OK] Simulation outputs verified for {dataset_id}")
 
 
 def verify_postprocessing_output(dataset_id):
@@ -122,6 +161,10 @@ def verify_postprocessing_output(dataset_id):
     FileNotFoundError
         If postprocessing outputs are not found
     """
+    from methods.config import ROOT_DIR
+
+    verify_dataset_id(dataset_id)
+
     output_file = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
 
     if not os.path.exists(output_file):
@@ -130,4 +173,83 @@ def verify_postprocessing_output(dataset_id):
             f"Run 04_postprocess_data.py for {dataset_id} first!"
         )
 
-    print(f"Postprocessing outputs verified for {dataset_id}")
+    print(f"[OK] Postprocessing outputs verified for {dataset_id}")
+
+
+def verify_realization_id_consistency(dataset_id):
+    """
+    Verify that realization IDs are consistent across generation and simulation for a dataset.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    bool
+        True if all sets are consistent or files don't exist yet
+    """
+    from methods.config import (
+        N_ENSEMBLE_SETS,
+        get_ensemble_set_spec,
+        get_hdf5_realization_numbers
+    )
+
+    verify_dataset_id(dataset_id)
+    print(f"Verifying {dataset_id} realization ID consistency...")
+
+    all_ok = True
+    for set_id in range(N_ENSEMBLE_SETS):
+        set_spec = get_ensemble_set_spec(set_id, dataset_id)
+
+        # Check expected vs actual realization IDs
+        expected_ids = set_spec.realizations
+
+        if os.path.exists(set_spec.files['gage_flow']):
+            actual_ids = get_hdf5_realization_numbers(set_spec.files['gage_flow'])
+            actual_ids = [int(x) for x in actual_ids]
+
+            if set(expected_ids) != set(actual_ids):
+                print(f"  MISMATCH in Set {set_id + 1}:")
+                print(f"    Expected: {expected_ids}")
+                print(f"    Actual:   {actual_ids}")
+                all_ok = False
+            else:
+                print(f"  Set {set_id + 1}: OK")
+        else:
+            print(f"  Set {set_id + 1}: File not found (skipped)")
+
+    return all_ok
+
+
+def verify_ensemble_outputs(dataset_id):
+    """
+    Verify that ensemble generation outputs exist for a dataset.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Raises
+    ------
+    FileNotFoundError
+        If ensemble outputs are not found
+    """
+    from methods.config import ENSEMBLE_SETS
+
+    verify_dataset_id(dataset_id)
+
+    missing_sets = []
+    for spec in ENSEMBLE_SETS[dataset_id]:
+        if not os.path.exists(spec.files['gage_flow']):
+            missing_sets.append(spec.set_id + 1)
+
+    if missing_sets:
+        raise FileNotFoundError(
+            f"Missing ensemble sets for {dataset_id}: {missing_sets}\n"
+            f"Run 01_generate_ensemble_sets.py for {dataset_id} first!"
+        )
+
+    print(f"[OK] Ensemble outputs verified for {dataset_id}")

@@ -28,50 +28,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
+from methods.load import load_satisficing_results
 
 # Output directory
 FIG_DIR_SATISFICING = f"{FIG_DIR}/satisficing_comparison"
 os.makedirs(FIG_DIR_SATISFICING, exist_ok=True)
-
-
-def load_satisficing_results(dataset_id, ssi_window):
-    """
-    Load satisficing results from 06_calculate_satisficing_by_drought.py.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window (3, 6, or 12 months)
-
-    Returns
-    -------
-    dict
-        Dictionary with keys 'all_years', 'drought', 'non_drought' containing
-        corresponding DataFrames
-    """
-    data_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
-
-    files = {
-        'all_years': f"{data_dir}/{dataset_id}_ssi{ssi_window}_all_years.csv",
-        'drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_during_droughts.csv",
-        'non_drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_non_drought.csv"
-    }
-
-    results = {}
-
-    for condition, fname in files.items():
-        if not os.path.exists(fname):
-            raise FileNotFoundError(
-                f"Results file not found: {fname}\n"
-                "Run 06_calculate_satisficing_by_drought.py first!"
-            )
-
-        print(f"Loading {condition}: {fname}")
-        results[condition] = pd.read_csv(fname)
-
-    return results
 
 
 def plot_satisficing_percentages(results, dataset_id, ssi_window, dataset_label):

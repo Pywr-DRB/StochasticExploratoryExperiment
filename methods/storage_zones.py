@@ -213,3 +213,126 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     print(f"{'='*80}")
 
     return df
+
+
+def calculate_storage_percentiles(dataset_id, period='weekly',
+                                   percentiles=[1, 5, 10, 25, 50, 75, 90, 95, 99],
+                                   output_dir=None):
+    """
+    Calculate storage percentiles for each period across all realizations and years.
+
+    This calculates the Xth percentile of storage for each week/period of the year,
+    pooling data from all realizations and all years. Useful for showing percentile
+    envelope curves on storage zone probability plots.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    period : str
+        Time aggregation: 'daily', 'weekly', or 'monthly'
+    percentiles : list
+        Percentiles to calculate (e.g., [1, 5, 10, 25, 50, 75, 90, 95, 99])
+    output_dir : str, optional
+        Directory to save results. If None, uses default location.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: period, p1, p5, p10, p25, p50, p75, p90, p95, p99
+        Index: unique period values (1..P)
+    """
+    from .config import verify_dataset_id, DATASET_CONFIGS
+
+    verify_dataset_id(dataset_id)
+    dataset_config = DATASET_CONFIGS[dataset_id]
+
+    print(f"\n{'='*80}")
+    print(f"CALCULATING STORAGE PERCENTILES: {dataset_id}")
+    print(f"{'='*80}")
+    print(f"  Dataset type: {dataset_config['type']}")
+    print(f"  Period: {period}")
+    print(f"  Percentiles: {percentiles}")
+
+    # Verify postprocessed data exists
+    verify_postprocessing_output(dataset_id)
+
+    # Load ensemble storage data
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    print(f"  Loading res_storage for {dataset_id}...")
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=['res_storage'])
+
+    realizations = sorted(data.res_storage[dataset_id].keys())
+    print(f"  Found {len(realizations)} realizations")
+
+    # Get period indices (using configured origin)
+    sample_storage = data.res_storage[dataset_id][realizations[0]]
+    p_idx = calculate_water_year_period_index(sample_storage.index, period=period, origin=PERIOD_ORIGIN)
+    periods_sorted = np.sort(np.unique(p_idx))
+    P = len(periods_sorted)
+
+    print(f"  Processing {len(realizations)} realizations...")
+    print(f"  Found {P} unique {period} periods")
+
+    # NYC reservoir names
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+    # Collect all storage values by period
+    # Use a dictionary of lists to accumulate values for each period
+    storage_by_period = {p: [] for p in periods_sorted}
+
+    # Process each realization
+    for r_idx, r in enumerate(realizations):
+        if (r_idx + 1) % 10 == 0 or r_idx == 0:
+            print(f"    Processing realization {r_idx + 1}/{len(realizations)}...")
+
+        # Get NYC storage percentage
+        nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+        # Get period index for this realization (using configured origin)
+        p_idx_r = calculate_water_year_period_index(nyc_storage.index, period=period, origin=PERIOD_ORIGIN)
+
+        # Add storage values to the appropriate period bucket
+        for period_val in periods_sorted:
+            period_mask = (p_idx_r == period_val)
+            storage_values = nyc_storage_pct[period_mask].values
+            storage_by_period[period_val].extend(storage_values)
+
+    print(f"  Calculating percentiles...")
+
+    # Calculate percentiles for each period
+    results = []
+    for period_val in periods_sorted:
+        values = np.array(storage_by_period[period_val])
+        row = {'period': period_val, 'n_samples': len(values)}
+
+        for p in percentiles:
+            row[f'p{p}'] = np.percentile(values, p)
+
+        results.append(row)
+
+    # Create DataFrame
+    df = pd.DataFrame(results)
+    df = df.set_index('period')
+
+    # Report sample sizes
+    min_samples = df['n_samples'].min()
+    max_samples = df['n_samples'].max()
+    print(f"  Samples per period: {min_samples} - {max_samples}")
+
+    # Save to CSV
+    if output_dir is None:
+        output_dir = "./pywrdrb/zone_probabilities"
+
+    os.makedirs(output_dir, exist_ok=True)
+    csv_file = f"{output_dir}/{dataset_id}_storage_percentiles_{period}.csv"
+    df.to_csv(csv_file)
+    print(f"  Saved: {csv_file}")
+
+    print(f"\n{'='*80}")
+    print(f"STORAGE PERCENTILES COMPLETE: {dataset_id}")
+    print(f"{'='*80}")
+
+    return df

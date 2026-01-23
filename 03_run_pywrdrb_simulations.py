@@ -19,6 +19,7 @@ from methods.config import (
     get_ensemble_set_spec,
     print_experiment_summary
 )
+from methods.print_summary import print_simulation_status
 
 
 def parallel_run_all_sets(dataset_id):
@@ -162,71 +163,6 @@ def parallel_run_all_sets(dataset_id):
         print(f"Done with Pywr-DRB simulations for {dataset_id}!")
 
 
-def verify_simulation_outputs(dataset_id):
-    """
-    Verify that all ensemble sets have been properly simulated
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier to verify
-    """
-
-    verify_dataset_id(dataset_id)
-    print(f"\nVerifying Pywr-DRB simulation outputs for {dataset_id}...")
-
-    all_completed = True
-    successful_sets = []
-    failed_sets = []
-
-    for set_id in range(N_ENSEMBLE_SETS):
-        set_spec = get_ensemble_set_spec(set_id, dataset_id)
-
-        if not os.path.exists(set_spec.output_file):
-            print(f"FAIL:  Set {set_id + 1}: Output file not found")
-            all_completed = False
-            failed_sets.append(set_id + 1)
-            continue
-
-        # Check file size (basic validation)
-        file_size = os.path.getsize(set_spec.output_file)
-        if file_size < 1024:  # Less than 1KB is suspicious
-            print(f"FAIL:  Set {set_id + 1}: Output file too small ({file_size} bytes)")
-            all_completed = False
-            failed_sets.append(set_id + 1)
-            continue
-
-        # Try to load with Pywr-DRB to verify format (optimization: only check first and last)
-        if set_id == 0 or set_id == N_ENSEMBLE_SETS - 1:
-            try:
-                test_data = pywrdrb.Data(results_sets=["major_flow"])
-                test_data.load_output(output_filenames=[set_spec.output_file])
-                n_realizations = len(list(test_data.major_flow.values())[0])
-
-                if n_realizations != N_REALIZATIONS_PER_ENSEMBLE_SET:
-                    print(f"WARNING: Set {set_id + 1}: Expected {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations, found {n_realizations}")
-                    failed_sets.append(set_id + 1)
-                else:
-                    print(f"SUCCESS: Set {set_id + 1}: Valid output ({n_realizations} realizations, {file_size//1024//1024} MB)")
-                    successful_sets.append(set_id + 1)
-
-            except Exception as e:
-                print(f"FAIL:  Set {set_id + 1}: Error loading output file - {str(e)}")
-                all_completed = False
-                failed_sets.append(set_id + 1)
-        else:
-            # For middle sets, just check file size
-            print(f"SUCCESS: Set {set_id + 1}: Output exists ({file_size//1024//1024} MB)")
-            successful_sets.append(set_id + 1)
-
-    if all_completed:
-        print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets have valid simulation outputs!")
-    else:
-        print(f"WARNING: {len(failed_sets)} sets have invalid outputs: {failed_sets}")
-
-    return all_completed
-
-
 def main(dataset_id):
     """Main function (MPI-only)"""
 
@@ -241,9 +177,9 @@ def main(dataset_id):
     # Run all ensemble set simulations in parallel
     parallel_run_all_sets(dataset_id)
 
-    # Verify outputs (only on rank 0)
+    # Print status (only on rank 0)
     if rank == 0:
-        verify_simulation_outputs(dataset_id)
+        print_simulation_status(dataset_id)
         print(f"\nPywr-DRB simulation workflow completed for {dataset_id}!")
 
 

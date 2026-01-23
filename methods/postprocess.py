@@ -22,6 +22,7 @@ from .config import (
     NYC_TOTAL_CAPACITY,
     get_ensemble_set_spec
 )
+from .print_summary import print_performance_metrics_summary
 
 
 def calculate_performance_metrics(data, dataset_id, realizations):
@@ -421,43 +422,8 @@ def save_performance_metrics(metrics_df, dataset_id, output_dir):
     metrics_df.to_csv(fname)
     print(f"  Saved performance metrics: {fname}")
 
-    # Calculate and print percentiles for key metrics
-    print(f"\n  Key Performance Metrics Summary:")
-    print(f"  {'='*60}")
-
-    count_metrics = ['years_reliable', 'years_high_storage', 'years_above_20pct',
-                     'years_low_carryover', 'years_trenton_reliable']
-    for metric in count_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
-
-    print(f"\n  Other Metrics Summary:")
-    print(f"  {'='*60}")
-    other_metrics = ['pct_days_nyc_diversion_shortage', 'max_consecutive_drought_days',
-                     'mean_sept1_storage_pct', 'mean_annual_nyc_contribution_mg']
-    for metric in other_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            if 'pct' in metric or 'storage' in metric:
-                print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
-            else:
-                print(f"    {metric:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
-
-    print(f"\n  Drought Zone & Shortage Metrics Summary:")
-    print(f"  {'='*60}")
-    zone_metrics = ['years_drought_emergency', 'years_drought_watch', 'years_drought_warning',
-                    'max_1day_montague_shortage_mg', 'max_3day_montague_shortage_mg', 'max_7day_montague_shortage_mg']
-    for metric in zone_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
+    # Print summary using centralized function
+    print_performance_metrics_summary(metrics_df)
 
 
 def calculate_and_save_performance_metrics(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):
@@ -700,6 +666,24 @@ def preprocess_to_weekly(data, dataset_id, config=None):
             'montague_target': montague_target_daily,
         })
 
+        # Compute daily shortage indicators (True if shortage that day)
+        daily_df['demand_shortage_day'] = (
+            daily_df['nyc_diversion'] < daily_df['nyc_demand'] * 0.999
+        ).astype(int)
+        daily_df['flow_shortage_day'] = (
+            daily_df['montague_flow'] < daily_df['montague_target'] * 0.999
+        ).astype(int)
+
+        # Function to compute max consecutive days within each weekly group
+        def max_consecutive_days(series):
+            """Count maximum consecutive 1s in a series."""
+            if series.sum() == 0:
+                return 0
+            # Convert to string of 0s and 1s, split by 0s, find max length
+            s = ''.join(series.astype(str).values)
+            runs = s.split('0')
+            return max(len(run) for run in runs)
+
         # Resample to weekly
         # Use week-ending (Sunday) to align with common conventions
         weekly_df = daily_df.resample('W').agg({
@@ -710,7 +694,16 @@ def preprocess_to_weekly(data, dataset_id, config=None):
             'nyc_demand': 'sum',             # Total weekly demand
             'montague_flow': 'sum',          # Total weekly flow
             'montague_target': 'sum',        # Total weekly target
+            'demand_shortage_day': 'sum',    # Total days with demand shortage
+            'flow_shortage_day': 'sum',      # Total days with flow shortage
         })
+
+        # Also compute max consecutive shortage days per week
+        weekly_consec_demand = daily_df['demand_shortage_day'].resample('W').apply(max_consecutive_days)
+        weekly_consec_flow = daily_df['flow_shortage_day'].resample('W').apply(max_consecutive_days)
+
+        weekly_df['demand_shortage_consec_days'] = weekly_consec_demand
+        weekly_df['flow_shortage_consec_days'] = weekly_consec_flow
 
         # Add derived variables
         weekly_df['storage_pct'] = 100.0 * weekly_df['storage_agg'] / nyc_total_capacity
@@ -742,7 +735,9 @@ def preprocess_to_weekly(data, dataset_id, config=None):
         'realization_id', 'week', 'year', 'week_of_year', 'date',
         'inflow_agg', 'storage_agg', 'storage_pct', 'ffmp_zone',
         'nyc_demand', 'nyc_diversion', 'demand_satisfaction',
+        'demand_shortage_day', 'demand_shortage_consec_days',
         'montague_flow', 'montague_target', 'flow_satisfaction',
+        'flow_shortage_day', 'flow_shortage_consec_days',
     ]
     weekly_ts = weekly_ts[col_order]
 
