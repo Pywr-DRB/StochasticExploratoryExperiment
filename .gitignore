@@ -206,3 +206,4 @@ logs/
 docs/*
 notebooks/
 .claude/
+archive/*

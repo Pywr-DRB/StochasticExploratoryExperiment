@@ -18,10 +18,9 @@ mkdir -p logs figures
 
 # Workflow flags
 PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
 PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
-
 
 
 # Ensemble flow distribution and verification plots
@@ -31,21 +30,9 @@ fi
 
 
 if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
-    # Drought metric distribution plots
-
-    python3 F2_plot_drought_metric_distribution.py
-
-    # python3 09_plot_drought_metric_distribution.py stationary_ensemble 3 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py stationary_ensemble 6 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
-
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_low 3 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_low 6 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_low 12 severity magnitude
-
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_high 3 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_high 6 severity magnitude
-    # python3 09_plot_drought_metric_distribution.py climate_adjusted_high 12 severity magnitude
+    python3 F2_plot_drought_metric_distribution.py 3
+    python3 F2_plot_drought_metric_distribution.py 6
+    python3 F2_plot_drought_metric_distribution.py 12
 fi
 
 
@@ -74,45 +61,3 @@ if [ "$PLOT_SI_FIGS" = true ]; then
     python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 6
     python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 3
 fi
-
-
-# # 4-panel drought return period comparison
-# python3 09_plot_drought_frequency.py comparison
-
-# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 3
-# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 6
-# python3 10_plot_drought_storage_analysis.py climate_adjusted_low 12
-
-
-
-
-
-### Drought metric distribution plots
-# python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_low
-# python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_low
-# python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_low
-
-
-# python3 09_plot_drought_metric_comparison.py 3 severity magnitude baseline climate_adjusted_high
-# python3 09_plot_drought_metric_comparison.py 6 severity magnitude baseline climate_adjusted_high
-# python3 09_plot_drought_metric_comparison.py 12 severity magnitude baseline climate_adjusted_high
-
-# python F4_plot_water_balance_by_drought_zone.py --multipanel
-
-
-
-# python3 SI7_plot_nyc_contribution_timeseries.py --multipanel
-# python3 SI7_plot_nyc_contribution_timeseries.py stationary_ensemble
-# python3 SI7_plot_nyc_contribution_timeseries.py climate_adjusted_low
-# python3 SI7_plot_nyc_contribution_timeseries.py climate_adjusted_high
-
-# python3 F4_plot_water_balance_by_drought_zone.py stationary_ensemble
-# python3 F4_plot_water_balance_by_drought_zone.py climate_adjusted_low
-# python3 F4_plot_water_balance_by_drought_zone.py climate_adjusted_high
-
-# # 4-panel performance outcome comparison
-# python3 09_plot_performance_outcome_bars.py
-
-# python3 09_plot_satisficing_scatter.py --all
-
-
