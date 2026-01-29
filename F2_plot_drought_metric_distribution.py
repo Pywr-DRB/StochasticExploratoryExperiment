@@ -1,442 +1,280 @@
 """
-Plot drought metric distributions as 2D contour plots/heatmaps.
+Multipanel manuscript figure: drought metric distributions.
 
-This script visualizes the joint distribution of any two drought metrics
-(e.g., severity vs magnitude, duration vs magnitude, etc.) using:
-- Seaborn kernel density estimate (KDE) contours/heatmaps
-- Observed drought events overlaid as scatter points
-
-Unlike 09_plot_drought_frequency.py, this script does NOT perform
-return period or probability modeling - it simply shows the empirical
-distribution of drought characteristics across synthetic realizations.
+Left panel: hexbin of severity vs magnitude for the stationary ensemble.
+Right panels (stacked): exceedance-rate CDFs of each drought metric across datasets.
 
 Usage:
-  python 09_plot_drought_metric_distribution.py <dataset_id> <ssi_window> <x_metric> <y_metric>
+  python F2_plot_drought_metric_distribution.py [ssi_window]
 
 Examples:
-  python 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude
-  python 09_plot_drought_metric_distribution.py climate_adjusted_low 6 duration magnitude
-  python 09_plot_drought_metric_distribution.py stationary_ensemble 12 duration severity
-
-Available metrics:
-  - severity: Minimum SSI value during drought
-  - magnitude: Cumulative SSI deficit
-  - duration: Drought length in months
-
-SSI windows: 3, 6, 12 months
+  python F2_plot_drought_metric_distribution.py
+  python F2_plot_drought_metric_distribution.py 6
 """
 
 import sys
 import os
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib import colors
+import matplotlib.gridspec as gridspec
 import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
 from methods.load import load_drought_events
+from methods.plotting.styles import (
+    DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
+    HISTORIC_COLOR, HISTORIC_LINESTYLE, HISTORIC_LABEL,
+    LINEWIDTH_MEDIUM, CMAP_SEQUENTIAL, DPI_HIGH,
+    FONTSIZE_SMALL, FONTSIZE_MEDIUM,
+)
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/drought_distributions"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Drought metrics directory
-DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
-
-# Valid drought metrics
-VALID_METRICS = ['severity', 'magnitude', 'duration']
-
-# Metric display names
-METRIC_DISPLAY_NAMES = {
+# Axis labels (clean for manuscript)
+METRIC_AXIS_LABELS = {
     'severity': 'Severity (min SSI)',
     'magnitude': 'Magnitude (cumulative deficit)',
-    'duration': 'Duration (months)'
+    'duration': 'Duration (months)',
 }
 
-# Metric units for axis labels
-METRIC_UNITS = {
-    'severity': '',  # Dimensionless (SSI)
-    'magnitude': '',  # Dimensionless (cumulative SSI)
-    'duration': 'months'
-}
+# Panel labels
+PANEL_LETTERS = list('abcdefghij')
 
 
+def _estimate_n_years(droughts, observed=False):
+    """Estimate total simulation-years represented in a drought event table.
 
-def validate_metric(metric):
-    """Validate that metric is one of the allowed values."""
-    if metric not in VALID_METRICS:
-        raise ValueError(
-            f"Invalid metric: {metric}\n"
-            f"Must be one of: {VALID_METRICS}"
-        )
+    For observed data, uses the date range of the events.
+    For ensemble data, uses n_realizations * span of a single realization.
+    """
+    if observed or 'realization_id' not in droughts.columns:
+        span_days = (droughts['end'].max() - droughts['start'].min()).days
+        return max(span_days / 365.25, 1.0)
+
+    first_real = droughts['realization_id'].iloc[0]
+    subset = droughts[droughts['realization_id'] == first_real]
+    span_days = (subset['end'].max() - subset['start'].min()).days
+    years_per_real = max(span_days / 365.25, 1.0)
+    n_realizations = droughts['realization_id'].nunique()
+    return n_realizations * years_per_real
 
 
-def plot_drought_metric_distribution(
-    syn_droughts,
-    obs_droughts,
-    x_metric='severity',
-    y_metric='magnitude',
-    dataset_id='stationary_ensemble',
+def plot_drought_manuscript_figure(
     ssi_window=12,
-    figsize=(10, 8),
-    cmap='viridis',
-    levels=10,
-    plot_type='contourf',
-    log_transform=False,
-    kde_bw_adjust=1.0,
-    kde_thresh=0.01,
-    xlim=None,
-    ylim=None,
-    obs_marker='^',
-    obs_color='red',
-    obs_size=80,
-    obs_alpha=0.9,
-    fname=None
+    cdf_metrics=None,
+    dataset_ids=None,
+    hexbin_dataset='stationary_ensemble',
+    hexbin_x='severity',
+    hexbin_y='magnitude',
+    figsize=None,
+    fname=None,
 ):
-    """
-    Plot 2D distribution of drought metrics using seaborn KDE.
+    """Create the multipanel drought distribution manuscript figure.
 
-    Parameters:
-    -----------
-    syn_droughts : pd.DataFrame
-        Synthetic drought events
-    obs_droughts : pd.DataFrame
-        Observed drought events
-    x_metric : str
-        Metric for x-axis ('severity', 'magnitude', 'duration')
-    y_metric : str
-        Metric for y-axis ('severity', 'magnitude', 'duration')
-    dataset_id : str
-        Dataset identifier for title
+    Layout: left column is a single hexbin panel spanning all rows;
+    right column has N stacked CDF panels (one per metric).
+
+    Parameters
+    ----------
     ssi_window : int
-        SSI window size for title
-    figsize : tuple
-        Figure size (width, height)
-    cmap : str
-        Colormap name
-    levels : int or list
-        Number of contour levels or list of level values
-    plot_type : str
-        'contourf' for filled contours, 'contour' for line contours,
-        'hexbin' for hexagonal binning
-    log_transform : bool
-        If True, apply log transform to metrics before plotting
-    kde_bw_adjust : float
-        Bandwidth adjustment for KDE (higher = smoother)
-    kde_thresh : float
-        Minimum density threshold for KDE contours (0-1). Lower values show more sparse regions.
-        Default 0.01 (1% of max density). Use 0 to show all densities.
-    xlim : tuple or None
-        Manual x-axis limits (xmin, xmax). If None, auto-computed from data.
-    ylim : tuple or None
-        Manual y-axis limits (ymin, ymax). If None, auto-computed from data.
-    obs_marker : str
-        Marker style for observed droughts
-    obs_color : str
-        Color for observed drought markers
-    obs_size : float
-        Size of observed drought markers
-    obs_alpha : float
-        Alpha (transparency) for observed markers
-    fname : str
-        Output filename (if None, will auto-generate)
+        SSI window (3, 6, or 12).
+    cdf_metrics : list of str, optional
+        Metrics for CDF panels. Default: ['severity', 'magnitude', 'duration'].
+    dataset_ids : list of str, optional
+        Ensemble dataset IDs. Default: all from DATASET_CONFIGS.
+    hexbin_dataset : str
+        Dataset used for the hexbin panel.
+    hexbin_x, hexbin_y : str
+        Metrics for hexbin x/y axes.
+    figsize : tuple, optional
+        Figure size. Auto-computed if None.
+    fname : str, optional
+        Output path. Auto-generated if None.
 
-    Returns:
-    --------
-    fig, ax : matplotlib figure and axes
+    Returns
+    -------
+    fig, (ax_hex, cdf_axes)
     """
+    if cdf_metrics is None:
+        cdf_metrics = ['severity', 'magnitude', 'duration']
+    if dataset_ids is None:
+        dataset_ids = list(DATASET_CONFIGS.keys())
 
-    # Validate metrics
-    validate_metric(x_metric)
-    validate_metric(y_metric)
+    n_cdf = len(cdf_metrics)
+    if figsize is None:
+        figsize = (8.5, 2.5 * n_cdf)
 
-    # Extract data
-    x_syn = syn_droughts[x_metric].values
-    y_syn = syn_droughts[y_metric].values
+    # ------------------------------------------------------------------
+    # Load data
+    # ------------------------------------------------------------------
+    obs_droughts = load_drought_events(dataset_ids[0], ssi_window, observed=True)
+    obs_n_years = _estimate_n_years(obs_droughts, observed=True)
 
-    x_obs = obs_droughts[x_metric].values if len(obs_droughts) > 0 else np.array([])
-    y_obs = obs_droughts[y_metric].values if len(obs_droughts) > 0 else np.array([])
+    ensemble_data = {}
+    for did in dataset_ids:
+        df = load_drought_events(did, ssi_window, observed=False)
+        ensemble_data[did] = {
+            'droughts': df,
+            'n_years': _estimate_n_years(df, observed=False),
+        }
 
-    # Apply log transform if requested
-    if log_transform:
-        x_syn = np.log10(x_syn + 1e-10)  # Add small epsilon to avoid log(0)
-        y_syn = np.log10(y_syn + 1e-10)
-        if len(x_obs) > 0:
-            x_obs = np.log10(x_obs + 1e-10)
-            y_obs = np.log10(y_obs + 1e-10)
+    hexbin_droughts = ensemble_data[hexbin_dataset]['droughts']
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=figsize)
+    # ------------------------------------------------------------------
+    # Create figure with gridspec: left col spans all rows, right col stacked
+    # ------------------------------------------------------------------
+    fig = plt.figure(figsize=figsize)
+    gs = gridspec.GridSpec(
+        n_cdf, 2,
+        width_ratios=[1.2, 1.0],
+        hspace=0.35, wspace=0.4,
+    )
 
-    # Create joint plot based on type
-    if plot_type == 'hexbin':
-        # Hexagonal binning (good for very large datasets)
-        hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
-        cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
+    # Left panel: hexbin spanning all rows
+    ax_hex = fig.add_subplot(gs[:, 0])
 
-    elif plot_type == 'contour':
-        # Line contours only
-        try:
-            sns.kdeplot(
-                x=x_syn, y=y_syn,
-                ax=ax,
-                levels=levels,
-                color='black',
-                linewidths=1.5,
-                alpha=0.7,
-                bw_adjust=kde_bw_adjust
-            )
-        except Exception as e:
-            print(f"Warning: KDE failed, falling back to hexbin: {e}")
-            hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
-            cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
+    # Right panels: one per CDF metric
+    cdf_axes = [fig.add_subplot(gs[i, 1]) for i in range(n_cdf)]
 
-    else:  # 'contourf' (default)
-        # Filled contours with colorbar
-        try:
-            # Use kdeplot with filled contours
-            sns.kdeplot(
-                x=x_syn, y=y_syn,
-                ax=ax,
-                levels=levels,
-                cmap=cmap,
-                fill=True,
-                thresh=kde_thresh,
-                bw_adjust=kde_bw_adjust,
-                alpha=0.8
-            )
+    # ------------------------------------------------------------------
+    # Left panel: hexbin
+    # ------------------------------------------------------------------
+    hb = ax_hex.hexbin(
+        hexbin_droughts[hexbin_x].values,
+        hexbin_droughts[hexbin_y].values,
+        gridsize=30,
+        cmap=CMAP_SEQUENTIAL,
+        mincnt=1,
+        bins='log',
+    )
 
-            # Add contour lines for clarity
-            sns.kdeplot(
-                x=x_syn, y=y_syn,
-                ax=ax,
-                levels=levels,
-                color='white',
-                linewidths=0.8,
-                alpha=0.5,
-                thresh=kde_thresh,
-                bw_adjust=kde_bw_adjust
-            )
+    # Colorbar below the hexbin panel
+    cb = fig.colorbar(
+        hb, ax=ax_hex, orientation='horizontal',
+        shrink=0.8, pad=0.08, aspect=30,
+        format='%d',
+    )
+    cb.set_label('Count (log scale)', fontsize=FONTSIZE_SMALL)
+    cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
+    # Reduce number of ticks to avoid overlap
+    cb.locator = plt.MaxNLocator(nbins=5)
+    cb.update_ticks()
 
-            # Create a colorbar proxy
-            # (seaborn kdeplot doesn't return mappable, so we create one)
-            norm = colors.Normalize(vmin=0, vmax=1)
-            sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-            sm.set_array([])
-            cb = plt.colorbar(sm, ax=ax, label='Density')
-
-        except Exception as e:
-            print(f"Warning: KDE failed, falling back to hexbin: {e}")
-            hb = ax.hexbin(x_syn, y_syn, gridsize=30, cmap=cmap, mincnt=1, bins='log')
-            cb = plt.colorbar(hb, ax=ax, label='Count (log scale)')
-
-    # Set axis limits to include ALL data points (synthetic + observed)
-    if xlim is None or ylim is None:
-        # Combine synthetic and observed data to determine full range
-        all_x = np.concatenate([x_syn, x_obs]) if len(x_obs) > 0 else x_syn
-        all_y = np.concatenate([y_syn, y_obs]) if len(y_obs) > 0 else y_syn
-
-        # Add 5% padding on each side
-        x_range = all_x.max() - all_x.min()
-        y_range = all_y.max() - all_y.min()
-        x_margin = x_range * 0.05
-        y_margin = y_range * 0.05
-
-        if xlim is None:
-            xlim = (all_x.min() - x_margin, all_x.max() + x_margin)
-        if ylim is None:
-            ylim = (all_y.min() - y_margin, all_y.max() + y_margin)
-
-    ax.set_xlim(xlim)
-    ax.set_ylim(ylim)
-
-    # Overlay observed droughts
-    if len(x_obs) > 0:
-        ax.scatter(
-            x_obs, y_obs,
-            s=obs_size,
-            marker=obs_marker,
-            c=obs_color,
-            edgecolors='white',
-            linewidths=1.0,
-            alpha=obs_alpha,
-            label='Observed',
-            zorder=10
+    # Overlay observed
+    if len(obs_droughts) > 0:
+        ax_hex.scatter(
+            obs_droughts[hexbin_x].values,
+            obs_droughts[hexbin_y].values,
+            s=40, marker='^', c=HISTORIC_COLOR, edgecolors='white',
+            linewidths=0.6, alpha=0.9, zorder=10,
         )
-        ax.legend(loc='upper right', frameon=True, fancybox=True, shadow=True)
 
-    # Labels and title
-    x_label = METRIC_DISPLAY_NAMES.get(x_metric, x_metric)
-    y_label = METRIC_DISPLAY_NAMES.get(y_metric, y_metric)
+    ax_hex.set_xlabel(METRIC_AXIS_LABELS[hexbin_x], fontsize=FONTSIZE_MEDIUM)
+    ax_hex.set_ylabel(METRIC_AXIS_LABELS[hexbin_y], fontsize=FONTSIZE_MEDIUM)
+    ax_hex.tick_params(labelsize=FONTSIZE_SMALL)
+    ax_hex.spines['top'].set_visible(False)
+    ax_hex.spines['right'].set_visible(False)
+    ax_hex.text(
+        0.03, 0.97, f'({PANEL_LETTERS[0]})',
+        transform=ax_hex.transAxes, fontsize=FONTSIZE_MEDIUM,
+        va='top', ha='left',
+    )
 
-    if log_transform:
-        x_label = f"log₁₀({x_label})"
-        y_label = f"log₁₀({y_label})"
+    # ------------------------------------------------------------------
+    # Right panels: exceedance-rate CDFs
+    # ------------------------------------------------------------------
+    legend_handles = []
+    legend_labels = []
 
-    ax.set_xlabel(x_label, fontsize=12, fontweight='bold')
-    ax.set_ylabel(y_label, fontsize=12, fontweight='bold')
+    for k, metric in enumerate(cdf_metrics):
+        ax = cdf_axes[k]
 
-    # Title
-    dataset_name = DATASET_CONFIGS[dataset_id]['description']
-    title = f"Drought Distribution: {dataset_name}\nSSI-{ssi_window} | {y_metric.title()} vs {x_metric.title()}"
-    ax.set_title(title, fontsize=13, fontweight='bold', pad=15)
+        # --- Observed ---
+        vals = np.sort(obs_droughts[metric].values)[::-1]
+        exceedance = np.arange(1, len(vals) + 1) / obs_n_years
+        line, = ax.plot(
+            vals, exceedance,
+            color=HISTORIC_COLOR, linestyle=HISTORIC_LINESTYLE,
+            linewidth=LINEWIDTH_MEDIUM, zorder=6,
+        )
+        if k == 0:
+            legend_handles.append(line)
+            legend_labels.append(HISTORIC_LABEL)
 
-    # Grid
-    ax.grid(which='both', color='gray', alpha=0.2, linewidth=0.5, linestyle='--')
-    ax.set_axisbelow(True)
+        # --- Ensemble datasets ---
+        for did in dataset_ids:
+            df = ensemble_data[did]['droughts']
+            n_yrs = ensemble_data[did]['n_years']
+            vals = np.sort(df[metric].values)[::-1]
+            exceedance = np.arange(1, len(vals) + 1) / n_yrs
+            line, = ax.plot(
+                vals, exceedance,
+                color=DATASET_COLORS.get(did, '#808080'),
+                linestyle=DATASET_LINESTYLES.get(did, '-'),
+                linewidth=LINEWIDTH_MEDIUM, zorder=5,
+            )
+            if k == 0:
+                legend_handles.append(line)
+                legend_labels.append(DATASET_LABELS.get(did, did))
 
-    plt.tight_layout()
+        ax.set_xlabel(METRIC_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
+        ax.set_ylabel('Exceedance rate (yr$^{-1}$)', fontsize=FONTSIZE_MEDIUM)
+        # ax.set_yscale('log')
+        ax.tick_params(labelsize=FONTSIZE_SMALL)
+        ax.grid(True, which='both', color='gray', alpha=0.15,
+                linewidth=0.5, linestyle='--')
+        ax.set_axisbelow(True)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
 
-    # Save figure
+        ax.text(
+            0.03, 0.97, f'({PANEL_LETTERS[1 + k]})',
+            transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
+            va='top', ha='left',
+        )
+
+    # ------------------------------------------------------------------
+    # Shared legend below figure
+    # ------------------------------------------------------------------
+    fig.legend(
+        legend_handles, legend_labels,
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.04),
+        ncol=len(legend_labels),
+        frameon=False,
+        fontsize=FONTSIZE_SMALL,
+    )
+
+    # ------------------------------------------------------------------
+    # Save
+    # ------------------------------------------------------------------
     if fname is None:
-        log_suffix = '_log' if log_transform else ''
-        fname = (
-            f"{FIG_OUTPUT_DIR}/{dataset_id}_ssi{ssi_window}_"
-            f"{x_metric}_vs_{y_metric}{log_suffix}_{plot_type}.png"
-        )
+        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}.png"
 
-    plt.savefig(fname, dpi=400, bbox_inches='tight')
+    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
 
-    return fig, ax
-
-
-def plot_all_metric_pairs(
-    dataset_id,
-    ssi_window=12,
-    plot_type='contourf',
-    log_transform=False
-):
-    """
-    Generate distribution plots for all combinations of drought metrics.
-
-    Parameters:
-    -----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window size (3, 6, or 12)
-    plot_type : str
-        Type of plot ('contourf', 'contour', 'hexbin')
-    log_transform : bool
-        Whether to apply log transform
-    """
-
-    # Load data
-    print(f"Loading drought events for {dataset_id}, SSI-{ssi_window}...")
-    syn_droughts = load_drought_events(dataset_id, ssi_window, observed=False)
-    obs_droughts = load_drought_events(dataset_id, ssi_window, observed=True)
-
-    print(f"  Synthetic droughts: {len(syn_droughts):,}")
-    print(f"  Observed droughts: {len(obs_droughts):,}")
-
-    # Generate all pairs
-    metrics = VALID_METRICS
-
-    print(f"\nGenerating distribution plots...")
-    for i, x_metric in enumerate(metrics):
-        for j, y_metric in enumerate(metrics):
-            if i >= j:  # Skip duplicates and self-pairs
-                continue
-
-            print(f"\n  Plotting {y_metric} vs {x_metric}...")
-
-            try:
-                plot_drought_metric_distribution(
-                    syn_droughts=syn_droughts,
-                    obs_droughts=obs_droughts,
-                    x_metric=x_metric,
-                    y_metric=y_metric,
-                    dataset_id=dataset_id,
-                    ssi_window=ssi_window,
-                    plot_type=plot_type,
-                    log_transform=log_transform
-                )
-                plt.close()  # Close to free memory
-
-            except Exception as e:
-                print(f"    ERROR: {e}")
-                continue
+    return fig, (ax_hex, cdf_axes)
 
 
 def main():
-    """Main execution function."""
-
-    print("=" * 80)
-    print("DROUGHT METRIC DISTRIBUTION PLOTTING")
-    print("=" * 80)
-
-    # Parse command line arguments
-    if len(sys.argv) < 2:
-        print("\nUsage: python 09_plot_drought_metric_distribution.py <dataset_id> [ssi_window] [x_metric] [y_metric]")
-        print(f"\nAvailable datasets: {list(DATASET_CONFIGS.keys())}")
-        print(f"Available SSI windows: {SSI_WINDOWS}")
-        print(f"Available metrics: {VALID_METRICS}")
-        print("\nExamples:")
-        print("  python 09_plot_drought_metric_distribution.py stationary_ensemble")
-        print("  python 09_plot_drought_metric_distribution.py stationary_ensemble 12")
-        print("  python 09_plot_drought_metric_distribution.py stationary_ensemble 12 severity magnitude")
-        sys.exit(1)
-
-    dataset_id = sys.argv[1]
-    verify_dataset_id(dataset_id)
-
-    # Optional: SSI window (default: 12)
-    ssi_window = int(sys.argv[2]) if len(sys.argv) > 2 else 12
+    """Generate the F2 manuscript figure."""
+    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     if ssi_window not in SSI_WINDOWS:
-        print(f"ERROR: Invalid SSI window: {ssi_window}")
-        print(f"Must be one of: {SSI_WINDOWS}")
+        print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
 
-    # Optional: specific metric pair
-    if len(sys.argv) >= 5:
-        x_metric = sys.argv[3]
-        y_metric = sys.argv[4]
+    print("=" * 60)
+    print(f"F2: DROUGHT METRIC DISTRIBUTION (SSI-{ssi_window})")
+    print("=" * 60)
 
-        validate_metric(x_metric)
-        validate_metric(y_metric)
+    plot_drought_manuscript_figure(ssi_window=ssi_window)
+    plt.close('all')
 
-        print(f"\nDataset: {dataset_id}")
-        print(f"SSI Window: {ssi_window} months")
-        print(f"Plotting: {y_metric} vs {x_metric}\n")
-
-        # Load data
-        syn_droughts = load_drought_events(dataset_id, ssi_window, observed=False)
-        obs_droughts = load_drought_events(dataset_id, ssi_window, observed=True)
-
-        print(f"Synthetic droughts: {len(syn_droughts):,}")
-        print(f"Observed droughts: {len(obs_droughts):,}\n")
-
-        # Plot single pair
-        plot_drought_metric_distribution(
-            syn_droughts=syn_droughts,
-            obs_droughts=obs_droughts,
-            x_metric=x_metric,
-            y_metric=y_metric,
-            dataset_id=dataset_id,
-            ssi_window=ssi_window,
-            plot_type='hexbin',
-        )
-
-    else:
-        # Plot all pairs for this dataset and SSI window
-        print(f"\nDataset: {dataset_id}")
-        print(f"SSI Window: {ssi_window} months")
-        print("Generating all metric pair combinations...\n")
-
-        plot_all_metric_pairs(
-            dataset_id=dataset_id,
-            ssi_window=ssi_window,
-            plot_type='contourf',
-            log_transform=False
-        )
-
-    print("\n" + "=" * 80)
-    print("COMPLETED SUCCESSFULLY")
-    print("=" * 80)
+    print("\nDone.")
 
 
 if __name__ == "__main__":

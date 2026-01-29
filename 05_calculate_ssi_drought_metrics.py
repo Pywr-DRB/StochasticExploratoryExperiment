@@ -23,12 +23,11 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from sglib.droughts.ssi import SSIDroughtMetrics, SSI
+from sglib.droughts.ssi import SSIDroughtMetrics
 
-from methods.load import load_baseline_historical_flow
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
-from methods.drought_analysis import calculate_historic_observed_droughts
+from methods.drought_analysis import calculate_historic_observed_droughts, fit_ssi_calculator
 from methods.config import *
 
 EXPORT_SSI_HDF5 = False
@@ -53,20 +52,6 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Dataset type: {dataset_config['type']}")
         print(f"SSI windows: {ssi_windows}")
         print(f"Using {size} MPI ranks")
-
-    # Historic reconstruction data (for fitting SSI only, not for calculating observed droughts)
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
-    Q.replace(0, np.nan, inplace=True)
-    Q.drop(columns=['delTrenton'], inplace=True)
-
-    # Calculate nyc_aggregate for historical data
-    nyc_gages = ["01425000", "01417000", "01436000"]
-    Q['nyc_aggregate'] = Q[nyc_gages].sum(axis=1)
-
-    Q_monthly = Q.resample('MS').sum()
-
-    if rank == 0:
-        print(f"Loaded reconstruction data with {Q.shape[0]// 365} years of daily data for {Q.shape[1]} sites (for SSI fitting only).")
 
     # Verify postprocessed data exists
     if rank == 0:
@@ -140,12 +125,9 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         node = 'nyc_aggregate'
 
-        # Initialize calculators
+        # Fit SSI on baseline period (1980-2019) — same on all ranks
+        ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
         drought_calculator = SSIDroughtMetrics()
-        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
-
-        # Fit SSI on historical data (same on all ranks)
-        ssi_calculator.fit(Q_monthly.loc[:, node])
 
         if rank == 0:
             print(f"  Rank {rank} processing {len(my_realizations)} realizations")

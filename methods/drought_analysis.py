@@ -29,6 +29,45 @@ from .print_summary import print_satisficing_summary
 from .save import save_satisficing_results
 
 
+NYC_GAGES = ["01425000", "01417000", "01436000"]
+
+
+def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
+    """
+    Fit an SSI calculator on the baseline period (1980-2019) historical flow.
+
+    This is the single source of truth for SSI fitting across the codebase.
+    All drought analysis functions (historic, serial ensemble, MPI ensemble)
+    should use this helper to ensure consistent SSI parameterization.
+
+    Parameters
+    ----------
+    ssi_window : int
+        SSI timescale in months (e.g., 3, 6, 12).
+    node : str
+        Column name to fit SSI on (default: 'nyc_aggregate').
+
+    Returns
+    -------
+    ssi_calculator : SSI
+        Fitted SSI calculator ready for .transform() calls.
+    """
+    Q_baseline = load_baseline_historical_flow(
+        gage_flow=True, period='baseline', flowtype=BASELINE_DATASET
+    )
+    Q_baseline.replace(0, np.nan, inplace=True)
+    Q_baseline.drop(columns=['delTrenton'], inplace=True)
+
+    Q_baseline[node] = Q_baseline[NYC_GAGES].sum(axis=1)
+    Q_baseline_monthly = Q_baseline.resample('MS').sum()
+    Q_baseline_monthly.replace(0, np.nan, inplace=True)
+    Q_baseline_monthly.dropna(axis=0, how='any', inplace=True)
+
+    ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
+    ssi_calculator.fit(Q_baseline_monthly.loc[:, node])
+    return ssi_calculator
+
+
 def calculate_historic_observed_droughts(ssi_windows, output_dir):
     """
     Calculate SSI-based drought metrics for historic observed data.
@@ -49,7 +88,7 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
     print("CALCULATING HISTORIC OBSERVED DROUGHTS")
     print("=" * 60)
 
-    # Load historic reconstruction data
+    # Load FULL historic record for transform (to find all droughts)
     Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
@@ -58,40 +97,33 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
         Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
         Q_1960s.replace(0, np.nan, inplace=True)
         Q_1960s.drop(columns=['delTrenton'], inplace=True)
-        # Combine the two datasets
         Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()
         Q_full.replace(0, np.nan, inplace=True)
         Q_full.dropna(axis=0, how='any', inplace=True)
     else:
         Q_full = Q.copy()
 
-    # Calculate nyc_aggregate for historical data
-    nyc_gages = ["01425000", "01417000", "01436000"]
-    Q_full['nyc_aggregate'] = Q_full[nyc_gages].sum(axis=1)
-    Q_monthly = Q_full.resample('MS').sum()
-    Q_monthly.replace(0, np.nan, inplace=True)
-    Q_monthly.dropna(axis=0, how='any', inplace=True)
+    node = 'nyc_aggregate'
+    Q_full[node] = Q_full[NYC_GAGES].sum(axis=1)
+    Q_full_monthly = Q_full.resample('MS').sum()
+    Q_full_monthly.replace(0, np.nan, inplace=True)
+    Q_full_monthly.dropna(axis=0, how='any', inplace=True)
 
     print(f"Loaded historic data with {Q_full.shape[0] // 365} years of daily data for {Q_full.shape[1]} sites.")
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    node = 'nyc_aggregate'
-
     # Process each SSI window
     for ssi_window in ssi_windows:
         print(f"\nProcessing SSI window: {ssi_window} months")
 
-        # Initialize calculators
+        # Fit SSI on baseline period (1980-2019)
+        ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
         drought_calculator = SSIDroughtMetrics()
-        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
 
-        # Fit SSI on historical data
-        ssi_calculator.fit(Q_monthly.loc[:, node])
-
-        # Calculate SSI for historical data
-        ssi_obs = ssi_calculator.transform(Q_monthly.loc[:, node])
+        # Transform the FULL historic record
+        ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
         obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
 
         # Save observed drought metrics
@@ -154,46 +186,20 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
     print(f"  Found {len(realizations)} realizations")
 
     # Compute nyc_aggregate from USGS gage IDs for each realization
-    nyc_gages_syn = ["01425000", "01417000", "01436000"]
+    node = 'nyc_aggregate'
     for real_id in realizations:
-        syn_ensemble[real_id]['nyc_aggregate'] = syn_ensemble[real_id][nyc_gages_syn].sum(axis=1)
-
-    # Load historic data for SSI fitting
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
-    Q.replace(0, np.nan, inplace=True)
-    Q.drop(columns=['delTrenton'], inplace=True)
-
-    if BASELINE_DATASET == 'wrfaorc_withObsScaled':
-        Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
-        Q_1960s.replace(0, np.nan, inplace=True)
-        Q_1960s.drop(columns=['delTrenton'], inplace=True)
-        Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()
-        Q_full.replace(0, np.nan, inplace=True)
-        Q_full.dropna(axis=0, how='any', inplace=True)
-    else:
-        Q_full = Q.copy()
-
-    nyc_gages = ["01425000", "01417000", "01436000"]
-    Q_full['nyc_aggregate'] = Q_full[nyc_gages].sum(axis=1)
-    Q_monthly = Q_full.resample('MS').sum()
-    Q_monthly.replace(0, np.nan, inplace=True)
-    Q_monthly.dropna(axis=0, how='any', inplace=True)
+        syn_ensemble[real_id][node] = syn_ensemble[real_id][NYC_GAGES].sum(axis=1)
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-
-    node = 'nyc_aggregate'
 
     # Process each SSI window
     for ssi_window in ssi_windows:
         print(f"\nProcessing SSI-{ssi_window}...")
 
-        # Initialize calculators
+        # Fit SSI on baseline period (1980-2019)
+        ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
         drought_calculator = SSIDroughtMetrics()
-        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
-
-        # Fit SSI on historical data
-        ssi_calculator.fit(Q_monthly.loc[:, node])
 
         # Process each realization
         all_droughts = []
