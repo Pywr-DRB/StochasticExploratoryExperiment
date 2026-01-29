@@ -204,3 +204,5 @@ logs/
 /outputs/
 /copula_tests/
 docs/*
+notebooks/
+.claude/

@@ -79,19 +79,19 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
     print(f"Loaded synthetic ensemble: {n_realizations} realizations")
 
     # Create output directory
-    os.makedirs(FIG_DIR, exist_ok=True)
+    os.makedirs(f"{FIG_DIR}/MAIN", exist_ok=True)
 
     # Generate the 2x1 summary figure (uses aggregate NYC reservoir flows)
     print("Generating manuscript figure (aggregate NYC reservoir flows)...")
 
-    fname = f"{FIG_DIR}/{dataset_id}_ensemble_summary.png"
+    fname = f"{FIG_DIR}/MAIN/F1_{dataset_id}_ensemble_diagnostics.png"
 
     plot_ensemble_summary_figure(
         Q_historic=Q_historic,
         Q_synthetic=syn_ensemble,
         dataset_id=dataset_id,
         fname=fname,
-        figsize=(12, 5),
+        figsize=(9, 9),
     )
 
     print(f"\nManuscript figure saved: {fname}")

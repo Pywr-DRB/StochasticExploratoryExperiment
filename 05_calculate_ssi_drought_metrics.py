@@ -1,3 +1,19 @@
+"""
+Calculate SSI-based drought metrics for ensembles using MPI parallelization.
+
+Modes:
+  Historic (no MPI):
+    python 05_calculate_ssi_drought_metrics.py historic
+
+  Synthetic ensemble (MPI):
+    mpirun -np N python 05_calculate_ssi_drought_metrics.py <dataset_id>
+
+The historic observed drought calculation uses the shared function from
+methods.drought_analysis. The MPI-parallelized ensemble calculation is
+implemented here because it requires MPI send/recv for distributing
+realizations across ranks.
+"""
+
 import sys
 import os
 import numpy as np
@@ -9,88 +25,13 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from sglib.droughts.ssi import SSIDroughtMetrics, SSI
 
-
-from methods.load import load_baseline_historical_flow, load_wrf1960s_historical_flow
+from methods.load import load_baseline_historical_flow
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
+from methods.drought_analysis import calculate_historic_observed_droughts
 from methods.config import *
 
 EXPORT_SSI_HDF5 = False
-
-
-def calculate_historic_observed_droughts(ssi_windows=[3, 6, 12]):
-    """
-    Calculate SSI-based drought metrics for historic observed data only.
-    This function can be run independently without MPI.
-    """
-    print("=" * 60)
-    print("CALCULATING HISTORIC OBSERVED DROUGHTS")
-    print("=" * 60)
-
-    # Load historic reconstruction data
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
-    Q.replace(0, np.nan, inplace=True)
-    Q.drop(columns=['delTrenton'], inplace=True)
-
-
-
-
-    if BASELINE_DATASET == 'wrfaorc_withObsScaled':
-        Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
-        Q_1960s.replace(0, np.nan, inplace=True)
-        Q_1960s.drop(columns=['delTrenton'], inplace=True)
-        # combine the two datasets
-        Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()   
-        Q_full.replace(0, np.nan, inplace=True)
-        Q_full.dropna(axis=0, how='any', inplace=True)
-    else:
-        Q_full = Q.copy()
-    
-    # Calculate nyc_aggregate for historical data
-    nyc_gages = ["01425000", "01417000", "01436000"]
-    Q_full['nyc_aggregate'] = Q_full[nyc_gages].sum(axis=1)
-    Q_monthly = Q_full.resample('MS').sum()
-    Q_monthly.replace(0, np.nan, inplace=True)
-    Q_monthly.dropna(axis=0, how='any', inplace=True)
-    
-
-    print(f"Loaded historic data with {Q_full.shape[0]// 365} years ({Q_full.index}) of daily data for {Q_full.shape[1]} sites.")
-
-    # Create output directory if it doesn't exist
-    os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
-
-    node = 'nyc_aggregate'
-
-    # Process each SSI window
-    for ssi_window in ssi_windows:
-        print(f"\nProcessing SSI window: {ssi_window} months")
-
-        # Initialize calculators
-        drought_calculator = SSIDroughtMetrics()
-        ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
-
-        # Fit SSI on historical data
-        ssi_calculator.fit(Q_monthly.loc[:, node])
-
-        # Calculate SSI for historical data
-        ssi_obs = ssi_calculator.transform(Q_monthly.loc[:, node])
-        obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
-
-        # Save observed drought metrics
-        obs_droughts.reset_index(inplace=True, drop=True)
-        
-        # if baseline dataset is wrfaorc_withObsScaled, drop any droughts that begin < 1969-12-31 and end > 1979-01-01
-        if BASELINE_DATASET == 'wrfaorc_withObsScaled':
-            obs_droughts = obs_droughts[~((obs_droughts['start'] < pd.to_datetime('1970-01-01')) & (obs_droughts['end'] > pd.to_datetime('1979-01-01')))]
-
-        obs_fname = f"./pywrdrb/drought_metrics/observed_ssi{ssi_window}_drought_events.csv"
-        obs_droughts.to_csv(obs_fname, index=False)
-        print(f"  Saved observed drought metrics: {obs_fname}")
-
-    print("\n" + "=" * 60)
-    print("Historic observed droughts calculation completed!")
-    print("=" * 60)
-    return True
 
 
 def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
@@ -312,8 +253,12 @@ if __name__ == "__main__":
     # Check for 'historic' mode
     if len(sys.argv) == 2 and sys.argv[1].lower() == 'historic':
         # Calculate historic observed droughts only (no MPI needed)
+        # Uses the shared function from methods.drought_analysis
         print("Running in HISTORIC mode - calculating observed droughts only")
-        success = calculate_historic_observed_droughts(ssi_windows=[3, 6, 12])
+        output_dir = "./pywrdrb/drought_metrics"
+        success = calculate_historic_observed_droughts(
+            ssi_windows=[3, 6, 12], output_dir=output_dir
+        )
         if not success:
             sys.exit(1)
     elif len(sys.argv) == 2:

@@ -33,7 +33,7 @@ from methods.drought_analysis import (
     calculate_ensemble_droughts,
     calculate_satisficing_by_drought
 )
-from methods.storage_zones import calculate_zone_probabilities
+from methods.storage_zones import calculate_zone_probabilities, calculate_storage_percentiles
 
 # Import config
 from methods.config import (
@@ -95,6 +95,9 @@ def run_serial_postprocessing(dataset_id, start_step=4, end_step=7,
 
     # =========================================================================
     # STEP 4: Postprocess Data
+    # NOTE: The parallel version (04_postprocess_data_mpi.py) reimplements
+    # postprocessing logic inline for MPI distribution. Any changes to
+    # methods/postprocess.py must also be applied to 04_postprocess_data_mpi.py.
     # =========================================================================
     if start_step <= 4 <= end_step:
         print("\n" + "=" * 80)
@@ -242,6 +245,10 @@ def run_serial_postprocessing(dataset_id, start_step=4, end_step=7,
                     period=period,
                     output_dir=zone_prob_dir
                 )
+
+                # Calculate storage percentiles (matches 07_calculate_storage_zone_probabilities.py)
+                calculate_storage_percentiles(dataset_id, period)
+
                 elapsed = (datetime.now() - start_time).total_seconds()
                 print(f"\nStep 7 completed successfully (elapsed: {elapsed:.1f}s)")
 

@@ -100,6 +100,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
                                                  period='full',
                                                  flowtype=BASELINE_DATASET)
         Q = Q.loc[:, pywrdrb_nodes_to_generate]
+        Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
 
         # CRITICAL: Replace zeros with NaN before fitting
         # Streamflow should never be exactly zero - zeros in historical data are artifacts
@@ -129,9 +130,13 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
     if rank == 0:
         print(f"Set {set_id + 1}: Fitting Kirsch generator (monthly)...")
 
-    kirsch_gen = KirschGenerator(Q, debug=False)
-    kirsch_gen.preprocessing()
-    kirsch_gen.fit()
+    kirsch_gen_full = KirschGenerator(Q, debug=False)
+    kirsch_gen_full.preprocessing()
+    kirsch_gen_full.fit()
+
+    kirsch_gen_baseline = KirschGenerator(Q_baseline, debug=False)
+    kirsch_gen_baseline.preprocessing()
+    kirsch_gen_baseline.fit()
 
     if rank == 0:
         print(f"Set {set_id + 1}: Fitting Nowak disaggregator (monthly->daily)...")
@@ -150,7 +155,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
 
         # Apply percentage changes to monthly means
-        prior_mean_month = kirsch_gen.mean_month
+        prior_mean_month = kirsch_gen_baseline.mean_month
         new_mean_month = prior_mean_month.copy() * pd.NA
 
         for i, site in enumerate(new_mean_month):
@@ -162,7 +167,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
         new_mean_month = np.log(new_mean_month.astype(float))
 
         # Pass back to generator, overwriting the prior means
-        kirsch_gen.mean_month = new_mean_month
+        kirsch_gen_baseline.mean_month = new_mean_month
 
     # DISTRIBUTE REALIZATION GENERATION ACROSS RANKS
     # Each rank generates a subset of realizations
@@ -186,7 +191,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
     # Generate local ensemble subset (monthly, then disaggregate to daily)
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
-        monthly_ensemble_obj = kirsch_gen.generate(n_realizations=local_n_realizations,
+        monthly_ensemble_obj = kirsch_gen_baseline.generate(n_realizations=local_n_realizations,
                                                     n_years=N_YEARS)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak

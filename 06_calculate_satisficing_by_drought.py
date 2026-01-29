@@ -26,9 +26,6 @@ Examples:
 """
 
 import sys
-import os
-import numpy as np
-import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -37,118 +34,13 @@ from methods.config import *
 from methods.load import load_drought_events
 from methods.verification import verify_postprocessing_output
 from methods.print_summary import print_satisficing_summary
+from methods.drought_analysis import calculate_statistical_significance
 from methods.save import save_satisficing_results, SATISFICING_ANALYSIS_DIR
 from methods.metrics.satisficing import (
     calculate_satisficing_conditions,
     calculate_satisficing_during_droughts,
     calculate_satisficing_non_drought_periods
 )
-
-
-def calculate_statistical_significance(drought_results, non_drought_results):
-    """
-    Perform statistical tests to determine if differences are significant.
-
-    Parameters
-    ----------
-    drought_results : pd.DataFrame
-        Satisficing results for years with droughts
-    non_drought_results : pd.DataFrame
-        Satisficing results for years without droughts
-
-    Returns
-    -------
-    dict
-        Statistical test results
-    """
-    from scipy.stats import chi2_contingency, mannwhitneyu
-
-    print("\n" + "=" * 80)
-    print("STATISTICAL SIGNIFICANCE TESTS")
-    print("=" * 80)
-
-    results = {}
-
-    # Chi-square test for satisficing rates
-    satisficing_contingency = np.array([
-        [drought_results['satisficing'].sum(), (~drought_results['satisficing']).sum()],
-        [non_drought_results['satisficing'].sum(), (~non_drought_results['satisficing']).sum()]
-    ])
-
-    chi2, p_value, dof, expected = chi2_contingency(satisficing_contingency)
-    results['chi2_satisficing'] = {
-        'chi2': chi2,
-        'p_value': p_value,
-        'dof': dof
-    }
-
-    print("\nChi-Square Test: Satisficing Rates (Years with vs without Droughts)")
-    print("-" * 80)
-    print(f"Chi-square statistic: {chi2:.4f}")
-    print(f"p-value: {p_value:.4e}")
-    print(f"Degrees of freedom: {dof}")
-    if p_value < 0.001:
-        print("Result: HIGHLY SIGNIFICANT (p < 0.001)")
-    elif p_value < 0.01:
-        print("Result: VERY SIGNIFICANT (p < 0.01)")
-    elif p_value < 0.05:
-        print("Result: SIGNIFICANT (p < 0.05)")
-    else:
-        print("Result: NOT SIGNIFICANT (p >= 0.05)")
-
-    # Mann-Whitney U test for storage levels
-    u_stat_storage, p_value_storage = mannwhitneyu(
-        drought_results['min_storage_pct'],
-        non_drought_results['min_storage_pct'],
-        alternative='two-sided'
-    )
-
-    results['mannwhitney_storage'] = {
-        'u_statistic': u_stat_storage,
-        'p_value': p_value_storage
-    }
-
-    print("\nMann-Whitney U Test: Minimum Storage Levels")
-    print("-" * 80)
-    print(f"U statistic: {u_stat_storage:.4f}")
-    print(f"p-value: {p_value_storage:.4e}")
-    if p_value_storage < 0.001:
-        print("Result: HIGHLY SIGNIFICANT (p < 0.001)")
-    elif p_value_storage < 0.01:
-        print("Result: VERY SIGNIFICANT (p < 0.01)")
-    elif p_value_storage < 0.05:
-        print("Result: SIGNIFICANT (p < 0.05)")
-    else:
-        print("Result: NOT SIGNIFICANT (p >= 0.05)")
-
-    # Mann-Whitney U test for violation days
-    u_stat_violations, p_value_violations = mannwhitneyu(
-        drought_results['max_violation_days'],
-        non_drought_results['max_violation_days'],
-        alternative='two-sided'
-    )
-
-    results['mannwhitney_violations'] = {
-        'u_statistic': u_stat_violations,
-        'p_value': p_value_violations
-    }
-
-    print("\nMann-Whitney U Test: Maximum Violation Days")
-    print("-" * 80)
-    print(f"U statistic: {u_stat_violations:.4f}")
-    print(f"p-value: {p_value_violations:.4e}")
-    if p_value_violations < 0.001:
-        print("Result: HIGHLY SIGNIFICANT (p < 0.001)")
-    elif p_value_violations < 0.01:
-        print("Result: VERY SIGNIFICANT (p < 0.01)")
-    elif p_value_violations < 0.05:
-        print("Result: SIGNIFICANT (p < 0.05)")
-    else:
-        print("Result: NOT SIGNIFICANT (p >= 0.05)")
-
-    print("=" * 80)
-
-    return results
 
 
 def process_ssi_window(data, dataset_id, ssi_window, all_years_results=None):

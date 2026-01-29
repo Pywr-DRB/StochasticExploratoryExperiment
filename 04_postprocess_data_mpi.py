@@ -1,6 +1,12 @@
 """
 MPI-based parallel postprocessing for ensemble data.
 
+NOTE: This script reimplements postprocessing logic (shortage calculation,
+contribution calculation, historical model loading, gage flow loading) inline
+for MPI distribution. The serial equivalent uses methods.postprocess.postprocess_dataset().
+Any changes to the core postprocessing logic must be applied in BOTH places.
+See also: serial_postprocessing.py (Step 4), methods/postprocess.py.
+
 This script uses mpi4py to distribute shortage and contribution calculations
 across multiple MPI ranks for faster processing of large ensembles.
 

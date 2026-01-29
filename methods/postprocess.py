@@ -655,6 +655,19 @@ def preprocess_to_weekly(data, dataset_id, config=None):
         montague_flow_daily = data.major_flow[dataset_id][r]['delMontague']
         montague_target_daily = data.mrf_target[dataset_id][r]['delMontague']
 
+        # NYC contribution to Montague flow target (if available)
+        # This represents the required releases NYC must make for downstream targets
+        if hasattr(data, 'contribution') and dataset_id in data.contribution:
+            if r in data.contribution[dataset_id]:
+                nyc_montague_contrib_daily = data.contribution[dataset_id][r].get(
+                    'mrf_montagueTrenton_nyc',
+                    pd.Series(0.0, index=storage_daily.index)
+                )
+            else:
+                nyc_montague_contrib_daily = pd.Series(0.0, index=storage_daily.index)
+        else:
+            nyc_montague_contrib_daily = pd.Series(0.0, index=storage_daily.index)
+
         # Create daily DataFrame
         daily_df = pd.DataFrame({
             'storage_agg': storage_daily,
@@ -664,6 +677,7 @@ def preprocess_to_weekly(data, dataset_id, config=None):
             'nyc_demand': nyc_demand_daily,
             'montague_flow': montague_flow_daily,
             'montague_target': montague_target_daily,
+            'nyc_montague_contribution': nyc_montague_contrib_daily,
         })
 
         # Compute daily shortage indicators (True if shortage that day)
@@ -694,6 +708,7 @@ def preprocess_to_weekly(data, dataset_id, config=None):
             'nyc_demand': 'sum',             # Total weekly demand
             'montague_flow': 'sum',          # Total weekly flow
             'montague_target': 'sum',        # Total weekly target
+            'nyc_montague_contribution': 'sum',  # Total weekly NYC contribution to Montague
             'demand_shortage_day': 'sum',    # Total days with demand shortage
             'flow_shortage_day': 'sum',      # Total days with flow shortage
         })
@@ -736,9 +751,11 @@ def preprocess_to_weekly(data, dataset_id, config=None):
         'inflow_agg', 'storage_agg', 'storage_pct', 'ffmp_zone',
         'nyc_demand', 'nyc_diversion', 'demand_satisfaction',
         'demand_shortage_day', 'demand_shortage_consec_days',
-        'montague_flow', 'montague_target', 'flow_satisfaction',
+        'montague_flow', 'montague_target', 'nyc_montague_contribution', 'flow_satisfaction',
         'flow_shortage_day', 'flow_shortage_consec_days',
     ]
+    # Only include columns that exist (in case NYC contribution data not available)
+    col_order = [c for c in col_order if c in weekly_ts.columns]
     weekly_ts = weekly_ts[col_order]
 
     print(f"  Created weekly time series: {len(weekly_ts)} rows")
@@ -882,6 +899,7 @@ def load_episode_analysis_data(dataset_id):
             'inflow',           # NYC inflows
             'ibt_diversions',   # NYC diversions
             'ibt_demands',      # NYC demands
+            'contribution',     # NYC contribution to downstream targets
         ]
     )
 

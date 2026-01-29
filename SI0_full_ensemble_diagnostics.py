@@ -6,6 +6,7 @@ This script creates detailed diagnostic plots for synthetic ensemble validation:
 - Gridded autocorrelation plots (daily/monthly, major/minor nodes)
 - Statistical validation panels (selected sites)
 - Spatial correlation plots (daily/monthly, major/minor nodes)
+- Ensemble convergence diagnostics (mean/variance of annual flow vs. realization count)
 
 For the main manuscript summary figure, see F1_plot_ensemble_diagnostics.py
 
@@ -24,6 +25,7 @@ from sglib import Ensemble
 from sglib.plotting import plot_validation_panel, plot_spatial_correlation
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
+from methods.plotting.ensemble_summary import plot_ensemble_convergence
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import *
 
@@ -93,7 +95,7 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
     ensemble_cache = {}
 
     # Create figure directories
-    fig_subdirs = ['fdc', 'autocorrelation', 'statistical_validation', 'spatial_correlation']
+    fig_subdirs = ['fdc', 'autocorrelation', 'statistical_validation', 'spatial_correlation', 'convergence']
     for subdir in fig_subdirs:
         os.makedirs(f"{FIG_DIR}/{subdir}", exist_ok=True)
 
@@ -252,6 +254,23 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
         show_difference=False,
         filename=fname
     )
+
+    ### Ensemble convergence diagnostics
+    print("\nGenerating ensemble convergence plots...")
+
+    for site in validate_nodes:
+        if site not in Q_syn:
+            print(f"  Skipping convergence for {site} (not in ensemble)")
+            continue
+
+        print(f"  Plotting convergence for {site}...")
+        fname = f"{FIG_DIR}/convergence/{dataset_id}_{site}_convergence.png"
+        plot_ensemble_convergence(
+            Q_syn_site=Q_syn[site],
+            realization_ids=realization_ids,
+            site=site,
+            fname=fname,
+        )
 
     print(f"\nAll diagnostic plots saved for {dataset_id}!")
     return True

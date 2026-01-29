@@ -16,6 +16,8 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from sglib.droughts.ssi import SSIDroughtMetrics, SSI
 
+from scipy.stats import chi2_contingency, mannwhitneyu
+
 from .config import BASELINE_DATASET
 from .load import load_baseline_historical_flow, load_wrf1960s_historical_flow
 from .metrics.satisficing import (
@@ -23,6 +25,8 @@ from .metrics.satisficing import (
     calculate_satisficing_during_droughts,
     calculate_satisficing_non_drought_periods
 )
+from .print_summary import print_satisficing_summary
+from .save import save_satisficing_results
 
 
 def calculate_historic_observed_droughts(ssi_windows, output_dir):
@@ -132,7 +136,7 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
     print(f"CALCULATING ENSEMBLE DROUGHTS: {dataset_id}")
     print("=" * 80)
 
-    # Load postprocessed data
+    # Load postprocessed data (gage_flow, matching parallel script 05)
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(
@@ -140,13 +144,19 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
             "Run step 4 (postprocessing) first!"
         )
 
-    print(f"  Loading inflow data from {fname}...")
+    print(f"  Loading gage_flow data from {fname}...")
     data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=['inflow'])
+    data.load_from_export(fname, results_sets=['gage_flow'])
 
     # Get realizations
-    realizations = sorted(data.inflow[dataset_id].keys())
+    syn_ensemble = data.gage_flow[dataset_id]
+    realizations = sorted(syn_ensemble.keys())
     print(f"  Found {len(realizations)} realizations")
+
+    # Compute nyc_aggregate from USGS gage IDs for each realization
+    nyc_gages_syn = ["01425000", "01417000", "01436000"]
+    for real_id in realizations:
+        syn_ensemble[real_id]['nyc_aggregate'] = syn_ensemble[real_id][nyc_gages_syn].sum(axis=1)
 
     # Load historic data for SSI fitting
     Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
@@ -192,16 +202,16 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
             if r % 10 == 0 and r > 0:
                 print(f"    Processed {r}/{len(realizations)} realizations...")
 
-            # Get NYC inflow for this realization
-            nyc_inflow = data.inflow[dataset_id][r]['nyc']
+            # Get NYC aggregate gage flow for this realization
+            nyc_flow = syn_ensemble[r]['nyc_aggregate']
 
             # Resample to monthly
-            nyc_inflow_monthly = nyc_inflow.resample('MS').sum()
-            nyc_inflow_monthly.replace(0, np.nan, inplace=True)
-            nyc_inflow_monthly.dropna(inplace=True)
+            nyc_flow_monthly = nyc_flow.resample('MS').sum()
+            nyc_flow_monthly.replace(0, np.nan, inplace=True)
+            nyc_flow_monthly.dropna(inplace=True)
 
             # Calculate SSI
-            ssi_r = ssi_calculator.transform(nyc_inflow_monthly)
+            ssi_r = ssi_calculator.transform(nyc_flow_monthly)
 
             # Calculate drought metrics
             droughts_r = drought_calculator.calculate_drought_metrics(ssi_r)
@@ -225,9 +235,101 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
     return True
 
 
+def calculate_statistical_significance(drought_results, non_drought_results):
+    """
+    Perform statistical tests comparing satisficing during drought vs non-drought years.
+
+    Tests:
+    - Chi-square test on satisficing rates
+    - Mann-Whitney U test on minimum storage levels
+    - Mann-Whitney U test on maximum violation days
+
+    Parameters
+    ----------
+    drought_results : pd.DataFrame
+        Satisficing results for years with droughts
+    non_drought_results : pd.DataFrame
+        Satisficing results for years without droughts
+
+    Returns
+    -------
+    dict
+        Statistical test results with keys: chi2_satisficing,
+        mannwhitney_storage, mannwhitney_violations
+    """
+    print("\n" + "=" * 80)
+    print("STATISTICAL SIGNIFICANCE TESTS")
+    print("=" * 80)
+
+    results = {}
+
+    # Chi-square test for satisficing rates
+    satisficing_contingency = np.array([
+        [drought_results['satisficing'].sum(), (~drought_results['satisficing']).sum()],
+        [non_drought_results['satisficing'].sum(), (~non_drought_results['satisficing']).sum()]
+    ])
+
+    chi2, p_value, dof, expected = chi2_contingency(satisficing_contingency)
+    results['chi2_satisficing'] = {'chi2': chi2, 'p_value': p_value, 'dof': dof}
+
+    print("\nChi-Square Test: Satisficing Rates (Years with vs without Droughts)")
+    print("-" * 80)
+    print(f"Chi-square statistic: {chi2:.4f}")
+    print(f"p-value: {p_value:.4e}")
+    print(f"Degrees of freedom: {dof}")
+    _print_significance(p_value)
+
+    # Mann-Whitney U test for storage levels
+    u_stat_storage, p_value_storage = mannwhitneyu(
+        drought_results['min_storage_pct'],
+        non_drought_results['min_storage_pct'],
+        alternative='two-sided'
+    )
+    results['mannwhitney_storage'] = {'u_statistic': u_stat_storage, 'p_value': p_value_storage}
+
+    print("\nMann-Whitney U Test: Minimum Storage Levels")
+    print("-" * 80)
+    print(f"U statistic: {u_stat_storage:.4f}")
+    print(f"p-value: {p_value_storage:.4e}")
+    _print_significance(p_value_storage)
+
+    # Mann-Whitney U test for violation days
+    u_stat_violations, p_value_violations = mannwhitneyu(
+        drought_results['max_violation_days'],
+        non_drought_results['max_violation_days'],
+        alternative='two-sided'
+    )
+    results['mannwhitney_violations'] = {'u_statistic': u_stat_violations, 'p_value': p_value_violations}
+
+    print("\nMann-Whitney U Test: Maximum Violation Days")
+    print("-" * 80)
+    print(f"U statistic: {u_stat_violations:.4f}")
+    print(f"p-value: {p_value_violations:.4e}")
+    _print_significance(p_value_violations)
+
+    print("=" * 80)
+    return results
+
+
+def _print_significance(p_value):
+    """Print significance interpretation for a p-value."""
+    if p_value < 0.001:
+        print("Result: HIGHLY SIGNIFICANT (p < 0.001)")
+    elif p_value < 0.01:
+        print("Result: VERY SIGNIFICANT (p < 0.01)")
+    elif p_value < 0.05:
+        print("Result: SIGNIFICANT (p < 0.05)")
+    else:
+        print("Result: NOT SIGNIFICANT (p >= 0.05)")
+
+
 def calculate_satisficing_by_drought(dataset_id, ssi_window, output_dir):
     """
     Calculate satisficing conditions for drought/non-drought years.
+
+    Matches the analysis in 06_calculate_satisficing_by_drought.py:
+    includes statistical significance tests (Chi-square, Mann-Whitney U)
+    and uses the dedicated save/print summary functions.
 
     Parameters
     ----------
@@ -303,20 +405,17 @@ def calculate_satisficing_by_drought(dataset_id, ssi_window, output_dir):
     )
     print(f"  Evaluated {len(non_drought_results)} year-realization pairs without droughts")
 
-    # Save results
-    os.makedirs(output_dir, exist_ok=True)
+    # Print summary statistics (matches 06)
+    print_satisficing_summary(all_years_results, drought_results, non_drought_results,
+                              dataset_id, ssi_window)
 
-    fname1 = f"{output_dir}/{dataset_id}_ssi{ssi_window}_all_years.csv"
-    all_years_results.to_csv(fname1, index=False)
-    print(f"\nSaved: {fname1}")
+    # Statistical significance tests (matches 06)
+    if len(drought_results) > 0 and len(non_drought_results) > 0:
+        calculate_statistical_significance(drought_results, non_drought_results)
 
-    fname2 = f"{output_dir}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
-    drought_results.to_csv(fname2, index=False)
-    print(f"Saved: {fname2}")
-
-    fname3 = f"{output_dir}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
-    non_drought_results.to_csv(fname3, index=False)
-    print(f"Saved: {fname3}")
+    # Save results using dedicated save function (matches 06)
+    save_satisficing_results(all_years_results, drought_results, non_drought_results,
+                             dataset_id, ssi_window, output_dir=output_dir)
 
     print("\n" + "=" * 80)
     print(f"SATISFICING ANALYSIS COMPLETE: {dataset_id}, SSI-{ssi_window}")
