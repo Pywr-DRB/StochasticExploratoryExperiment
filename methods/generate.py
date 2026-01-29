@@ -189,12 +189,18 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
             print(f"  First {extra_realizations} ranks get 1 extra realization")
 
     # Generate local ensemble subset (monthly, then disaggregate to daily)
+    # Seed strategy: deterministic per (set_id, rank) so results are reproducible
+    # and independent across ranks. Kirsch sets np.random.seed() internally,
+    # which also controls the Nowak disaggregator (uses global numpy state).
+    generation_seed = set_id * 10000 + rank
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
         monthly_ensemble_obj = kirsch_gen_baseline.generate(n_realizations=local_n_realizations,
-                                                    n_years=N_YEARS)
+                                                    n_years=N_YEARS,
+                                                    seed=generation_seed)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak
+        # Nowak uses global numpy random state (set by Kirsch seed above)
         daily_ensemble_obj = nowak_disagg.disaggregate(monthly_ensemble_obj)
 
         # Convert Ensemble object to dictionary of DataFrames (by realization)
@@ -257,7 +263,9 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
             kde = kdes[kde_name]
 
             # Generate samples for local realizations
-            samples = kde.resample(n_local_samples)
+            # Seed per (set_id, rank, node-pair) for reproducibility
+            kde_seed = generation_seed + hash(kde_name) % 10000
+            samples = kde.resample(n_local_samples, seed=kde_seed)
             samples = samples.reshape((local_syn_ensemble[0].shape[0], local_n_realizations))
             samples = np.clip(samples, 0, 1)
 

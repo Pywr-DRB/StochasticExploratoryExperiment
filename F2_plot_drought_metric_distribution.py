@@ -43,23 +43,9 @@ METRIC_AXIS_LABELS = {
 # Panel labels
 PANEL_LETTERS = list('abcdefghij')
 
-
-def _estimate_n_years(droughts, observed=False):
-    """Estimate total simulation-years represented in a drought event table.
-
-    For observed data, uses the date range of the events.
-    For ensemble data, uses n_realizations * span of a single realization.
-    """
-    if observed or 'realization_id' not in droughts.columns:
-        span_days = (droughts['end'].max() - droughts['start'].min()).days
-        return max(span_days / 365.25, 1.0)
-
-    first_real = droughts['realization_id'].iloc[0]
-    subset = droughts[droughts['realization_id'] == first_real]
-    span_days = (subset['end'].max() - subset['start'].min()).days
-    years_per_real = max(span_days / 365.25, 1.0)
-    n_realizations = droughts['realization_id'].nunique()
-    return n_realizations * years_per_real
+# Number of years for exceedance rate normalization
+HISTORIC_N_YEARS = 77  # 1945-2022
+ENSEMBLE_N_YEARS = N_YEARS * TOTAL_REALIZATIONS
 
 
 def plot_drought_manuscript_figure(
@@ -111,15 +97,11 @@ def plot_drought_manuscript_figure(
     # Load data
     # ------------------------------------------------------------------
     obs_droughts = load_drought_events(dataset_ids[0], ssi_window, observed=True)
-    obs_n_years = _estimate_n_years(obs_droughts, observed=True)
 
     ensemble_data = {}
     for did in dataset_ids:
         df = load_drought_events(did, ssi_window, observed=False)
-        ensemble_data[did] = {
-            'droughts': df,
-            'n_years': _estimate_n_years(df, observed=False),
-        }
+        ensemble_data[did] = {'droughts': df}
 
     hexbin_droughts = ensemble_data[hexbin_dataset]['droughts']
 
@@ -194,7 +176,7 @@ def plot_drought_manuscript_figure(
 
         # --- Observed ---
         vals = np.sort(obs_droughts[metric].values)[::-1]
-        exceedance = np.arange(1, len(vals) + 1) / obs_n_years
+        exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
         line, = ax.plot(
             vals, exceedance,
             color=HISTORIC_COLOR, linestyle=HISTORIC_LINESTYLE,
@@ -207,9 +189,8 @@ def plot_drought_manuscript_figure(
         # --- Ensemble datasets ---
         for did in dataset_ids:
             df = ensemble_data[did]['droughts']
-            n_yrs = ensemble_data[did]['n_years']
             vals = np.sort(df[metric].values)[::-1]
-            exceedance = np.arange(1, len(vals) + 1) / n_yrs
+            exceedance = np.arange(1, len(vals) + 1) / ENSEMBLE_N_YEARS
             line, = ax.plot(
                 vals, exceedance,
                 color=DATASET_COLORS.get(did, '#808080'),
