@@ -779,7 +779,7 @@ def plot_ensemble_summary_figure(
     dataset_id: str = 'stationary_ensemble',
     fname: str = None,
     figsize: tuple = (12, 14),
-    percentiles: tuple = (5, 95),
+    percentiles: tuple = (0, 100),
     max_lag: int = 30,
 ):
     """
