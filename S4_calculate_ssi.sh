@@ -2,7 +2,7 @@
 #SBATCH --job-name=ssi
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
-#SBATCH --nodes=2
+#SBATCH --nodes=5
 #SBATCH --ntasks-per-node=40
 #SBATCH --mem=0
 
@@ -12,7 +12,7 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
-CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-false}
+CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-true}
 CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-true}
 
 
@@ -28,6 +28,8 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py stationary_ensemble
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_low
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_high
+    python3 05_calculate_ssi_drought_metrics.py historic
+    
 
 fi
 
@@ -39,17 +41,3 @@ if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
     python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
     python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
 fi
-
-
-# TEST_CLUSTER_POTENTIAL=${TEST_CLUSTER_POTENTIAL:-false}
-
-# if [ "$TEST_CLUSTER_POTENTIAL" = true ]; then
-
-#     ################################################################################
-#     echo "Testing cluster computing potential..."
-#     ################################################################################
-#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 3
-#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 6
-#     python3 SI3_evaluate_cluster_potential.py stationary_ensemble 12
-
-# fi

@@ -8,14 +8,14 @@
 #SBATCH --mem=0
 
 # Setup
-DATASET_ID="${1:-stationary_ensemble}"  # Default or pass as argument
 module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
-GENERATE=${GENERATE:-false}
-PREP=${PREP:-false}
+DATASET_ID="${1:-stationary_ensemble}"
+GENERATE=${GENERATE:-true}
+PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories
