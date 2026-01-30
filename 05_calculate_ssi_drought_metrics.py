@@ -53,16 +53,17 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"SSI windows: {ssi_windows}")
         print(f"Using {size} MPI ranks")
 
-    # Verify postprocessed data exists
+    # Verify postprocessed data exists (rank 0 checks, broadcasts result)
+    verification_ok = False
     if rank == 0:
         try:
             verify_postprocessing_output(dataset_id)
+            verification_ok = True
         except FileNotFoundError as e:
             print(f"ERROR: {e}")
-            return False
-
-    # Wait for rank 0 verification
-    comm.barrier()
+    verification_ok = comm.bcast(verification_ok, root=0)
+    if not verification_ok:
+        return False
 
     # Load synthetic ensemble (on disk)
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
