@@ -17,8 +17,8 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
 PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
 PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
 
@@ -30,9 +30,9 @@ fi
 
 
 if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
-    python3 F2_plot_drought_metric_distribution.py 3
-    python3 F2_plot_drought_metric_distribution.py 6
     python3 F2_plot_drought_metric_distribution.py 12
+    python3 F2_plot_drought_metric_distribution.py 6
+    python3 F2_plot_drought_metric_distribution.py 3
 fi
 
 
