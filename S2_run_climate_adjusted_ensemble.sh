@@ -3,7 +3,7 @@
 #SBATCH --output=./logs/CAE.out
 #SBATCH --error=./logs/CAE.err
 #SBATCH --nodes=5
-#SBATCH --ntasks-per-node=40
+#SBATCH --ntasks-per-node=30
 #SBATCH --time=144:00:00
 #SBATCH --mem=0
 #SBATCH --exclusive
