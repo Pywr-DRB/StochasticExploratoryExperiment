@@ -21,42 +21,56 @@ SIMULATE=${SIMULATE:-true}
 # Create directories
 mkdir -p logs pywrdrb/{inputs,outputs,models} figures
 
-# Climate scenarios to process
-CLIMATE_SCENARIOS=(
-    "climate_adjusted_low"
-    "climate_adjusted_high"
-)
-
 echo "========================================"
 echo "Running climate-adjusted ensemble workflow"
-echo "Processing ${#CLIMATE_SCENARIOS[@]} scenarios with $np ranks on $SLURM_NNODES nodes"
+echo "$np ranks on $SLURM_NNODES nodes"
 echo "========================================"
 
-# Loop through each climate scenario
-for DATASET_ID in "${CLIMATE_SCENARIOS[@]}"; do
-    echo ""
-    echo "========================================"
-    echo "Starting: $DATASET_ID"
-    echo "========================================"
+# === climate_adjusted_low ===
+echo ""
+echo "========================================"
+echo "Starting: climate_adjusted_low"
+echo "========================================"
 
-    # Execute workflow for this scenario
-    [ "$GENERATE" = true ] && {
-        echo "Generating ensemble sets for $DATASET_ID..."
-        mpirun -np $np python3 01_generate_ensemble_sets.py "$DATASET_ID"
-    }
+[ "$GENERATE" = true ] && {
+    echo "Generating ensemble sets for climate_adjusted_low..."
+    mpirun -np $np python3 01_generate_ensemble_sets.py "climate_adjusted_low"
+}
 
-    [ "$PREP" = true ] && {
-        echo "Preparing inputs for $DATASET_ID..."
-        mpirun -np $np python3 02_prep_pywrdrb_inputs.py "$DATASET_ID"
-    }
+[ "$PREP" = true ] && {
+    echo "Preparing inputs for climate_adjusted_low..."
+    mpirun -np $np python3 02_prep_pywrdrb_inputs.py "climate_adjusted_low"
+}
 
-    [ "$SIMULATE" = true ] && {
-        echo "Running simulations for $DATASET_ID..."
-        mpirun -np $np python3 03_run_pywrdrb_simulations.py "$DATASET_ID"
-    }
+[ "$SIMULATE" = true ] && {
+    echo "Running simulations for climate_adjusted_low..."
+    mpirun -np $np python3 03_run_pywrdrb_simulations.py "climate_adjusted_low"
+}
 
-    echo "Completed: $DATASET_ID"
-done
+echo "Completed: climate_adjusted_low"
+
+# === climate_adjusted_high ===
+echo ""
+echo "========================================"
+echo "Starting: climate_adjusted_high"
+echo "========================================"
+
+[ "$GENERATE" = true ] && {
+    echo "Generating ensemble sets for climate_adjusted_high..."
+    mpirun -np $np python3 01_generate_ensemble_sets.py "climate_adjusted_high"
+}
+
+[ "$PREP" = true ] && {
+    echo "Preparing inputs for climate_adjusted_high..."
+    mpirun -np $np python3 02_prep_pywrdrb_inputs.py "climate_adjusted_high"
+}
+
+[ "$SIMULATE" = true ] && {
+    echo "Running simulations for climate_adjusted_high..."
+    mpirun -np $np python3 03_run_pywrdrb_simulations.py "climate_adjusted_high"
+}
+
+echo "Completed: climate_adjusted_high"
 
 echo ""
 echo "========================================"

@@ -63,11 +63,8 @@ def parallel_generate_all_sets(dataset_id):
             print(f"More sets than ranks - will process sets sequentially")
         print("=" * 60)
 
-    # Ensure all directories exist
-    if rank == 0:
-        ensure_ensemble_set_dirs(dataset_id)
-
-    comm.Barrier()  # Wait for directories to be created
+    # Ensure all directories exist (all ranks call with exist_ok=True, no Barrier needed)
+    ensure_ensemble_set_dirs(dataset_id)
 
     if size >= N_ENSEMBLE_SETS:
         # More ranks than sets - distribute ranks across sets
@@ -164,4 +161,11 @@ if __name__ == "__main__":
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
 
-    main(dataset_id)
+    try:
+        main(dataset_id)
+    except Exception as e:
+        import traceback
+        rank = MPI.COMM_WORLD.Get_rank()
+        print(f"RANK {rank} FATAL ERROR: {e}", flush=True)
+        traceback.print_exc()
+        MPI.COMM_WORLD.Abort(1)
