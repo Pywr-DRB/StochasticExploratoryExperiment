@@ -130,7 +130,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
     if rank == 0:
         print(f"Set {set_id + 1}: Fitting Kirsch generator (monthly)...")
 
-    kirsch_gen_baseline = KirschGenerator(Q_baseline, debug=False)
+    kirsch_gen_baseline = KirschGenerator(Q_baseline, debug=False, generate_using_log_flow=True)
     kirsch_gen_baseline.preprocessing()
     kirsch_gen_baseline.fit()
 

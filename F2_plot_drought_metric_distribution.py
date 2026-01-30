@@ -49,7 +49,7 @@ ENSEMBLE_N_YEARS = N_YEARS * TOTAL_REALIZATIONS
 
 # When True, show the range of per-realization exceedance CDFs as bands.
 # When False, show a single pooled CDF per dataset (original behavior).
-SHOW_REALIZATION_RANGE = True
+SHOW_REALIZATION_RANGE = False
 
 
 def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
