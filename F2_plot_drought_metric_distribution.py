@@ -47,6 +47,59 @@ PANEL_LETTERS = list('abcdefghij')
 HISTORIC_N_YEARS = 77  # 1945-2022
 ENSEMBLE_N_YEARS = N_YEARS * TOTAL_REALIZATIONS
 
+# When True, show the range of per-realization exceedance CDFs as bands.
+# When False, show a single pooled CDF per dataset (original behavior).
+SHOW_REALIZATION_RANGE = True
+
+
+def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
+                                           percentiles=(1, 25, 50, 75, 99)):
+    """Compute exceedance-rate bands across realizations.
+
+    For each realization, builds a step-function exceedance curve
+    (count of events with metric >= x, divided by n_years), then
+    evaluates all realizations on a shared x-grid and returns
+    percentile envelopes.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Drought events with columns ``metric`` and ``realization_id``.
+    metric : str
+        Column name for the drought metric.
+    n_years : int
+        Number of simulation years *per realization* (for rate normalisation).
+    n_grid : int
+        Resolution of the common x-grid.
+    percentiles : tuple of int
+        Percentiles to compute across realizations.
+
+    Returns
+    -------
+    x_grid : np.ndarray
+        Common metric values.
+    bands : dict
+        ``{p: array}`` for each percentile *p*.
+    """
+    all_vals = df[metric].values
+    x_min, x_max = np.nanmin(all_vals), np.nanmax(all_vals)
+    x_grid = np.linspace(x_min, x_max, n_grid)
+
+    realization_ids = sorted(df['realization_id'].unique())
+    curves = np.zeros((len(realization_ids), n_grid))
+
+    for i, rid in enumerate(realization_ids):
+        vals = df.loc[df['realization_id'] == rid, metric].values
+        # exceedance at each grid point = count(vals >= x) / n_years
+        for j, x in enumerate(x_grid):
+            curves[i, j] = np.sum(vals >= x) / n_years
+
+    bands = {}
+    for p in percentiles:
+        bands[p] = np.percentile(curves, p, axis=0)
+
+    return x_grid, bands
+
 
 def plot_drought_manuscript_figure(
     ssi_window=12,
@@ -139,18 +192,26 @@ def plot_drought_manuscript_figure(
     )
 
     # Colorbar below the hexbin panel
-    import matplotlib.ticker as ticker
+    # With bins='log', hexbin maps counts through log10 internally.
+    # Set manual ticks at powers of 10 for clean labels.
     cb = fig.colorbar(
         hb, ax=ax_hex, orientation='horizontal',
         shrink=0.8, pad=0.08, aspect=30,
     )
-    cb.set_label('Count (log scale)', fontsize=FONTSIZE_SMALL)
+    cb.set_label('Count', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
-    # Use clean log-spaced ticks: 1, 10, 100, 1000, ...
-    cb.ax.xaxis.set_major_locator(ticker.LogLocator(base=10, numticks=6))
-    cb.ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
-    cb.ax.xaxis.set_minor_locator(ticker.NullLocator())
-    cb.update_ticks()
+    # Determine tick positions from data range (log10 space)
+    vmin, vmax = hb.get_clim()
+    log_ticks = []
+    log_labels = []
+    for exp in range(0, 6):
+        log_val = np.log10(10**exp) if 10**exp >= 1 else 0
+        if vmin <= log_val <= vmax:
+            log_ticks.append(log_val)
+            log_labels.append(f'{10**exp:g}')
+    if log_ticks:
+        cb.set_ticks(log_ticks)
+        cb.set_ticklabels(log_labels)
 
     # Overlay observed
     if len(obs_droughts) > 0:
@@ -197,14 +258,38 @@ def plot_drought_manuscript_figure(
         # --- Ensemble datasets ---
         for did in dataset_ids:
             df = ensemble_data[did]['droughts']
-            vals = np.sort(df[metric].values)[::-1]
-            exceedance = np.arange(1, len(vals) + 1) / ENSEMBLE_N_YEARS
-            line, = ax.plot(
-                vals, exceedance,
-                color=DATASET_COLORS.get(did, '#808080'),
-                linestyle=DATASET_LINESTYLES.get(did, '-'),
-                linewidth=LINEWIDTH_MEDIUM, zorder=5,
-            )
+            color = DATASET_COLORS.get(did, '#808080')
+            ls = DATASET_LINESTYLES.get(did, '-')
+
+            if SHOW_REALIZATION_RANGE:
+                x_grid, bands = _compute_realization_exceedance_bands(
+                    df, metric, n_years=N_YEARS,
+                )
+                # Outer band (1-99%)
+                ax.fill_between(
+                    x_grid, bands[1], bands[99],
+                    color=color, alpha=0.12, zorder=4,
+                )
+                # Inner band (25-75%)
+                ax.fill_between(
+                    x_grid, bands[25], bands[75],
+                    color=color, alpha=0.25, zorder=4,
+                )
+                # Median line
+                line, = ax.plot(
+                    x_grid, bands[50],
+                    color=color, linestyle=ls,
+                    linewidth=LINEWIDTH_MEDIUM, zorder=5,
+                )
+            else:
+                vals = np.sort(df[metric].values)[::-1]
+                exceedance = np.arange(1, len(vals) + 1) / ENSEMBLE_N_YEARS
+                line, = ax.plot(
+                    vals, exceedance,
+                    color=color, linestyle=ls,
+                    linewidth=LINEWIDTH_MEDIUM, zorder=5,
+                )
+
             if k == 0:
                 legend_handles.append(line)
                 legend_labels.append(DATASET_LABELS.get(did, did))
