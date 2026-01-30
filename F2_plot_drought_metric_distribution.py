@@ -24,7 +24,7 @@ from methods.config import *
 from methods.load import load_drought_events
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
-    HISTORIC_COLOR, HISTORIC_LINESTYLE, HISTORIC_LABEL,
+    HISTORIC_COLOR, HISTORIC_LABEL,
     LINEWIDTH_MEDIUM, CMAP_SEQUENTIAL, DPI_HIGH,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
 )
@@ -91,16 +91,21 @@ def plot_drought_manuscript_figure(
 
     n_cdf = len(cdf_metrics)
     if figsize is None:
-        figsize = (8.5, 2.5 * n_cdf)
+        panel_h = 2.5
+        figsize = (3.0 + panel_h + 4.0, panel_h * n_cdf)
 
     # ------------------------------------------------------------------
     # Load data
     # ------------------------------------------------------------------
+    MAX_SEVERITY = 6.2
+
     obs_droughts = load_drought_events(dataset_ids[0], ssi_window, observed=True)
+    obs_droughts = obs_droughts[obs_droughts['severity'] <= MAX_SEVERITY]
 
     ensemble_data = {}
     for did in dataset_ids:
         df = load_drought_events(did, ssi_window, observed=False)
+        df = df[df['severity'] <= MAX_SEVERITY]
         ensemble_data[did] = {'droughts': df}
 
     hexbin_droughts = ensemble_data[hexbin_dataset]['droughts']
@@ -111,7 +116,7 @@ def plot_drought_manuscript_figure(
     fig = plt.figure(figsize=figsize)
     gs = gridspec.GridSpec(
         n_cdf, 2,
-        width_ratios=[1.2, 1.0],
+        width_ratios=[1.6, 1.0],
         hspace=0.35, wspace=0.4,
     )
 
@@ -134,15 +139,17 @@ def plot_drought_manuscript_figure(
     )
 
     # Colorbar below the hexbin panel
+    import matplotlib.ticker as ticker
     cb = fig.colorbar(
         hb, ax=ax_hex, orientation='horizontal',
         shrink=0.8, pad=0.08, aspect=30,
-        format='%d',
     )
     cb.set_label('Count (log scale)', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
-    # Reduce number of ticks to avoid overlap
-    cb.locator = plt.MaxNLocator(nbins=5)
+    # Use clean log-spaced ticks: 1, 10, 100, 1000, ...
+    cb.ax.xaxis.set_major_locator(ticker.LogLocator(base=10, numticks=6))
+    cb.ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
+    cb.ax.xaxis.set_minor_locator(ticker.NullLocator())
     cb.update_ticks()
 
     # Overlay observed
@@ -174,16 +181,17 @@ def plot_drought_manuscript_figure(
     for k, metric in enumerate(cdf_metrics):
         ax = cdf_axes[k]
 
-        # --- Observed ---
+        # --- Observed (markers only) ---
         vals = np.sort(obs_droughts[metric].values)[::-1]
         exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
-        line, = ax.plot(
+        scatter = ax.scatter(
             vals, exceedance,
-            color=HISTORIC_COLOR, linestyle=HISTORIC_LINESTYLE,
-            linewidth=LINEWIDTH_MEDIUM, zorder=6,
+            color=HISTORIC_COLOR, marker='^', s=25,
+            edgecolors='white', linewidths=0.4,
+            zorder=6,
         )
         if k == 0:
-            legend_handles.append(line)
+            legend_handles.append(scatter)
             legend_labels.append(HISTORIC_LABEL)
 
         # --- Ensemble datasets ---
