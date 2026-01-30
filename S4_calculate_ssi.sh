@@ -2,7 +2,7 @@
 #SBATCH --job-name=ssi
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
-#SBATCH --nodes=5
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=40
 #SBATCH --mem=0
 
@@ -13,7 +13,7 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
 CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-true}
-CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-false}
+CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-true}
 
 
 # make directories
