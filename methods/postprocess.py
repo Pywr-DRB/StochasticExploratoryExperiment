@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from .metrics.shortfall import add_trenton_equiv_flow
+from .metrics.shortfall import add_trenton_equiv_flow, get_flow_and_target_values
 from .config import (
     N_REALIZATIONS_PER_ENSEMBLE_SET,
     N_ENSEMBLE_SETS,
@@ -451,6 +451,87 @@ def calculate_and_save_performance_metrics(data, dataset_id, realizations, outpu
     return metrics_df
 
 
+def _compute_shortage(data, dataset_id):
+    """Compute shortage from major_flow and mrf_target, matching MPI postprocessing logic."""
+    realizations = sorted(data.major_flow[dataset_id].keys())
+    nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
+
+    shortage_dict = {}
+    for r in realizations:
+        node_shortages = {}
+        for node in nodes:
+            flow_series, target_series = get_flow_and_target_values(
+                data, node, dataset_id, r, start_date=None, end_date=None
+            )
+            shortage_series = target_series - flow_series
+            shortage_series[shortage_series < 0] = 0
+            shortage_series.iloc[:3] = 0.0
+
+            # Ignore shortages with duration < 3 days
+            shortage_durations = (shortage_series > 0).astype(int).groupby(
+                (shortage_series > 0).astype(int).diff().ne(0).cumsum()
+            ).cumsum()
+            shortage_series[shortage_durations < 3] = 0.0
+
+            node_shortages[node] = shortage_series
+
+        shortage_dict[r] = pd.DataFrame(node_shortages)
+
+    data.shortage = {dataset_id: shortage_dict}
+
+
+def _compute_contribution(data, dataset_id):
+    """Compute NYC contribution to downstream targets from nyc_release_components."""
+    realizations = sorted(data.nyc_release_components[dataset_id].keys())
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
+
+    contribution_dict = {}
+    for r in realizations:
+        release_components = data.nyc_release_components[dataset_id][r]
+        total_nyc_contribution = release_components.loc[:, contribution_columns].sum(axis=1)
+        contribution_dict[r] = total_nyc_contribution.to_frame(name='mrf_montagueTrenton_nyc')
+
+    data.contribution = {dataset_id: contribution_dict}
+
+
+def _load_gage_flow(data, dataset_id):
+    """Load gage flow from hydrologic model flow files and combine with global realization IDs."""
+    ensemble_set_specs = [get_ensemble_set_spec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
+
+    # Setup pathnavigator for all ensemble sets
+    pn_config = pywrdrb.get_pn_config()
+    for spec in ensemble_set_specs:
+        dataset_dir = spec.directory
+        dataset_name = dataset_dir.split('/')[-1]
+        pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
+    pywrdrb.load_pn_config(pn_config)
+
+    # Load hydrologic flow data
+    ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
+    temp_data = pywrdrb.Data(results_sets=['major_flow'], print_status=False)
+    temp_data.load_hydrologic_model_flow(ensemble_set_names)
+
+    # Combine all sets into single dataset key with global realization IDs
+    combined_gage_flow = {}
+    for set_name in ensemble_set_names:
+        if set_name not in temp_data.major_flow:
+            continue
+        set_data = temp_data.major_flow[set_name]
+        set_idx = int(set_name.split('_set')[-1]) - 1
+
+        local_ids = list(set_data.keys())
+        min_local_id = min(local_ids) if local_ids else 0
+
+        for local_id, df in set_data.items():
+            local_id_normalized = local_id - min_local_id
+            global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
+            combined_gage_flow[global_id] = df
+
+    data.gage_flow = {dataset_id: combined_gage_flow}
+    print(f"      Loaded gage flow for {len(combined_gage_flow)} realizations")
+
+
 def combine_ensemble_sets(dataset_id, recombine=True):
     """
     Load and combine all ensemble sets into a single unified dataset.
@@ -482,10 +563,12 @@ def combine_ensemble_sets(dataset_id, recombine=True):
     # Load data from all ensemble sets
     data = pywrdrb.Data()
 
-    # Results to load
+    # Results to load from raw pywrdrb output files
+    # Note: shortage and contribution are computed after loading (not in raw output)
     results_sets = [
-        'major_flow', 'mrf_target', 'res_storage',
-        'res_release', 'shortage', 'inflow', 'contribution'
+        'major_flow', 'mrf_target', 'res_storage', 'res_release',
+        'inflow', 'ibt_diversions', 'ibt_demands',
+        'nyc_release_components', 'res_level',
     ]
 
     for results_set in results_sets:
@@ -502,15 +585,16 @@ def combine_ensemble_sets(dataset_id, recombine=True):
                     f"Output file not found for set {i}: {set_spec.output_file}"
                 )
 
-            # Load this ensemble set
+            # Load this ensemble set (raw pywrdrb output format)
             temp_data = pywrdrb.Data()
-            temp_data.load_from_export(
-                set_spec.output_file,
-                results_sets=[results_set]
+            temp_data.load_output(
+                output_filenames=[set_spec.output_file],
+                results_sets=[results_set],
             )
 
-            # Extract data for this set
-            set_data = getattr(temp_data, results_set)[dataset_id]
+            # Extract data using filename stem as key
+            file_label = os.path.splitext(os.path.basename(set_spec.output_file))[0]
+            set_data = getattr(temp_data, results_set)[file_label]
 
             # Get local realization IDs for this set
             local_ids = sorted(set_data.keys())
@@ -530,6 +614,21 @@ def combine_ensemble_sets(dataset_id, recombine=True):
 
     # Add Trenton equivalent flow AFTER combining datasets
     data = add_trenton_equiv_flow(data)
+
+    # Add NYC aggregate inflow column (matching MPI postprocessing logic)
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    for r, df in data.inflow[dataset_id].items():
+        df['nyc'] = df[nyc_reservoirs].sum(axis=1)
+
+    # Compute shortage and contribution from loaded data
+    print("    Computing shortage...")
+    _compute_shortage(data, dataset_id)
+    print("    Computing contribution...")
+    _compute_contribution(data, dataset_id)
+
+    # Load gage_flow from hydrologic model flow files (input data, not simulation output)
+    print("    Loading gage_flow...")
+    _load_gage_flow(data, dataset_id)
 
     print("  Data loading complete")
 

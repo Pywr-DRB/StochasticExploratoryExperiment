@@ -243,7 +243,7 @@ def plot_drought_manuscript_figure(
 
 def main():
     """Generate the F2 manuscript figure."""
-    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 6
+    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 12
     if ssi_window not in SSI_WINDOWS:
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
@@ -252,7 +252,8 @@ def main():
     print(f"F2: DROUGHT METRIC DISTRIBUTION (SSI-{ssi_window})")
     print("=" * 60)
 
-    plot_drought_manuscript_figure(ssi_window=ssi_window)
+    plot_drought_manuscript_figure(ssi_window=ssi_window,
+                                   dataset_ids=['stationary_ensemble','climate_adjusted_low', 'climate_adjusted_high'],)
     plt.close('all')
 
     print("\nDone.")

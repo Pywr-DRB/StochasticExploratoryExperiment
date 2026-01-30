@@ -70,19 +70,18 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     # --- Only rank 0 loads the export; others wait for metadata ---
     if rank == 0:
         data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=['gage_flow'])
+        data.load_from_export(fname, results_sets=['inflow'])
 
         # Keep just the combined ensemble dict
-        syn_ensemble = data.gage_flow[dataset_id]  # no copy: avoid doubling memory
+        syn_ensemble = data.inflow[dataset_id]  # no copy: avoid doubling memory
         del data  # free wrapper memory
 
         realization_ids = list(syn_ensemble.keys())
         n_realizations = len(realization_ids)
 
-        ## Calculate the nyc_aggregate flow as the sum of
-        nyc_gages = ["01425000", "01417000", "01436000"]
+        ## Calculate the nyc_aggregate inflow
         for real_id, df in syn_ensemble.items():
-            df['nyc_aggregate'] = df[nyc_gages].sum(axis=1)
+            df['nyc_aggregate'] = df[NYC_RESERVOIRS].sum(axis=1)
             
             # add it back to the dict
             syn_ensemble[real_id] = df

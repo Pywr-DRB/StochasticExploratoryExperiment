@@ -18,7 +18,7 @@ from sglib.droughts.ssi import SSIDroughtMetrics, SSI
 
 from scipy.stats import chi2_contingency, mannwhitneyu
 
-from .config import BASELINE_DATASET
+from .config import BASELINE_DATASET, NYC_RESERVOIRS
 from .load import load_baseline_historical_flow, load_wrf1960s_historical_flow
 from .metrics.satisficing import (
     calculate_satisficing_conditions,
@@ -27,9 +27,6 @@ from .metrics.satisficing import (
 )
 from .print_summary import print_satisficing_summary
 from .save import save_satisficing_results
-
-
-NYC_GAGES = ["01425000", "01417000", "01436000"]
 
 
 def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
@@ -53,18 +50,22 @@ def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
         Fitted SSI calculator ready for .transform() calls.
     """
     Q_baseline = load_baseline_historical_flow(
-        gage_flow=True, period='baseline', flowtype=BASELINE_DATASET
+        gage_flow=False, period='full', flowtype=BASELINE_DATASET
     )
     Q_baseline.replace(0, np.nan, inplace=True)
     Q_baseline.drop(columns=['delTrenton'], inplace=True)
 
-    Q_baseline[node] = Q_baseline[NYC_GAGES].sum(axis=1)
-    Q_baseline_monthly = Q_baseline.resample('MS').sum()
-    Q_baseline_monthly.replace(0, np.nan, inplace=True)
-    Q_baseline_monthly.dropna(axis=0, how='any', inplace=True)
+    Q_baseline[node] = Q_baseline[NYC_RESERVOIRS].sum(axis=1)
+
+    # Extract only the target node series before resampling/cleanup
+    # to avoid dropna removing months due to NaN in unrelated columns
+    node_daily = Q_baseline[node].copy()
+    node_monthly = node_daily.resample('MS').sum()
+    node_monthly.replace(0, np.nan, inplace=True)
+    node_monthly.dropna(inplace=True)
 
     ssi_calculator = SSI(normal_scores_transform=False, timescale=ssi_window)
-    ssi_calculator.fit(Q_baseline_monthly.loc[:, node])
+    ssi_calculator.fit(node_monthly)
     return ssi_calculator
 
 
@@ -89,12 +90,12 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
     print("=" * 60)
 
     # Load FULL historic record for transform (to find all droughts)
-    Q = load_baseline_historical_flow(gage_flow=True, period='full', flowtype=BASELINE_DATASET)
+    Q = load_baseline_historical_flow(gage_flow=False, period='full', flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True)
 
     if BASELINE_DATASET == 'wrfaorc_withObsScaled':
-        Q_1960s = load_wrf1960s_historical_flow(gage_flow=True)
+        Q_1960s = load_wrf1960s_historical_flow(gage_flow=False)
         Q_1960s.replace(0, np.nan, inplace=True)
         Q_1960s.drop(columns=['delTrenton'], inplace=True)
         Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()
@@ -104,10 +105,14 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
         Q_full = Q.copy()
 
     node = 'nyc_aggregate'
-    Q_full[node] = Q_full[NYC_GAGES].sum(axis=1)
-    Q_full_monthly = Q_full.resample('MS').sum()
-    Q_full_monthly.replace(0, np.nan, inplace=True)
-    Q_full_monthly.dropna(axis=0, how='any', inplace=True)
+    Q_full[node] = Q_full[NYC_RESERVOIRS].sum(axis=1)
+
+    # Extract only the target node series before resampling/cleanup
+    # to avoid dropna removing months due to NaN in unrelated columns
+    node_daily = Q_full[node].copy()
+    node_monthly = node_daily.resample('MS').sum()
+    node_monthly.replace(0, np.nan, inplace=True)
+    node_monthly.dropna(inplace=True)
 
     print(f"Loaded historic data with {Q_full.shape[0] // 365} years of daily data for {Q_full.shape[1]} sites.")
 
@@ -123,7 +128,7 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
         drought_calculator = SSIDroughtMetrics()
 
         # Transform the FULL historic record
-        ssi_obs = ssi_calculator.transform(Q_full_monthly.loc[:, node])
+        ssi_obs = ssi_calculator.transform(node_monthly)
         obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
 
         # Save observed drought metrics
@@ -178,17 +183,17 @@ def calculate_ensemble_droughts(dataset_id, ssi_windows, output_dir):
 
     print(f"  Loading gage_flow data from {fname}...")
     data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=['gage_flow'])
+    data.load_from_export(fname, results_sets=['inflow'])
 
     # Get realizations
-    syn_ensemble = data.gage_flow[dataset_id]
+    syn_ensemble = data.inflow[dataset_id]
     realizations = sorted(syn_ensemble.keys())
     print(f"  Found {len(realizations)} realizations")
 
     # Compute nyc_aggregate from USGS gage IDs for each realization
     node = 'nyc_aggregate'
     for real_id in realizations:
-        syn_ensemble[real_id][node] = syn_ensemble[real_id][NYC_GAGES].sum(axis=1)
+        syn_ensemble[real_id][node] = syn_ensemble[real_id][NYC_RESERVOIRS].sum(axis=1)
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)

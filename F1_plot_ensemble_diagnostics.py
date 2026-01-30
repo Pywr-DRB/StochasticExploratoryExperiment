@@ -65,7 +65,7 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
 
     # Load historical data
     print("Loading historical data...")
-    Q_historic = load_baseline_historical_flow(period='baseline', gage_flow=True, flowtype=BASELINE_DATASET)
+    Q_historic = load_baseline_historical_flow(period='baseline', gage_flow=False, flowtype=BASELINE_DATASET)
     Q_historic.replace(0, np.nan, inplace=True)
     Q_historic.drop(columns=['delTrenton'], inplace=True, errors='ignore')
 

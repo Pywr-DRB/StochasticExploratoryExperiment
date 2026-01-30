@@ -145,7 +145,7 @@ def run_serial_postprocessing(dataset_id, start_step=4, end_step=7,
             print("Skipping historic observed droughts (already complete)")
         else:
             start_time = datetime.now()
-
+            
             try:
                 calculate_historic_observed_droughts(ssi_windows, drought_metrics_dir)
                 elapsed = (datetime.now() - start_time).total_seconds()
@@ -328,6 +328,7 @@ Examples:
     parser.add_argument(
         '--recombine',
         action='store_true',
+        default=True,
         help='Force recombination of ensemble sets in step 4 (default: False)'
     )
 
