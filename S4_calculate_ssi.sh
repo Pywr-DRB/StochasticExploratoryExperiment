@@ -37,7 +37,7 @@ if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
     ################################################################################
     echo "Calculating satisficing during droughts..."
     ################################################################################
-    python3 06_calculate_satisficing_by_drought.py stationary_ensemble --all
-    python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
-    python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
+    mpirun -np $np python3 06_calculate_satisficing_by_drought.py stationary_ensemble --all
+    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
+    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
 fi
