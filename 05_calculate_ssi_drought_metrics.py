@@ -125,8 +125,13 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         node = 'nyc_aggregate'
 
-        # Fit SSI on baseline period (1980-2019) — same on all ranks
-        ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
+        # Fit SSI on rank 0 only, then broadcast to avoid all ranks
+        # independently loading full historical data (memory exhaustion)
+        if rank == 0:
+            ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
+        else:
+            ssi_calculator = None
+        ssi_calculator = comm.bcast(ssi_calculator, root=0)
         drought_calculator = SSIDroughtMetrics()
 
         if rank == 0:
