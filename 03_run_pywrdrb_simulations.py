@@ -80,12 +80,16 @@ def parallel_run_all_sets(dataset_id):
         ranks_per_set = size // N_ENSEMBLE_SETS
         set_id = rank // ranks_per_set
 
-        # Only process if we're within valid set range
+        # All ranks must participate in Split (it is a collective operation).
+        # Leftover ranks use MPI.UNDEFINED and get MPI.COMM_NULL back.
         if set_id < N_ENSEMBLE_SETS:
-            # Create sub-communicator for this ensemble set
             color = set_id
-            local_comm = comm.Split(color, rank)
+        else:
+            color = MPI.UNDEFINED
 
+        local_comm = comm.Split(color, rank)
+
+        if local_comm != MPI.COMM_NULL:
             # Store original communicator
             original_comm = MPI.COMM_WORLD
 
@@ -188,4 +192,11 @@ if __name__ == "__main__":
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
 
-    main(dataset_id)
+    try:
+        main(dataset_id)
+    except Exception as e:
+        import traceback
+        rank = MPI.COMM_WORLD.Get_rank()
+        print(f"RANK {rank} FATAL ERROR: {e}", flush=True)
+        traceback.print_exc()
+        MPI.COMM_WORLD.Abort(1)
