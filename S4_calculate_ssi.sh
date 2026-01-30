@@ -2,7 +2,7 @@
 #SBATCH --job-name=ssi
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
-#SBATCH --nodes=2
+#SBATCH --nodes=3
 #SBATCH --ntasks-per-node=40
 #SBATCH --mem=0
 
