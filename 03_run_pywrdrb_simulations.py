@@ -71,8 +71,6 @@ def parallel_run_all_sets(dataset_id):
             print(f"Sets per rank: {N_ENSEMBLE_SETS // size + 1}")
         print("=" * 60)
 
-    comm.Barrier()  # Wait for status messages
-
     # Track success/failure
     success_count = 0
     total_processed = 0
