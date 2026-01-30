@@ -39,8 +39,6 @@ import sys
 import os
 import gc
 import pandas as pd
-import numpy as np
-import h5py
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -48,7 +46,7 @@ warnings.filterwarnings("ignore")
 # MPI CONFIGURATION
 # =============================================================================
 # Set USE_MPI=False to run without MPI (single-process, for small local batches)
-USE_MPI = False
+USE_MPI = True
 
 if USE_MPI:
     from mpi4py import MPI

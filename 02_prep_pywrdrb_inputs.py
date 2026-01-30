@@ -13,8 +13,7 @@ from methods.config import (
     N_ENSEMBLE_SETS,
     verify_dataset_id,
     get_ensemble_set_spec,
-    get_existing_ensemble_sets,
-    print_experiment_summary
+    get_existing_ensemble_sets
 )
 from methods.print_summary import print_prep_status
 
@@ -175,7 +174,6 @@ def main(dataset_id):
 
     if rank == 0:
         print(f"Starting Pywr-DRB input preparation for {dataset_id}...")
-        print_experiment_summary(dataset_id)
 
     # Prepare all ensemble sets in parallel
     parallel_prep_all_sets(dataset_id)

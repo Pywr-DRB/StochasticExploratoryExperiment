@@ -14,8 +14,7 @@ from methods.config import (
     N_YEARS,
     verify_dataset_id,
     ensure_ensemble_set_dirs,
-    get_existing_ensemble_sets,
-    print_experiment_summary
+    get_existing_ensemble_sets
 )
 
 
@@ -142,10 +141,6 @@ def main(dataset_id):
     # Initialize MPI
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-
-    if rank == 0:
-        # Print configuration summary
-        print_experiment_summary(dataset_id)
 
     # Generate all ensemble sets in parallel
     parallel_generate_all_sets(dataset_id)

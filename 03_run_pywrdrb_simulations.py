@@ -8,16 +8,13 @@ import os
 import sys
 from mpi4py import MPI
 
-import pywrdrb
-
 from methods.simulate import run_ensemble_set_simulations
 from methods.config import (
     DATASET_CONFIGS,
     N_ENSEMBLE_SETS,
     N_REALIZATIONS_PER_ENSEMBLE_SET,
     verify_dataset_id,
-    get_ensemble_set_spec,
-    print_experiment_summary
+    get_ensemble_set_spec
 )
 from methods.print_summary import print_simulation_status
 
@@ -172,7 +169,6 @@ def main(dataset_id):
 
     if rank == 0:
         print(f"Starting Pywr-DRB simulations for {dataset_id}...")
-        print_experiment_summary(dataset_id)
 
     # Run all ensemble set simulations in parallel
     parallel_run_all_sets(dataset_id)

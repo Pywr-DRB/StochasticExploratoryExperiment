@@ -18,9 +18,6 @@ Usage:
 """
 
 import sys
-import os
-import numpy as np
-import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -28,7 +25,6 @@ import pywrdrb
 from methods.config import *
 from methods.save import save_zone_probabilities
 from methods.storage_zones import (
-    get_ordered_threshold_columns,
     calculate_zone_probabilities,
     calculate_storage_percentiles
 )

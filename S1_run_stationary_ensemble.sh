@@ -2,8 +2,8 @@
 #SBATCH --job-name=SA
 #SBATCH --output=./logs/SA.out
 #SBATCH --error=./logs/SA.err
-#SBATCH --nodes=3
-#SBATCH --ntasks-per-node=40
+#SBATCH --nodes=7
+#SBATCH --ntasks-per-node=30
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
 
