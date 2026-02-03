@@ -3,7 +3,7 @@
 #SBATCH --output=./logs/CAE.out
 #SBATCH --error=./logs/CAE.err
 #SBATCH --nodes=5
-#SBATCH --ntasks-per-node=40
+#SBATCH --ntasks-per-node=30
 #SBATCH --time=144:00:00
 #SBATCH --exclusive
 #SBATCH --mem=0
@@ -14,8 +14,8 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
-GENERATE=${GENERATE:-false}
-PREP=${PREP:-false}
+GENERATE=${GENERATE:-true}
+PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
 DATASETS=("climate_adjusted_low" "climate_adjusted_high")
