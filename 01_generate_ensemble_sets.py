@@ -72,29 +72,28 @@ def parallel_generate_all_sets(dataset_id):
         set_id = rank // ranks_per_set
 
         # All ranks must participate in Split (it is a collective operation).
-        # Leftover ranks use MPI.UNDEFINED and get MPI.COMM_NULL back.
-        if set_id < N_ENSEMBLE_SETS:
-            color = set_id
-        else:
-            color = MPI.UNDEFINED
+        # Fold leftover ranks into the last set to avoid MPI.UNDEFINED,
+        # which can cause MPI_ERR_OTHER on some OpenMPI installations.
+        if set_id >= N_ENSEMBLE_SETS:
+            set_id = N_ENSEMBLE_SETS - 1
+        color = set_id
 
         local_comm = comm.Split(color, rank)
 
-        if local_comm != MPI.COMM_NULL:
-            # Store original communicator
-            original_comm = MPI.COMM_WORLD
+        # Store original communicator
+        original_comm = MPI.COMM_WORLD
 
-            # Temporarily replace global communicator for the generation function
-            MPI.COMM_WORLD = local_comm
+        # Temporarily replace global communicator for the generation function
+        MPI.COMM_WORLD = local_comm
 
-            try:
-                true_if_success = generate_ensemble_set(set_id, dataset_id, use_mpi=True)
-                assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
+        try:
+            true_if_success = generate_ensemble_set(set_id, dataset_id, use_mpi=True)
+            assert true_if_success, f"Set {set_id + 1} generation failed on rank {rank}"
 
-            finally:
-                # Restore original communicator
-                MPI.COMM_WORLD = original_comm
-                local_comm.Free()
+        finally:
+            # Restore original communicator
+            MPI.COMM_WORLD = original_comm
+            local_comm.Free()
     else:
         # More sets than ranks - each rank processes multiple sets sequentially
         sets_per_rank = N_ENSEMBLE_SETS // size
