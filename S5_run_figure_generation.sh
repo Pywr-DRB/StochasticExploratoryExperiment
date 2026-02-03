@@ -17,10 +17,12 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
+PLOT_CONTRIBUTION_ANALYSIS=${PLOT_CONTRIBUTION_ANALYSIS:-true}
+
 PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
-PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
+# PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
 
 
 # Ensemble flow distribution and verification plots
@@ -36,11 +38,10 @@ if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
 fi
 
 
-if [ "$PLOT_NYC_STORAGE_ZONES" = true ]; then
-    # NYC reservoir storage zone probability plots
-    # 4-panel storage zone probability comparison
-    python3 F3_plot_reservoir_storage_zone_probabilities.py comparison
+if [ "$PLOT_CONTRIBUTION_ANALYSIS" = true ]; then
+    python3 F3_plot_drought_contribution_composite.py
 fi
+
 
 
 if [ "$PLOT_SI_FIGS" = true ]; then

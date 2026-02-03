@@ -2,7 +2,7 @@
 #SBATCH --job-name=SA
 #SBATCH --output=./logs/SA.out
 #SBATCH --error=./logs/SA.err
-#SBATCH --nodes=5
+#SBATCH --nodes=8
 #SBATCH --ntasks-per-node=30
 #SBATCH --time=48:00:00
 #SBATCH --mem=0
@@ -14,8 +14,8 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow flags
 DATASET_ID="${1:-stationary_ensemble}"
-GENERATE=${GENERATE:-true}
-PREP=${PREP:-true}
+GENERATE=${GENERATE:-false}
+PREP=${PREP:-false}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories

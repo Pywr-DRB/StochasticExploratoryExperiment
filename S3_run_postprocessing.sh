@@ -2,8 +2,8 @@
 #SBATCH --job-name=post
 #SBATCH --output=./logs/post.out
 #SBATCH --error=./logs/post.err
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=20
+#SBATCH --nodes=4
+#SBATCH --ntasks-per-node=30
 #SBATCH --mem-per-cpu=8G
 #SBATCH --time=02:00:00
 
@@ -17,7 +17,7 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags
-RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-false}
+RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
 CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
 
 # Use low-memory mode to avoid MPI gather memory bottleneck

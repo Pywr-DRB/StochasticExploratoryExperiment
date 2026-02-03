@@ -91,7 +91,7 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
         Q_synthetic=syn_ensemble,
         dataset_id=dataset_id,
         fname=fname,
-        percentiles=(10, 90),
+        percentiles=(5, 95),
         figsize=(9, 9),
     )
 
