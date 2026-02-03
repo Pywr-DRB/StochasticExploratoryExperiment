@@ -40,8 +40,8 @@ from methods.plotting.styles import (
 from methods.load import load_ffmp_boundaries, load_performance_metrics
 
 # Reuse data-processing functions from F4
-import F4_plot_water_balance_by_drought_zone as F4_module
-from F4_plot_water_balance_by_drought_zone import (
+import methods.plotting.water_balance_by_drought_zone as F4_module
+from methods.plotting.water_balance_by_drought_zone import (
     classify_years_by_min_zone,
     calculate_n_month_aggregates,
     compute_kde_on_grid,
