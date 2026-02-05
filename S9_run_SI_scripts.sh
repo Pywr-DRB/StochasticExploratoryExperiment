@@ -17,12 +17,22 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 
-# python3 SI3_plot_diversion_diagnostics.py stationary_ensemble
-
-
 
 python3 SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
 
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 3
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 6
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 12
+# Supplementary Information figures
+python3 SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
+python3 SI2_plot_satisficing_by_event.py stationary_ensemble 12
+python3 SI2_plot_satisficing_by_event.py stationary_ensemble 6
+python3 SI2_plot_satisficing_by_event.py stationary_ensemble 3
+
+python3 SI1_plot_shortage_occurrence_by_day.py climate_adjusted_low
+
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 12
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 6
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 3
+
+python3 SI1_plot_shortage_occurrence_by_day.py climate_adjusted_high
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 12
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 6
+python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 3

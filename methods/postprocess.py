@@ -404,6 +404,162 @@ def calculate_performance_metrics(data, dataset_id, realizations):
     return metrics_df
 
 
+def classify_years_by_min_zone(res_level_df):
+    """
+    Classify each year by the minimum drought zone reached.
+
+    Parameters
+    ----------
+    res_level_df : pd.DataFrame
+        Reservoir level DataFrame with 'nyc' column and datetime index
+
+    Returns
+    -------
+    year_classifications : dict
+        Dictionary mapping year -> {'min_zone': int, 'min_zone_date': pd.Timestamp}
+    """
+    # Add year column
+    df = res_level_df.copy()
+    df['year'] = df.index.year
+
+    year_classifications = {}
+
+    for year in df['year'].unique():
+        year_data = df[df['year'] == year]
+
+        # Find maximum zone value (higher zone = more severe drought)
+        # Zone 6 is most severe drought, Zone 1 is flood
+        max_zone = year_data['nyc'].max()
+
+        # Find date when maximum zone occurred
+        max_zone_date = year_data[year_data['nyc'] == max_zone].index[0]
+
+        year_classifications[year] = {
+            'min_zone': max_zone,
+            'min_zone_date': max_zone_date
+        }
+
+    return year_classifications
+
+
+def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
+                                            window_days=[30, 60, 90, 120, 150, 180, 270]):
+    """
+    Calculate year-level contribution analysis metrics for multiple aggregation windows.
+
+    This function pre-computes metrics used by contribution analysis plotting scripts,
+    eliminating the need to recalculate on-the-fly during figure generation.
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with res_level, res_storage, contribution, inflow, ibt_diversions, ibt_demands
+    dataset_id : str
+        Dataset identifier
+    realizations : list
+        List of realization IDs
+    window_days : list of int
+        Window lengths in days to compute metrics for (default: [30, 60, 90, 120, 150, 180])
+
+    Returns
+    -------
+    metrics_df : pd.DataFrame
+        DataFrame with columns:
+        - realization_id, year, min_zone, min_zone_date, min_storage_pct
+        - For each window W in window_days:
+          - contribution_total_{W}d: NYC→Montague contributions sum (MG)
+          - contribution_ratio_{W}d: (contribution/inflow) × 100 (%)
+          - inflow_total_{W}d: NYC reservoir inflow sum (MG)
+          - demand_satisfaction_{W}d: volumetric diversion/demand ratio (≤1.0)
+          - worst_1mo_demand_sat_{W}d: minimum 30-day rolling demand satisfaction (%)
+    """
+    print(f"  Calculating contribution analysis metrics for {len(realizations)} realizations...")
+
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    records = []
+
+    for r in realizations:
+        if (r % 100 == 0) and (r > 0):
+            print(f"    Processed {r}/{len(realizations)} realizations...")
+
+        # Load timeseries (already in memory during postprocessing)
+        res_level = data.res_level[dataset_id][r]
+
+        # Calculate NYC combined storage percentage
+        nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+        # Get contribution and inflow data
+        nyc_contributions = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+        nyc_inflow = data.inflow[dataset_id][r][nyc_reservoirs].sum(axis=1)
+
+        # Get diversion and demand data
+        nyc_diversion = data.ibt_diversions[dataset_id][r]['delivery_nyc']
+        nyc_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
+
+        # Classify years by drought zone (once per realization)
+        year_classifications = classify_years_by_min_zone(res_level)
+
+        for year, info in year_classifications.items():
+            # Calculate base metrics
+            min_zone = info['min_zone']
+            min_zone_date = info['min_zone_date']
+
+            # Calculate minimum storage for the year
+            year_mask = nyc_storage_pct.index.year == year
+            min_storage = nyc_storage_pct[year_mask].min()
+
+            record = {
+                'realization_id': r,
+                'year': year,
+                'min_zone': min_zone,
+                'min_zone_date': min_zone_date.isoformat(),  # Convert to string for CSV
+                'min_storage_pct': min_storage
+            }
+
+            # Compute metrics for each window
+            for W in window_days:
+                start_date = min_zone_date - pd.Timedelta(days=W)
+                mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= min_zone_date)
+
+                # Window-based calculations
+                contrib_total = nyc_contributions[mask].sum()
+                inflow_total = nyc_inflow[mask].sum()
+                contrib_ratio = 100.0 * contrib_total / inflow_total if inflow_total > 0 else np.nan
+
+                total_div = nyc_diversion[mask].sum()
+                total_dem = nyc_demand[mask].sum()
+                demand_sat = min(total_div / total_dem, 1.0) if total_dem > 0 else 1.0
+
+                # Worst 1-month rolling demand satisfaction
+                window_div = nyc_diversion[mask]
+                window_dem = nyc_demand[mask]
+                if len(window_div) >= 30:
+                    rolling_div = window_div.rolling(30).sum()
+                    rolling_dem = window_dem.rolling(30).sum()
+                    rolling_sat = (rolling_div / rolling_dem).clip(upper=1.0)
+                    worst_1mo = 100.0 * rolling_sat.min()
+                else:
+                    worst_1mo = 100.0 * demand_sat if len(window_div) > 0 else np.nan
+
+                record.update({
+                    f'contribution_total_{W}d': contrib_total,
+                    f'contribution_ratio_{W}d': contrib_ratio,
+                    f'inflow_total_{W}d': inflow_total,
+                    f'demand_satisfaction_{W}d': demand_sat,
+                    f'worst_1mo_demand_sat_{W}d': worst_1mo
+                })
+
+            records.append(record)
+
+    # Convert to DataFrame
+    metrics_df = pd.DataFrame(records)
+
+    print(f"  Calculated {len(metrics_df)} year-realization pairs × {len(metrics_df.columns)} metrics")
+
+    return metrics_df
+
+
 def save_performance_metrics(metrics_df, dataset_id, output_dir):
     """
     Save performance metrics to CSV and print summary statistics.

@@ -67,7 +67,7 @@ SCENARIO_LABELS = {
 }
 
 # Window lengths (months prior to min-zone date) to generate figures for.
-WINDOW_MONTHS = [3, 6, 9]
+WINDOW_MONTHS = [3, 6]
 
 FIG_OUTPUT_DIR = f"{FIG_DIR}/composite_figures"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
@@ -502,8 +502,35 @@ def main():
     print("F6: COMPOSITE DROUGHT CONTRIBUTION & STORAGE FIGURE")
     print("=" * 80)
 
-    # Load all scenario data (once)
-    all_data = load_all_data()
+    # Try loading pre-computed metrics first (FAST PATH)
+    use_cached = False
+    try:
+        from methods.load_contribution_metrics import (
+            load_contribution_metrics, get_metrics_for_window, categorize_by_zone
+        )
+
+        print("\nAttempting to load pre-computed metrics...")
+
+        # Load metrics for all scenarios once
+        metrics_cache = {}
+        for scenario in SCENARIOS:
+            print(f"  Loading {scenario}...")
+            metrics_cache[scenario] = load_contribution_metrics(scenario)
+
+        use_cached = True
+        print("  ✓ Successfully loaded pre-computed metrics (fast mode)\n")
+
+    except (ImportError, FileNotFoundError) as e:
+        print(f"\n  ⚠ Pre-computed metrics not available: {e}")
+        print("  ℹ Falling back to on-the-fly calculation (slower, ~10-20 min total)...")
+        print("  ℹ To optimize: re-run postprocessing (sbatch S3_run_postprocessing.sh)\n")
+
+        # FALLBACK: Load all scenario data
+        use_cached = False
+
+    # Load all scenario data if needed (for fallback mode)
+    if not use_cached:
+        all_data = load_all_data()
 
     # Compute FFMP zone median lines
     print("Computing FFMP zone medians ...")
@@ -516,16 +543,56 @@ def main():
         # Set F4 module variable so Panel A KDE + 1964 line use same window
         F4_module.N_MONTHS_PRIOR = n_mo
 
-        # Categorize scenarios with this window (for Panel A KDE)
-        print(f"  Categorizing scenarios (window={n_mo} mo) ...")
-        all_categorized = categorize_all_scenarios(all_data, n_mo)
+        if use_cached:
+            # FAST PATH: Use pre-computed metrics
+            window_days = n_mo * 30  # Convert months to days
 
-        # Compute drought metrics for B panels with this window
-        print(f"  Computing drought metrics (window={n_mo} mo) ...")
-        metrics_low = calculate_drought_metrics_per_year(
-            all_data['climate_adjusted_low'], 'climate_adjusted_low', n_months_prior=n_mo)
-        metrics_high = calculate_drought_metrics_per_year(
-            all_data['climate_adjusted_high'], 'climate_adjusted_high', n_months_prior=n_mo)
+            # Column renaming map for compatibility with plotting functions
+            column_rename_map = {
+                f'contribution_total_{window_days}d': 'contribution_total',
+                f'contribution_ratio_{window_days}d': 'contribution_ratio',
+                f'inflow_total_{window_days}d': 'inflow_total',
+                f'demand_satisfaction_{window_days}d': 'demand_satisfaction',
+                f'worst_1mo_demand_sat_{window_days}d': 'worst_1mo_demand_sat'
+            }
+
+            # Categorize scenarios with this window (for Panel A KDE)
+            print(f"  Loading categorized data (window={n_mo} mo) ...")
+            all_categorized = {}
+            for scenario in SCENARIOS:
+                window_df = get_metrics_for_window(metrics_cache[scenario], window_days)
+                # Rename columns for compatibility
+                window_df = window_df.rename(columns=column_rename_map)
+                # Categorize by drought zone
+                zone_categories = {
+                    'emergency': [6],           # Drought Emergency
+                    'watch': [5],               # Drought Watch
+                    'warning': [4],             # Drought Warning
+                    'other': [0, 1, 2, 3]       # Normal or above
+                }
+                all_categorized[scenario] = categorize_by_zone(window_df, zone_categories)
+
+            # Load metrics for B panels with this window
+            print(f"  Loading metrics for climate scenarios (window={n_mo} mo) ...")
+            metrics_low = get_metrics_for_window(metrics_cache['climate_adjusted_low'], window_days)
+            metrics_high = get_metrics_for_window(metrics_cache['climate_adjusted_high'], window_days)
+
+            # Rename columns for compatibility with plotting functions
+            metrics_low = metrics_low.rename(columns=column_rename_map)
+            metrics_high = metrics_high.rename(columns=column_rename_map)
+
+        else:
+            # FALLBACK: Original calculation
+            # Categorize scenarios with this window (for Panel A KDE)
+            print(f"  Categorizing scenarios (window={n_mo} mo) ...")
+            all_categorized = categorize_all_scenarios(all_data, n_mo)
+
+            # Compute drought metrics for B panels with this window
+            print(f"  Computing drought metrics (window={n_mo} mo) ...")
+            metrics_low = calculate_drought_metrics_per_year(
+                all_data['climate_adjusted_low'], 'climate_adjusted_low', n_months_prior=n_mo)
+            metrics_high = calculate_drought_metrics_per_year(
+                all_data['climate_adjusted_high'], 'climate_adjusted_high', n_months_prior=n_mo)
 
         # Common color range for worst 1-month demand satisfaction across both scenarios
         all_ds = pd.concat([metrics_low['worst_1mo_demand_sat'], metrics_high['worst_1mo_demand_sat']]).dropna()

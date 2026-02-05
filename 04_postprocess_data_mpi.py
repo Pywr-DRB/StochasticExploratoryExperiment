@@ -73,7 +73,7 @@ else:
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
 from methods.config import *
-from methods.postprocess import calculate_and_save_performance_metrics
+from methods.postprocess import calculate_and_save_performance_metrics, calculate_contribution_analysis_metrics
 
 # Temporary directory for intermediate files
 TEMP_DIR = f"{ROOT_DIR}/pywrdrb/outputs/temp_mpi"
@@ -952,6 +952,16 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             calculate_and_save_performance_metrics(
                 keep_data, dataset_id, realizations, PERFORMANCE_METRICS_DIR
             )
+
+            # NEW: Calculate contribution analysis metrics
+            print(f"\nCalculating contribution analysis metrics for {dataset_id}...")
+            contrib_metrics = calculate_contribution_analysis_metrics(
+                keep_data, dataset_id, realizations
+            )
+            contrib_fname = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_contribution_metrics.csv"
+            contrib_metrics.to_csv(contrib_fname, index=False)
+            print(f"  Saved: {contrib_fname} ({len(contrib_metrics)} year-realization pairs)")
+
         except Exception as e:
             print(f"ERROR calculating metrics for {dataset_id}: {e}")
             import traceback

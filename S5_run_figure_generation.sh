@@ -18,20 +18,25 @@ mkdir -p logs figures
 
 # Workflow flags
 PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_CONTRIBUTION_ANALYSIS=${PLOT_CONTRIBUTION_ANALYSIS:-true}
 
-PLOT_SI_FIGS=${PLOT_SI_FIGS:-false}
 # PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
 
 
 # Ensemble flow distribution and verification plots
 if [ "$PLOT_ENSEMBLE_DIAGNOSTICS" = true ]; then
+    echo "========================================"
+    echo "Generating ensemble diagnostics figures..."
+    echo "========================================"
     python3 F1_plot_ensemble_diagnostics.py stationary_ensemble
 fi
 
 
 if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
+    echo "========================================"
+    echo "Generating drought metric distribution figures..."
+    echo "========================================"
     python3 F2_plot_drought_metric_distribution.py 12
     python3 F2_plot_drought_metric_distribution.py 6
     python3 F2_plot_drought_metric_distribution.py 3
@@ -39,26 +44,16 @@ fi
 
 
 if [ "$PLOT_CONTRIBUTION_ANALYSIS" = true ]; then
-    python3 F3_plot_drought_contribution_composite.py
+    echo "========================================"
+    echo "Generating contribution analysis figures..."
+    echo "========================================"
+    # python3 F3_plot_drought_contribution_composite.py
+
+    echo "========================================"
+    echo "Generating contribution distribution figures..."
+    echo "========================================"
+    python3 F5_plot_contribution_distributions.py --multipanel
 fi
 
 
 
-if [ "$PLOT_SI_FIGS" = true ]; then
-    # Supplementary Information figures
-    python3 SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
-    python3 SI2_plot_satisficing_by_event.py stationary_ensemble 12
-    python3 SI2_plot_satisficing_by_event.py stationary_ensemble 6
-    python3 SI2_plot_satisficing_by_event.py stationary_ensemble 3
-
-    python3 SI1_plot_shortage_occurrence_by_day.py climate_adjusted_low
-
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 12
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 6
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 3
-
-    python3 SI1_plot_shortage_occurrence_by_day.py climate_adjusted_high
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 12
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 6
-    python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 3
-fi

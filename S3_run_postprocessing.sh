@@ -2,10 +2,9 @@
 #SBATCH --job-name=post
 #SBATCH --output=./logs/post.out
 #SBATCH --error=./logs/post.err
-#SBATCH --nodes=4
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=30
 #SBATCH --mem-per-cpu=8G
-#SBATCH --time=02:00:00
 
 # Load modules and environment
 module load python/3.11.5
@@ -18,7 +17,7 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags
 RUN_POSTPROCESSING=${RUN_POSTPROCESSING:-true}
-CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-true}
+CALCULATE_STORAGE_ZONE_PROBABILITIES=${CALCULATE_STORAGE_ZONE_PROBABILITIES:-false}
 
 # Use low-memory mode to avoid MPI gather memory bottleneck
 # Set to false for faster processing if memory is not a concern

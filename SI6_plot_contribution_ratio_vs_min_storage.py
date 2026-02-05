@@ -482,32 +482,84 @@ def main():
         print(f"CONTRIBUTION RATIO VS MIN STORAGE: {dataset_id}")
         print("=" * 80)
 
-        # Load data
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-        print(f"\nLoading data from: {fname}")
+        # Try loading pre-computed metrics first (FAST PATH)
+        use_cached = False
+        try:
+            from methods.load_contribution_metrics import (
+                load_contribution_metrics, find_optimal_window_for_correlation,
+                get_metrics_for_window
+            )
 
-        data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'contribution'])
+            print("\nAttempting to load pre-computed metrics...")
 
-        # Optimize N if requested
-        if should_optimize:
-            optimal_n, correlations = find_optimal_n_days(data, dataset_id, n_range=tuple(args.n_range))
-            n_days = optimal_n
+            if should_optimize:
+                print("  Optimizing window using pre-computed metrics (fast)...")
+                result = find_optimal_window_for_correlation(
+                    dataset_id,
+                    target_metric='min_storage_pct',
+                    source_metric='contribution_ratio',
+                    window_range=tuple(args.n_range)
+                )
+                n_days = result['optimal_window']
+                correlations = result['all_correlations']
 
-            # Save correlation results
-            corr_df = pd.DataFrame(list(correlations.items()), columns=['n_days', 'correlation'])
-            corr_df = corr_df.sort_values('n_days')
-            corr_file = f"{FIGURE_DIR}/correlation_optimization_{dataset_id}.csv"
-            corr_df.to_csv(corr_file, index=False)
-            print(f"\nSaved correlation results: {corr_file}")
-        else:
-            n_days = args.days
+                # Save correlation results
+                corr_df = pd.DataFrame(list(correlations.items()), columns=['n_days', 'correlation'])
+                corr_df = corr_df.sort_values('n_days')
+                corr_file = f"{FIGURE_DIR}/correlation_optimization_{dataset_id}.csv"
+                corr_df.to_csv(corr_file, index=False)
+                print(f"\nSaved correlation results: {corr_file}")
+            else:
+                n_days = args.days
 
-        # Calculate metrics with optimal/specified N
-        print(f"\nCalculating final metrics with n={n_days} days...")
-        df = calculate_contribution_ratio_metrics(data, dataset_id, n_days=n_days)
+            # Load metrics for the chosen window
+            print(f"\nLoading metrics for {n_days}-day window...")
+            df_full = load_contribution_metrics(dataset_id)
+            df = get_metrics_for_window(df_full, n_days)
 
-        # Create plot
+            # Rename columns for compatibility with plotting functions
+            df = df.rename(columns={
+                f'contribution_ratio_{n_days}d': 'contribution_ratio',
+                f'worst_1mo_demand_sat_{n_days}d': 'worst_1mo_demand_sat'
+            })
+
+            use_cached = True
+            print("  ✓ Successfully loaded pre-computed metrics (fast mode)")
+
+        except (ImportError, FileNotFoundError) as e:
+            print(f"\n  ⚠ Pre-computed metrics not available: {e}")
+            print("  ℹ Falling back to on-the-fly calculation (slower, ~40-60 min)...")
+            print("  ℹ To optimize: re-run postprocessing (sbatch S3_run_postprocessing.sh)\n")
+
+            # FALLBACK: Original code path
+            fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+            print(f"Loading data from: {fname}")
+
+            data = pywrdrb.Data()
+            data.load_from_export(fname, results_sets=['res_storage', 'inflow', 'contribution',
+                                                       'ibt_diversions', 'ibt_demands', 'res_level'])
+
+            # Optimize N if requested
+            if should_optimize:
+                optimal_n, correlations = find_optimal_n_days(data, dataset_id, n_range=tuple(args.n_range))
+                n_days = optimal_n
+
+                # Save correlation results
+                corr_df = pd.DataFrame(list(correlations.items()), columns=['n_days', 'correlation'])
+                corr_df = corr_df.sort_values('n_days')
+                corr_file = f"{FIGURE_DIR}/correlation_optimization_{dataset_id}.csv"
+                corr_df.to_csv(corr_file, index=False)
+                print(f"\nSaved correlation results: {corr_file}")
+            else:
+                n_days = args.days
+
+            # Calculate metrics with optimal/specified N
+            print(f"\nCalculating final metrics with n={n_days} days...")
+            df = calculate_contribution_ratio_metrics(data, dataset_id, n_days=n_days)
+
+            use_cached = False
+
+        # Create plot (same regardless of data source)
         fig, ax = plot_contribution_ratio_scatter(df, dataset_id, n_days=n_days)
 
         # Save
@@ -515,6 +567,10 @@ def main():
         fig.savefig(output_file, dpi=DPI_HIGH, bbox_inches='tight')
 
         print(f"\n{'='*80}")
+        if use_cached:
+            print(f"✓ Plot created using pre-computed metrics (fast mode)")
+        else:
+            print(f"✓ Plot created using on-the-fly calculation (slow mode)")
         print(f"Saved: {output_file}")
         print("=" * 80)
 
