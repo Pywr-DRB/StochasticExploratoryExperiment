@@ -67,7 +67,7 @@ SCENARIO_LABELS = {
 }
 
 # Window lengths (months prior to min-zone date) to generate figures for.
-WINDOW_MONTHS = [3, 6]
+WINDOW_MONTHS = [3, 6, 9]
 
 FIG_OUTPUT_DIR = f"{FIG_DIR}/composite_figures"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
@@ -503,7 +503,7 @@ def main():
     print("=" * 80)
 
     # Try loading pre-computed metrics first (FAST PATH)
-    use_cached = False
+    use_cached = True
     try:
         from methods.load_contribution_metrics import (
             load_contribution_metrics, get_metrics_for_window, categorize_by_zone
@@ -636,6 +636,7 @@ def main():
         # Sync x-limits across B1/B2 and suppress B1 x-tick labels
         xlim_lo = min(ax_B1.get_xlim()[0], ax_B2.get_xlim()[0])
         xlim_hi = max(ax_B1.get_xlim()[1], ax_B2.get_xlim()[1])
+        xlim_lo = 0.0 
         ax_B1.set_xlim(xlim_lo, xlim_hi)
         ax_B2.set_xlim(xlim_lo, xlim_hi)
         ax_B1.set_xticklabels([])

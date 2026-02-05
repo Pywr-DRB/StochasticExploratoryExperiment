@@ -19,9 +19,9 @@ mkdir -p logs figures
 # Workflow flags
 PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
 PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
-PLOT_CONTRIBUTION_ANALYSIS=${PLOT_CONTRIBUTION_ANALYSIS:-true}
-
-# PLOT_NYC_STORAGE_ZONES=${PLOT_NYC_STORAGE_ZONES:-false}
+PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-true}
+PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
+PLOT_EXAMPLE_YEARS=${PLOT_EXAMPLE_YEARS:-false}
 
 
 # Ensemble flow distribution and verification plots
@@ -43,17 +43,25 @@ if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
 fi
 
 
-if [ "$PLOT_CONTRIBUTION_ANALYSIS" = true ]; then
+if [ "$PLOT_CONTRIBUTION_KDE" = true ]; then
     echo "========================================"
     echo "Generating contribution analysis figures..."
     echo "========================================"
-    # python3 F3_plot_drought_contribution_composite.py
+    python3 F3_plot_drought_contribution_composite.py
+fi 
 
+
+if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
     echo "========================================"
     echo "Generating contribution distribution figures..."
     echo "========================================"
-    python3 F5_plot_contribution_distributions.py --multipanel
+    python3 F4_plot_contribution_distributions.py --multipanel
 fi
 
 
-
+if [ "$PLOT_EXAMPLE_YEARS" = true ]; then
+    echo "========================================"
+    echo "Generating example year figures..."
+    echo "========================================"
+    ## TO BE DEVELOPED!
+fi   
