@@ -2,8 +2,8 @@
 F2: Drought metric distribution figure.
 
 Left panel: hexbin of severity vs magnitude for the stationary ensemble.
-Right panels (2x2): exceedance-rate CDFs per climate scenario (rows) and
-drought metric (columns), with stationary ensemble shown as outline bands.
+Right panels (3x2): exceedance-rate CDFs per dataset (rows) and
+drought metric (columns). Each row shows one dataset plus historic markers.
 
 Usage:
   python F2_plot_drought_metric_distribution.py [ssi_window]
@@ -18,7 +18,7 @@ import matplotlib.lines as mlines
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import FIG_DIR, N_YEARS, TOTAL_REALIZATIONS, SSI_WINDOWS
+from methods.config import FIG_DIR, N_YEARS, SSI_WINDOWS
 from methods.load import load_drought_events
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
@@ -43,8 +43,8 @@ PANEL_LETTERS = list('abcdefghij')
 # Number of years for exceedance rate normalization
 HISTORIC_N_YEARS = 77
 
-# Climate scenario datasets for right-panel rows (low above high)
-CLIMATE_SCENARIOS = ['climate_adjusted_low', 'climate_adjusted_high']
+# All datasets for right-panel rows (stationary first, then low, then high)
+ALL_DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
 
 def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
@@ -112,10 +112,9 @@ def plot_drought_manuscript_figure(
     Layout
     ------
     Left: hexbin of severity vs magnitude (stationary ensemble).
-    Right: 2x2 grid — rows are climate scenarios (low, high),
+    Right: 3x2 grid - rows are datasets (stationary, low, high),
            columns are metrics (severity, magnitude).
-    Each right subplot shows the climate-adjusted realization bands (filled),
-    the stationary ensemble as unfilled outline bands, and historic markers.
+    Each right subplot shows that dataset's realization bands plus historic markers.
 
     Parameters
     ----------
@@ -132,13 +131,11 @@ def plot_drought_manuscript_figure(
     fname : str, optional
         Output path. Auto-generated if None.
     log_magnitude : bool
-        If True, use log scale for magnitude axes (hexbin y-axis and
-        magnitude CDF x-axis).
+        If True, use log scale for magnitude axes.
     log_hexbin_counts : bool
-        If True, use log scale for hexbin colorbar counts. Default False.
+        If True, use log scale for hexbin colorbar counts.
     log_exceedance : bool
-        If True, use log scale for the exceedance-rate y-axis on right
-        panels. Default True.
+        If True, use log scale for the exceedance-rate y-axis.
 
     Returns
     -------
@@ -147,23 +144,22 @@ def plot_drought_manuscript_figure(
     if cdf_metrics is None:
         cdf_metrics = ['severity', 'magnitude']
 
-    n_rows = len(CLIMATE_SCENARIOS)
+    n_rows = len(ALL_DATASETS)
     n_cols = len(cdf_metrics)
 
     if figsize is None:
-        figsize = (11.5, 7.0)
+        figsize = (11.5, 8)  # Taller to accommodate 3 rows
 
     # ------------------------------------------------------------------
     # Load data
     # ------------------------------------------------------------------
     MAX_SEVERITY = 6.2
 
-    all_dataset_ids = ['stationary_ensemble'] + CLIMATE_SCENARIOS
-    obs_droughts = load_drought_events(all_dataset_ids[0], ssi_window, observed=True)
+    obs_droughts = load_drought_events(ALL_DATASETS[0], ssi_window, observed=True)
     obs_droughts = obs_droughts[obs_droughts['severity'] <= MAX_SEVERITY]
 
     ensemble_data = {}
-    for did in all_dataset_ids:
+    for did in ALL_DATASETS:
         df = load_drought_events(did, ssi_window, observed=False)
         df = df[df['severity'] <= MAX_SEVERITY]
         ensemble_data[did] = {'droughts': df}
@@ -179,17 +175,17 @@ def plot_drought_manuscript_figure(
         2, 2,
         width_ratios=[1.3, 1.0],
         height_ratios=[1, 0.04],
-        hspace=0.35, wspace=0.35,
+        hspace=0.25, wspace=0.35,
     )
 
     # Top-left: hexbin
     ax_hex = fig.add_subplot(outer_gs[0, 0])
 
-    # Top-right: 2x2 CDF grid
+    # Top-right: 3x2 CDF grid (one row per dataset)
     inner_gs = gridspec.GridSpecFromSubplotSpec(
         n_rows, n_cols,
         subplot_spec=outer_gs[0, 1],
-        hspace=0.4, wspace=0.35,
+        hspace=0.35, wspace=0.35,
     )
     cdf_axes = np.empty((n_rows, n_cols), dtype=object)
     for r in range(n_rows):
@@ -258,52 +254,28 @@ def plot_drought_manuscript_figure(
             cb.set_ticklabels(log_labels)
 
     # ------------------------------------------------------------------
-    # Right panels: exceedance-rate CDFs (2x2)
+    # Right panels: exceedance-rate CDFs (3x2) - one dataset per row
     # ------------------------------------------------------------------
-    # Pre-compute stationary bands for each metric
-    stat_bands = {}
-    stat_df = ensemble_data['stationary_ensemble']['droughts']
-    for metric in cdf_metrics:
-        stat_bands[metric] = _compute_realization_exceedance_bands(
-            stat_df, metric, n_years=N_YEARS,
-        )
-
     panel_idx = 1  # panel (a) is hexbin
-    for r, scenario_id in enumerate(CLIMATE_SCENARIOS):
+    for r, dataset_id in enumerate(ALL_DATASETS):
         for c, metric in enumerate(cdf_metrics):
             ax = cdf_axes[r, c]
 
-            # --- Stationary ensemble: unfilled outline bands ---
-            x_s, bands_s = stat_bands[metric]
-            stat_color = DATASET_COLORS['stationary_ensemble']
-            # Full range outline (0-100%)
-            ax.fill_between(
-                x_s, bands_s[0], bands_s[100],
-                facecolor='none', edgecolor=stat_color,
-                linewidth=0.6, alpha=0.5, zorder=3,
-            )
-            # Median line
-            ax.plot(
-                x_s, bands_s[50],
-                color=stat_color, linestyle='-',
-                linewidth=LINEWIDTH_MEDIUM, zorder=3.5,
-            )
-
-            # --- Climate-adjusted ensemble: filled bands ---
-            clim_df = ensemble_data[scenario_id]['droughts']
-            clim_color = DATASET_COLORS.get(scenario_id, '#808080')
-            x_c, bands_c = _compute_realization_exceedance_bands(
-                clim_df, metric, n_years=N_YEARS,
+            # --- Dataset ensemble: filled bands ---
+            df = ensemble_data[dataset_id]['droughts']
+            color = DATASET_COLORS.get(dataset_id, '#808080')
+            x, bands = _compute_realization_exceedance_bands(
+                df, metric, n_years=N_YEARS,
             )
             # Full range (0-100%)
             ax.fill_between(
-                x_c, bands_c[0], bands_c[100],
-                color=clim_color, alpha=0.15, zorder=4,
+                x, bands[0], bands[100],
+                color=color, alpha=0.2, zorder=4,
             )
             # Median line
             ax.plot(
-                x_c, bands_c[50],
-                color=clim_color, linestyle=DATASET_LINESTYLES.get(scenario_id, '--'),
+                x, bands[50],
+                color=color, linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
                 linewidth=LINEWIDTH_MEDIUM, zorder=5,
             )
 
@@ -334,7 +306,6 @@ def plot_drought_manuscript_figure(
 
             if log_exceedance:
                 ax.set_yscale('log')
-                # Set a reasonable lower bound to avoid log(0) issues
                 ax.set_ylim(bottom=1e-3)
 
             ax.tick_params(labelsize=FONTSIZE_SMALL)
@@ -353,7 +324,7 @@ def plot_drought_manuscript_figure(
             # Row label on right side of rightmost column
             if c == n_cols - 1:
                 ax.text(
-                    1.02, 0.5, DATASET_LABELS.get(scenario_id, scenario_id),
+                    1.02, 0.5, DATASET_LABELS.get(dataset_id, dataset_id),
                     transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
                     va='center', ha='left', rotation=-90,
                 )
@@ -366,18 +337,15 @@ def plot_drought_manuscript_figure(
     legend_handles = [
         mlines.Line2D([], [], color=HISTORIC_COLOR, marker='^',
                       linestyle='None', markersize=6, label=HISTORIC_LABEL),
-        mlines.Line2D([], [], color=DATASET_COLORS['stationary_ensemble'],
-                      linestyle='-', linewidth=LINEWIDTH_MEDIUM,
-                      label='Stationary'),
-        mlines.Line2D([], [], color=DATASET_COLORS['climate_adjusted_low'],
-                      linestyle=DATASET_LINESTYLES['climate_adjusted_low'],
-                      linewidth=LINEWIDTH_MEDIUM,
-                      label=DATASET_LABELS['climate_adjusted_low']),
-        mlines.Line2D([], [], color=DATASET_COLORS['climate_adjusted_high'],
-                      linestyle=DATASET_LINESTYLES['climate_adjusted_high'],
-                      linewidth=LINEWIDTH_MEDIUM,
-                      label=DATASET_LABELS['climate_adjusted_high']),
     ]
+    # Add all datasets
+    for dataset_id in ALL_DATASETS:
+        legend_handles.append(
+            mlines.Line2D([], [], color=DATASET_COLORS[dataset_id],
+                          linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                          linewidth=LINEWIDTH_MEDIUM,
+                          label=DATASET_LABELS.get(dataset_id, dataset_id))
+        )
 
     # Place legend in the bottom-right cell
     ax_legend.legend(
