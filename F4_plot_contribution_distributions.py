@@ -1,48 +1,18 @@
 """
-SI7: NYC Contribution Percentage Timeseries
+F4: NYC Contribution Percentage Timeseries
 
-This script creates publication-quality timeseries plots showing the distribution
-of NYC contributions as a percentage of Montague streamflow across an ensemble.
+Timeseries plots showing the distribution of NYC contributions as a percentage
+of Montague streamflow across an ensemble.
 
-Features:
-- Shows water year timeseries (June-May, day of water year)
-- Distribution bands: 1-99% (light fill), 25-75% (darker fill), and median line
-- Three modes:
+Modes:
   1. Single dataset: Shows contribution distribution for one ensemble
-  2. Comparison: Shows difference between two ensembles using pairwise quantile comparison
+  2. Comparison: Shows difference between two ensembles
   3. Multi-panel: Stationary distribution on left, stacked difference plots on right
-- Optional filtering by NYC storage drought zone classification
-- Optional representative year trace overlay
-- Clean, publication-quality styling
-- OPTIMIZED: Column-specific loading and optional weekly resampling for faster runtime
-
-Difference Calculation:
-- For each day of year, creates a matrix of quantiles (101 values from 0-100%)
-  for both baseline and comparison ensembles. Then computes the pairwise
-  differences at each quantile level, and plots the 1st, 25th, 50th, 75th,
-  and 99th percentiles of those differences.
-
-Drought Zone Filtering:
-- Set FILTER_BY_ZONES to filter years by drought severity
-- None: Include all years (default behavior)
-- [6]: Only years with Drought Emergency
-- [5, 6]: Only years with Drought Watch or Emergency
-- [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
 
 Usage:
-    # Single dataset mode
-    python SI7_plot_nyc_contribution_timeseries.py <dataset_id>
-
-    # Comparison mode (shows difference: comparison - baseline)
-    python SI7_plot_nyc_contribution_timeseries.py --comparison <baseline_id> <comparison_id>
-
-    # Multi-panel comparison mode (stationary on left, differences on right)
-    python SI7_plot_nyc_contribution_timeseries.py --multipanel
-
-Examples:
-    python SI7_plot_nyc_contribution_timeseries.py stationary_ensemble
-    python SI7_plot_nyc_contribution_timeseries.py --comparison stationary_ensemble climate_adjusted_low
-    python SI7_plot_nyc_contribution_timeseries.py --multipanel
+    python F4_plot_contribution_distributions.py <dataset_id>
+    python F4_plot_contribution_distributions.py --comparison <baseline_id> <comparison_id>
+    python F4_plot_contribution_distributions.py --multipanel
 """
 
 import os
@@ -54,14 +24,13 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import *
-from methods.plotting.styles import DPI_HIGH
+from methods.config import FIG_DIR, DATASET_CONFIGS, verify_dataset_id
+from methods.plotting.styles import DPI_HIGH, DATASET_COLORS, DATASET_LABELS
 
 # Output directory
-FIG_DIR_CONTRIBUTION = f"{FIG_DIR}/nyc_contribution_timeseries"
-os.makedirs(FIG_DIR_CONTRIBUTION, exist_ok=True)
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F4_contribution_timeseries"
+os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# NYC reservoir parameters
 NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
 
 # Minimum inflow threshold for filtering (MG) - same as SI6
@@ -247,7 +216,6 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
     avoiding repeated .map() calls inside loops.
     """
     zone_label = get_zone_filter_label(zone_filter)
-    print(f"  Finding representative water year for {zone_label}...")
 
     realization_ids = list(data.res_level[dataset_id].keys())
     records = []
@@ -299,7 +267,6 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
             })
 
     if len(records) == 0:
-        print(f"  Warning: No water years found matching zone filter {zone_filter}")
         return None
 
     df = pd.DataFrame(records)
@@ -311,8 +278,6 @@ def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
     real_id = int(closest_row['realization_id'])
     wy = int(closest_row['water_year'])
 
-    print(f"  Representative: Realization {real_id}, WY {wy}, "
-          f"Ratio {closest_row['contribution_ratio']:.1f}% (mean: {mean_ratio:.1f}%)")
 
     # Get contribution trace
     contribution_df = data.contribution[dataset_id][real_id]
@@ -455,10 +420,7 @@ def _plot_difference_bands(ax, diff_percentiles, color='steelblue', label_prefix
 
 def plot_single_dataset(contrib_df, dataset_id, representative_year=None,
                         zone_filter=None, n_years_total=None, n_years_filtered=None):
-    """
-    Plot contribution distribution for a single dataset.
-    """
-    print("Creating single dataset contribution plot...")
+    """Plot contribution distribution for a single dataset."""
 
     percentiles = _calculate_percentiles(contrib_df)
 
@@ -467,8 +429,8 @@ def plot_single_dataset(contrib_df, dataset_id, representative_year=None,
     _plot_contribution_bands(ax, percentiles, representative_year=representative_year)
 
     _format_xaxis(ax)
-    ax.set_xlabel('Month', fontsize=12, fontweight='bold')
-    ax.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Month', fontsize=12)
+    ax.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12)
 
     if Y_SCALE_FIXED:
         ax.set_ylim(0, 100)
@@ -491,54 +453,41 @@ def plot_single_dataset(contrib_df, dataset_id, representative_year=None,
     plt.tight_layout()
 
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
-    fname = f"{FIG_DIR_CONTRIBUTION}/{dataset_id}_contribution{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/F4_{dataset_id}_contribution{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"  Saved: {fname}")
+    print(f"Saved: {fname}")
     plt.close()
 
 
 def main_single(dataset_id):
     """Main function for single dataset mode."""
-    print("=" * 80)
-    print(f"NYC CONTRIBUTION TIMESERIES: {dataset_id}")
-    print("=" * 80)
-
-    print("\nConfiguration:")
-    print(f"  Zone Filter: {get_zone_filter_label(FILTER_BY_ZONES)}")
-    print(f"  Show Representative Year: {SHOW_REPRESENTATIVE_YEAR}")
+    print(f"F4: NYC contribution timeseries - {dataset_id}")
 
     verify_dataset_id(dataset_id)
 
-    # Determine which results sets to load
     results_sets = ['contribution', 'major_flow']
     if FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR:
         results_sets.append('res_level')
     if SHOW_REPRESENTATIVE_YEAR:
         results_sets.append('inflow')
 
-    print("\nLoading data...")
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
 
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=results_sets)
-    print(f"  Data loaded: {dataset_id}")
 
-    print("\nCalculating contribution percentages...")
     contrib_df, n_years_total, n_years_filtered = calculate_daily_contribution_percentage(
         data, dataset_id, zone_filter=FILTER_BY_ZONES
     )
-    print(f"  {n_years_filtered} / {n_years_total} year-realizations")
 
     representative_year = None
     if SHOW_REPRESENTATIVE_YEAR:
-        print("\nFinding representative year...")
         representative_year = find_representative_year_for_zone(
             data, dataset_id, zone_filter=FILTER_BY_ZONES
         )
 
-    print("\nCreating plot...")
     plot_single_dataset(
         contrib_df=contrib_df,
         dataset_id=dataset_id,
@@ -548,10 +497,6 @@ def main_single(dataset_id):
         n_years_filtered=n_years_filtered
     )
 
-    print("\n" + "=" * 80)
-    print("COMPLETE!")
-    print("=" * 80)
-
 
 # ============================================================================
 # COMPARISON MODE
@@ -560,12 +505,7 @@ def main_single(dataset_id):
 def plot_comparison(baseline_contrib, comparison_contrib,
                     baseline_id, comparison_id,
                     zone_filter=None):
-    """
-    Create comparison plot showing differences between two ensembles.
-    """
-    print("Creating comparison plot with pairwise quantile differences...")
-
-    print("  Computing pairwise quantile differences...")
+    """Create comparison plot showing differences between two ensembles."""
     contrib_diff = _calculate_pairwise_difference_percentiles(baseline_contrib, comparison_contrib)
 
     _, ax = plt.subplots(1, 1, figsize=(12, 5))
@@ -574,8 +514,8 @@ def plot_comparison(baseline_contrib, comparison_contrib,
 
     ax.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     _format_xaxis(ax)
-    ax.set_xlabel('Month', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Contribution Change (% points)', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Month', fontsize=12)
+    ax.set_ylabel('Contribution Change (% points)', fontsize=12)
     ax.grid(axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
 
@@ -590,61 +530,45 @@ def plot_comparison(baseline_contrib, comparison_contrib,
     plt.tight_layout()
 
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
-    fname = f"{FIG_DIR_CONTRIBUTION}/{comparison_id}_vs_{baseline_id}_comparison{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/F4_{comparison_id}_vs_{baseline_id}_comparison{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"  Saved: {fname}")
+    print(f"Saved: {fname}")
     plt.close()
 
 
 def main_comparison(baseline_id, comparison_id):
     """Main function for comparison mode."""
-    print("=" * 80)
-    print(f"NYC CONTRIBUTION TIMESERIES COMPARISON")
-    print(f"  Baseline: {baseline_id}")
-    print(f"  Comparison: {comparison_id}")
-    print("=" * 80)
-
-    print("\nConfiguration:")
-    print(f"  Zone Filter: {get_zone_filter_label(FILTER_BY_ZONES)}")
+    print(f"F4: Contribution comparison - {comparison_id} vs {baseline_id}")
 
     verify_dataset_id(baseline_id)
     verify_dataset_id(comparison_id)
 
-    # Determine which results sets to load
     results_sets = ['contribution', 'major_flow']
     if FILTER_BY_ZONES is not None:
         results_sets.append('res_level')
 
-    print("\nLoading baseline data...")
     baseline_fname = f'./pywrdrb/outputs/{baseline_id}_with_postprocessing.hdf5'
     if not os.path.exists(baseline_fname):
         raise FileNotFoundError(f"Baseline data not found: {baseline_fname}")
 
     baseline_data = pywrdrb.Data()
     baseline_data.load_from_export(baseline_fname, results_sets=results_sets)
-    print(f"  Baseline loaded: {baseline_id}")
 
-    print("\nLoading comparison data...")
     comparison_fname = f'./pywrdrb/outputs/{comparison_id}_with_postprocessing.hdf5'
     if not os.path.exists(comparison_fname):
         raise FileNotFoundError(f"Comparison data not found: {comparison_fname}")
 
     comparison_data = pywrdrb.Data()
     comparison_data.load_from_export(comparison_fname, results_sets=results_sets)
-    print(f"  Comparison loaded: {comparison_id}")
 
-    print("\nCalculating contribution percentages...")
     baseline_contrib, n_base_total, n_base_filtered = calculate_daily_contribution_percentage(
         baseline_data, baseline_id, zone_filter=FILTER_BY_ZONES
     )
-    print(f"  Baseline: {n_base_filtered} / {n_base_total} year-realizations")
 
     comparison_contrib, n_comp_total, n_comp_filtered = calculate_daily_contribution_percentage(
         comparison_data, comparison_id, zone_filter=FILTER_BY_ZONES
     )
-    print(f"  Comparison: {n_comp_filtered} / {n_comp_total} year-realizations")
 
-    print("\nCreating comparison plot...")
     plot_comparison(
         baseline_contrib=baseline_contrib,
         comparison_contrib=comparison_contrib,
@@ -652,10 +576,6 @@ def main_comparison(baseline_id, comparison_id):
         comparison_id=comparison_id,
         zone_filter=FILTER_BY_ZONES
     )
-
-    print("\n" + "=" * 80)
-    print("COMPARISON COMPLETE!")
-    print("=" * 80)
 
 
 # ============================================================================
@@ -691,37 +611,25 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
 
     Layout:
     - Left panel: Stationary ensemble (absolute distribution)
-    - Right panels (stacked): Low, High climate scenarios (difference from stationary)
+    - Right panels (stacked): Low on top, High on bottom (difference from stationary)
     """
-    print("=" * 80)
-    print("Creating Multi-Panel NYC Contribution Comparison")
-    print("=" * 80)
-
-    print("\nConfiguration:")
-    print(f"  Zone Filter: {get_zone_filter_label(zone_filter)}")
+    print("F4: Multi-panel contribution comparison")
 
     datasets = {
-        'stationary_ensemble': 'Stationary',
-        'climate_adjusted_low': 'Low Climate',
-        'climate_adjusted_high': 'High Climate'
+        'stationary_ensemble': DATASET_LABELS.get('stationary_ensemble', 'Stationary'),
+        'climate_adjusted_low': DATASET_LABELS.get('climate_adjusted_low', 'Climate Low'),
+        'climate_adjusted_high': DATASET_LABELS.get('climate_adjusted_high', 'Climate High')
     }
 
-    # Load datasets sequentially (HDF5 is not thread-safe)
-    print("\nLoading datasets...")
     all_contrib_dfs = {}
 
     for dataset_id, label in datasets.items():
         args = (dataset_id, label, zone_filter)
         dataset_id, label, contrib_df, n_total, n_filtered = _load_and_process_dataset(args)
-        print(f"  {dataset_id} ({label}): {n_filtered} / {n_total} year-realizations")
         all_contrib_dfs[dataset_id] = contrib_df
 
-    # Calculate percentiles for stationary
-    print("\nCalculating percentiles...")
     stationary_percentiles = _calculate_percentiles(all_contrib_dfs['stationary_ensemble'])
 
-    # Calculate differences for climate scenarios
-    print("Computing pairwise differences...")
     diff_low = _calculate_pairwise_difference_percentiles(
         all_contrib_dfs['stationary_ensemble'],
         all_contrib_dfs['climate_adjusted_low']
@@ -731,8 +639,6 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         all_contrib_dfs['climate_adjusted_high']
     )
 
-    # Create figure with GridSpec
-    print("\nCreating multi-panel figure...")
     fig = plt.figure(figsize=figsize)
     gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1],
                           hspace=0.08, wspace=0.25,
@@ -740,40 +646,40 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
 
     # Create axes
     ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans both rows
-    ax_high = fig.add_subplot(gs[0, 1])  # Top right
-    ax_low = fig.add_subplot(gs[1, 1], sharex=ax_high)   # Bottom right shares x with top
+    ax_low = fig.add_subplot(gs[0, 1])   # Top right: climate_adjusted_low
+    ax_high = fig.add_subplot(gs[1, 1], sharex=ax_low)   # Bottom right: climate_adjusted_high
 
     # Hide x-tick labels on top right panel
-    plt.setp(ax_high.get_xticklabels(), visible=False)
+    plt.setp(ax_low.get_xticklabels(), visible=False)
 
     # Left panel: Stationary distribution
-    _plot_contribution_bands(ax_stat, stationary_percentiles, color='steelblue')
+    _plot_contribution_bands(ax_stat, stationary_percentiles, color=DATASET_COLORS['stationary_ensemble'])
     _format_xaxis(ax_stat)
-    ax_stat.set_xlabel('Month', fontsize=12, fontweight='bold')
-    ax_stat.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12, fontweight='bold')
+    ax_stat.set_xlabel('Month', fontsize=12)
+    ax_stat.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12)
     if Y_SCALE_FIXED:
         ax_stat.set_ylim(0, 100)
     ax_stat.grid(axis='y', alpha=0.3, linestyle='--')
     ax_stat.set_axisbelow(True)
     ax_stat.legend(loc='upper right', fontsize=8, frameon=True, fancybox=True)
 
-    # Top right panel: High climate difference
-    _plot_difference_bands(ax_high, diff_high, color='firebrick', label_prefix='')
-    ax_high.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
-    ax_high.set_ylabel('Δ Contribution\n(% points)', fontsize=10, fontweight='bold')
-    ax_high.grid(axis='y', alpha=0.3, linestyle='--')
-    ax_high.set_axisbelow(True)
-    ax_high.legend(loc='upper right', fontsize=7, frameon=True, fancybox=True)
-
-    # Bottom right panel: Low climate difference
-    _plot_difference_bands(ax_low, diff_low, color='darkorange', label_prefix='')
+    # Top right panel: Low climate difference
+    _plot_difference_bands(ax_low, diff_low, color=DATASET_COLORS['climate_adjusted_low'], label_prefix='')
     ax_low.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
-    _format_xaxis(ax_low)
-    ax_low.set_xlabel('Month', fontsize=12, fontweight='bold')
-    ax_low.set_ylabel('Δ Contribution\n(% points)', fontsize=10, fontweight='bold')
+    ax_low.set_ylabel('Change (% points)', fontsize=10)
     ax_low.grid(axis='y', alpha=0.3, linestyle='--')
     ax_low.set_axisbelow(True)
     ax_low.legend(loc='upper right', fontsize=7, frameon=True, fancybox=True)
+
+    # Bottom right panel: High climate difference
+    _plot_difference_bands(ax_high, diff_high, color=DATASET_COLORS['climate_adjusted_high'], label_prefix='')
+    ax_high.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
+    _format_xaxis(ax_high)
+    ax_high.set_xlabel('Month', fontsize=12)
+    ax_high.set_ylabel('Change (% points)', fontsize=10)
+    ax_high.grid(axis='y', alpha=0.3, linestyle='--')
+    ax_high.set_axisbelow(True)
+    ax_high.legend(loc='upper right', fontsize=7, frameon=True, fancybox=True)
 
     # Match y-axis limits for difference panels
     y_min = min(ax_high.get_ylim()[0], ax_low.get_ylim()[0])
@@ -788,20 +694,11 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
 
     # Save
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
-    fname = f"{FIG_DIR_CONTRIBUTION}/multipanel_contribution_comparison{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/F4_multipanel_contribution_comparison{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"\nSaved: {fname}")
-
-    # Also save SVG
-    base = fname.rsplit('.', 1)[0]
-    plt.savefig(f"{base}.svg", bbox_inches='tight')
-    print(f"Saved: {base}.svg")
+    print(f"Saved: {fname}")
 
     plt.close()
-
-    print("\n" + "=" * 80)
-    print("MULTI-PANEL COMPARISON COMPLETE!")
-    print("=" * 80)
 
 
 # ============================================================================
@@ -815,14 +712,9 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Examples:
-  # Single dataset mode
-  python SI7_plot_nyc_contribution_timeseries.py stationary_ensemble
-
-  # Comparison mode (shows difference: comparison - baseline)
-  python SI7_plot_nyc_contribution_timeseries.py --comparison stationary_ensemble climate_adjusted_low
-
-  # Multi-panel comparison (stationary on left, differences on right)
-  python SI7_plot_nyc_contribution_timeseries.py --multipanel
+  python F4_plot_contribution_distributions.py stationary_ensemble
+  python F4_plot_contribution_distributions.py --comparison stationary_ensemble climate_adjusted_low
+  python F4_plot_contribution_distributions.py --multipanel
 
 Available datasets: {list(DATASET_CONFIGS.keys())}
         """

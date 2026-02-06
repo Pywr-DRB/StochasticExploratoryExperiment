@@ -1,23 +1,11 @@
 """
-Plot performance metrics across ensembles with box plot distributions.
+F9: Performance metrics boxplot comparison.
 
-Shows:
-- Left panel: Absolute performance distributions for all datasets (box plots)
-- Right panel: Percentage change distributions relative to baseline (box plots)
-
-This script uses pre-calculated metrics from postprocessing:
-- shortage: Pre-calculated flow target violations
-- mrf_target: Flow targets for calculating reliability
-- res_storage: Reservoir storage for NYC system
-
-Features:
-- Box plots show full distribution of outcomes across realizations
-- Flexible metric selection: Plot any list of performance metrics
-- Dynamic dataset handling: Automatically adjusts based on config.py datasets
-- Smart y-axis labeling: Detects metric types for appropriate labels
+Multi-panel figure showing quantile comparison (5th, 50th, 95th) of performance
+metrics across datasets.
 
 Usage:
-  python 09_plot_performance_outcome_boxplots.py
+  python F9_plot_performance_outcome_boxplots.py
 """
 
 import sys
@@ -28,9 +16,9 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import *
+from methods.config import FIG_DIR, DATASET_CONFIGS
 from methods.plotting.styles import (
-    DATASET_COLORS,
+    DATASET_COLORS, DATASET_LABELS,
     METRIC_DISPLAY_NAMES,
     METRICS_TO_SCALE,
     RECONSTRUCTION_SCALE_FACTOR,
@@ -42,7 +30,7 @@ from methods.load import load_performance_metrics
 
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/performance_metrics"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F9_performance_metrics"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # ============================================================================
@@ -187,37 +175,19 @@ def validate_metrics(metrics_df, dataset_id):
 
 
 def get_datasets_to_plot():
-    """
-    Get list of datasets from config.py.
-
-    Returns
-    -------
-    datasets_to_plot : list
-        List of dataset IDs to plot
-    dataset_labels : dict
-        Display labels for each dataset
-    """
-    # Start with all datasets from config
+    """Get list of datasets from config.py."""
     all_datasets = list(DATASET_CONFIGS.keys())
 
-    # Determine which datasets to plot
     if DATASETS_TO_PLOT is None:
-        # Use all datasets from config
         datasets_to_plot = all_datasets
     else:
-        # Use manually specified datasets
         datasets_to_plot = DATASETS_TO_PLOT
-        # Verify they exist
         for d in datasets_to_plot:
             if d not in all_datasets:
                 raise ValueError(f"Dataset '{d}' not found in config.py!")
 
-    # Create display labels from descriptions
-    dataset_labels = {}
-    for dataset_id in datasets_to_plot:
-        config = DATASET_CONFIGS[dataset_id]
-        desc = config.get('description', dataset_id)
-        dataset_labels[dataset_id] = desc
+    # Use labels from styles module
+    dataset_labels = {did: DATASET_LABELS.get(did, did) for did in datasets_to_plot}
 
     return datasets_to_plot, dataset_labels
 
@@ -618,14 +588,14 @@ def plot_boxplot_comparison():
 
         # Formatting
         metric_display_name = METRIC_DISPLAY_NAMES.get(metric, metric)
-        ax.set_title(metric_display_name, fontsize=12, fontweight='bold', pad=10)
+        ax.set_title(metric_display_name, fontsize=12, pad=10)
         ax.set_xticks(x_positions)
         ax.set_xticklabels(quantile_labels, fontsize=10)
-        ax.set_xlabel('Percentile', fontsize=11, fontweight='bold')
+        ax.set_xlabel('Percentile', fontsize=11)
 
         # Y-axis label
         ylabel = get_ylabel_for_metrics([metric])
-        ax.set_ylabel(ylabel, fontsize=11, fontweight='bold')
+        ax.set_ylabel(ylabel, fontsize=11)
 
         ax.grid(axis='y', alpha=0.3, linestyle='--')
         ax.set_axisbelow(True)
@@ -641,21 +611,22 @@ def plot_boxplot_comparison():
     # Overall title
     fig.suptitle(
         'Water System Performance Metrics - Quantile Comparison',
-        fontsize=16, fontweight='bold', y=0.995
+        fontsize=16, y=0.995
     )
 
     plt.tight_layout()
 
     # Save
-    fname = f"{FIG_OUTPUT_DIR}/performance_metrics_boxplot_comparison.png"
+    fname = f"{FIG_OUTPUT_DIR}/F9_performance_metrics_boxplot.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"\nSaved: {fname}")
+    print(f"Saved: {fname}")
 
     return fig, axes
 
 
 def main():
     """Main entry point."""
+    print("F9: Performance metrics boxplot")
     plot_boxplot_comparison()
 
 

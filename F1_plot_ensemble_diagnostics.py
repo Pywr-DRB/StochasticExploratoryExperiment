@@ -1,11 +1,9 @@
 """
-Generate main manuscript figure for ensemble validation (Figure 1).
+F1: Ensemble validation figure.
 
-This script creates a 2x1 panel figure showing:
+Two-panel figure showing:
 - (A) Weekly streamflow percentiles (5th-95th + median) for synthetic vs historic
 - (B) Annual flow duration curve ranges for synthetic vs historic
-
-For comprehensive diagnostic plots, see SI0_full_ensemble_diagnostics.py
 
 Usage:
     python F1_plot_ensemble_diagnostics.py <dataset_id>
@@ -14,77 +12,44 @@ Usage:
 import sys
 import os
 import numpy as np
-import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
 from methods.plotting.ensemble_summary import plot_ensemble_summary_figure
-from methods.plotting.styles import apply_publication_style
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
-from methods.config import *
+from methods.config import (
+    FIG_DIR, ENSEMBLE_SETS, DATASET_CONFIGS, BASELINE_DATASET,
+    verify_dataset_id,
+)
+
+# Output directory
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F1_ensemble_diagnostics"
 
 
 def plot_manuscript_ensemble_figure(dataset_id: str):
-    """
-    Generate main manuscript figure for ensemble validation.
-
-    Creates a 2x1 figure with:
-    - Panel A: Weekly streamflow climatology (5th-95th percentile + median)
-    - Panel B: Annual FDC range comparison
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier to analyze
-
-    Returns
-    -------
-    bool
-        True if successful
-    """
-    # Verify dataset
+    """Generate ensemble validation figure."""
     verify_dataset_id(dataset_id)
-    dataset_config = DATASET_CONFIGS[dataset_id]
-
-    print(f"Generating manuscript figure for: {dataset_id}")
-    print(f"Dataset type: {dataset_config['type']}")
-
-    # Get ensemble set specs for this dataset
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
 
     # Check if ensemble data exists
-    missing_sets = []
-    for spec in ensemble_set_specs:
-        if not os.path.exists(spec.files['gage_flow']):
-            missing_sets.append(spec.set_id + 1)
-
+    missing_sets = [spec.set_id + 1 for spec in ensemble_set_specs
+                    if not os.path.exists(spec.files['gage_flow'])]
     if missing_sets:
         print(f"ERROR: Missing ensemble sets: {missing_sets}")
-        print("Run ensemble generation (01_generate_ensemble_sets.py) first!")
         return False
 
-    # Load historical data
-    print("Loading historical data...")
+    # Load data
+    print("Loading data...")
     Q_historic = load_baseline_historical_flow(period='baseline', gage_flow=False, flowtype=BASELINE_DATASET)
     Q_historic.replace(0, np.nan, inplace=True)
     Q_historic.drop(columns=['delTrenton'], inplace=True, errors='ignore')
 
-    print(f"Loaded historic data: {Q_historic.shape[0]} days, {Q_historic.shape[1]} sites")
-
-    # Load synthetic ensemble (by_site=False for full realizations)
-    print("Loading synthetic ensemble...")
     syn_ensemble = load_and_combine_ensemble_sets(ensemble_set_specs, by_site=False)
+    print(f"Loaded {len(syn_ensemble)} realizations")
 
-    n_realizations = len(syn_ensemble)
-    print(f"Loaded synthetic ensemble: {n_realizations} realizations")
-
-    # Create output directory
-    os.makedirs(f"{FIG_DIR}/MAIN", exist_ok=True)
-
-    # Generate the 2x1 summary figure (uses aggregate NYC reservoir flows)
-    print("Generating manuscript figure (aggregate NYC reservoir flows)...")
-
-    fname = f"{FIG_DIR}/MAIN/F1_{dataset_id}_ensemble_diagnostics.png"
+    # Create output directory and generate figure
+    os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
+    fname = f"{FIG_OUTPUT_DIR}/F1_{dataset_id}_ensemble_diagnostics.png"
 
     plot_ensemble_summary_figure(
         Q_historic=Q_historic,
@@ -95,26 +60,15 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
         figsize=(9, 9),
     )
 
-    print(f"\nManuscript figure saved: {fname}")
+    print(f"Saved: {fname}")
     return True
 
 
 def main(dataset_id: str):
     """Main function."""
-    print("=" * 60)
-    print(f"ENSEMBLE VALIDATION FIGURE (F1): {dataset_id}")
-    print("=" * 60)
-
+    print(f"F1: Ensemble validation - {dataset_id}")
     success = plot_manuscript_ensemble_figure(dataset_id)
-
-    if success:
-        print("=" * 60)
-        print("Manuscript figure generated successfully!")
-        print("\nFor comprehensive diagnostics, run:")
-        print(f"  python SI0_full_ensemble_diagnostics.py {dataset_id}")
-    else:
-        print("=" * 60)
-        print("ERROR: Figure generation failed!")
+    if not success:
         sys.exit(1)
 
 
@@ -126,5 +80,4 @@ if __name__ == "__main__":
 
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
-
     main(dataset_id)

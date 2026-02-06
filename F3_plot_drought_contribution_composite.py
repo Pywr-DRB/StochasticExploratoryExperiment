@@ -1,5 +1,5 @@
 """
-F6: Composite drought contribution and storage analysis figure.
+F3: Composite drought contribution and storage analysis figure.
 
 Multi-panel figure combining:
   A) KDE of NYC contributions/inflow ratio by drought storage zone (stationary)
@@ -7,10 +7,8 @@ Multi-panel figure combining:
   B2) Scatter: x-metric vs min storage % for climate_adjusted_high
   C) Bar chart: drought zone frequency across scenarios
 
-Generates multiple figure versions, one per B-panel x-metric.
-
 Usage:
-    python F6_plot_drought_contribution_composite.py
+    python F3_plot_drought_contribution_composite.py
 """
 
 import os
@@ -21,30 +19,27 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
-from scipy.stats import gaussian_kde
 import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import (
-    NYC_TOTAL_CAPACITY, NYC_RESERVOIRS, DATASET_CONFIGS,
-    FIG_DIR, RECONSTRUCTION_OUTPUT_FNAME, N_YEARS,
+    NYC_TOTAL_CAPACITY, NYC_RESERVOIRS,
+    FIG_DIR, N_YEARS,
     verify_dataset_id,
 )
 from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_LABEL, FONTSIZE_MEDIUM, FONTSIZE_LEGEND, FONTSIZE_SMALL,
-    ALPHA_SCATTER, ALPHA_LINE,
+    FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    ALPHA_LINE,
     apply_publication_style,
 )
 from methods.load import load_ffmp_boundaries, load_performance_metrics
 
-# Reuse data-processing functions from F4
+# Reuse data-processing functions
 import methods.plotting.water_balance_by_drought_zone as F4_module
 from methods.plotting.water_balance_by_drought_zone import (
     classify_years_by_min_zone,
-    calculate_n_month_aggregates,
-    compute_kde_on_grid,
     aggregate_across_realizations,
     categorize_by_drought_zone,
     calculate_reconstruction_contribution_ratio,
@@ -60,16 +55,10 @@ from methods.plotting.water_balance_by_drought_zone import (
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
-SCENARIO_LABELS = {
-    'stationary_ensemble': 'Stationary',
-    'climate_adjusted_low': 'Climate Low',
-    'climate_adjusted_high': 'Climate High',
-}
-
 # Window lengths (months prior to min-zone date) to generate figures for.
 WINDOW_MONTHS = [3, 6, 9]
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/composite_figures"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F3_composite_figures"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # KDE categories to plot (excluding 'other' / Normal keeps Panel A focused on drought)
@@ -81,16 +70,8 @@ KDE_CATEGORIES = ['emergency', 'watch', 'warning', 'other']
 # ============================================================================
 
 def load_all_data():
-    """
-    Load pywrdrb.Data for all three scenarios in one pass.
-
-    Returns
-    -------
-    all_data : dict
-        {dataset_id: pywrdrb.Data}
-    """
+    """Load pywrdrb.Data for all three scenarios."""
     all_data = {}
-
     results_sets = [
         'res_level', 'inflow', 'contribution',
         'res_storage', 'ibt_diversions', 'ibt_demands',
@@ -99,7 +80,6 @@ def load_all_data():
     for dataset_id in SCENARIOS:
         verify_dataset_id(dataset_id)
         fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-        print(f"Loading {dataset_id} ...")
         data = pywrdrb.Data()
         data.load_from_export(fname, results_sets=results_sets)
         all_data[dataset_id] = data
@@ -397,9 +377,7 @@ def plot_panel_B(ax, metrics_df, ffmp_lines, x_key, x_label,
 # ============================================================================
 
 def plot_panel_C(ax):
-    """
-    Grouped bar chart of drought zone frequency across scenarios.
-    """
+    """Grouped bar chart of drought zone frequency across scenarios."""
     zone_keys = ['years_exactly_warning', 'years_exactly_watch', 'years_exactly_emergency']
     zone_labels = ['Warning', 'Watch', 'Emergency']
 
@@ -420,9 +398,9 @@ def plot_panel_C(ax):
             err_hi.append(vals.quantile(0.9) - mean_val)
 
         offset = (i - (n_scenarios - 1) / 2) * width
-        bars = ax.bar(x + offset, freqs, width,
-                      color=DATASET_COLORS[dataset_id], alpha=0.8,
-                      label=SCENARIO_LABELS[dataset_id])
+        ax.bar(x + offset, freqs, width,
+               color=DATASET_COLORS[dataset_id], alpha=0.8,
+               label=DATASET_LABELS.get(dataset_id, dataset_id))
         ax.errorbar(x + offset, freqs,
                     yerr=[err_lo, err_hi],
                     fmt='none', color='black', capsize=3, linewidth=0.8)
@@ -471,7 +449,7 @@ def create_shared_legend(ax_legend, kde_handles, kde_labels):
     # (3) Scenario colors (from Panel C)
     for dataset_id in SCENARIOS:
         elements.append(Patch(facecolor=DATASET_COLORS[dataset_id], alpha=0.8))
-        labels.append(SCENARIO_LABELS[dataset_id])
+        labels.append(DATASET_LABELS.get(dataset_id, dataset_id))
 
     # (4) FFMP zone median line indicator
     elements.append(Line2D([0], [0], color='gray', linestyle='--', linewidth=1.0, alpha=0.7))
@@ -488,7 +466,6 @@ def create_shared_legend(ax_legend, kde_handles, kde_labels):
 
 def main():
     apply_publication_style()
-    # Increase minimum font size throughout
     plt.rcParams.update({
         'font.size': 12,
         'axes.labelsize': 13,
@@ -498,9 +475,7 @@ def main():
         'legend.fontsize': 11,
     })
 
-    print("=" * 80)
-    print("F6: COMPOSITE DROUGHT CONTRIBUTION & STORAGE FIGURE")
-    print("=" * 80)
+    print("F3: Composite drought contribution figure")
 
     # Try loading pre-computed metrics first (FAST PATH)
     use_cached = True
@@ -509,45 +484,28 @@ def main():
             load_contribution_metrics, get_metrics_for_window, categorize_by_zone
         )
 
-        print("\nAttempting to load pre-computed metrics...")
-
-        # Load metrics for all scenarios once
         metrics_cache = {}
         for scenario in SCENARIOS:
-            print(f"  Loading {scenario}...")
             metrics_cache[scenario] = load_contribution_metrics(scenario)
-
         use_cached = True
-        print("  ✓ Successfully loaded pre-computed metrics (fast mode)\n")
 
-    except (ImportError, FileNotFoundError) as e:
-        print(f"\n  ⚠ Pre-computed metrics not available: {e}")
-        print("  ℹ Falling back to on-the-fly calculation (slower, ~10-20 min total)...")
-        print("  ℹ To optimize: re-run postprocessing (sbatch S3_run_postprocessing.sh)\n")
-
-        # FALLBACK: Load all scenario data
+    except (ImportError, FileNotFoundError):
         use_cached = False
 
-    # Load all scenario data if needed (for fallback mode)
     if not use_cached:
         all_data = load_all_data()
 
-    # Compute FFMP zone median lines
-    print("Computing FFMP zone medians ...")
     ffmp_lines = get_ffmp_zone_medians()
 
     # Generate one figure per window length
     for n_mo in WINDOW_MONTHS:
-        print(f"\n--- Window: {n_mo} months prior ---")
-
         # Set F4 module variable so Panel A KDE + 1964 line use same window
         F4_module.N_MONTHS_PRIOR = n_mo
 
         if use_cached:
             # FAST PATH: Use pre-computed metrics
-            window_days = n_mo * 30  # Convert months to days
+            window_days = n_mo * 30
 
-            # Column renaming map for compatibility with plotting functions
             column_rename_map = {
                 f'contribution_total_{window_days}d': 'contribution_total',
                 f'contribution_ratio_{window_days}d': 'contribution_ratio',
@@ -556,39 +514,26 @@ def main():
                 f'worst_1mo_demand_sat_{window_days}d': 'worst_1mo_demand_sat'
             }
 
-            # Categorize scenarios with this window (for Panel A KDE)
-            print(f"  Loading categorized data (window={n_mo} mo) ...")
             all_categorized = {}
             for scenario in SCENARIOS:
                 window_df = get_metrics_for_window(metrics_cache[scenario], window_days)
-                # Rename columns for compatibility
                 window_df = window_df.rename(columns=column_rename_map)
-                # Categorize by drought zone
                 zone_categories = {
-                    'emergency': [6],           # Drought Emergency
-                    'watch': [5],               # Drought Watch
-                    'warning': [4],             # Drought Warning
-                    'other': [0, 1, 2, 3]       # Normal or above
+                    'emergency': [6],
+                    'watch': [5],
+                    'warning': [4],
+                    'other': [0, 1, 2, 3]
                 }
                 all_categorized[scenario] = categorize_by_zone(window_df, zone_categories)
 
-            # Load metrics for B panels with this window
-            print(f"  Loading metrics for climate scenarios (window={n_mo} mo) ...")
             metrics_low = get_metrics_for_window(metrics_cache['climate_adjusted_low'], window_days)
             metrics_high = get_metrics_for_window(metrics_cache['climate_adjusted_high'], window_days)
-
-            # Rename columns for compatibility with plotting functions
             metrics_low = metrics_low.rename(columns=column_rename_map)
             metrics_high = metrics_high.rename(columns=column_rename_map)
 
         else:
             # FALLBACK: Original calculation
-            # Categorize scenarios with this window (for Panel A KDE)
-            print(f"  Categorizing scenarios (window={n_mo} mo) ...")
             all_categorized = categorize_all_scenarios(all_data, n_mo)
-
-            # Compute drought metrics for B panels with this window
-            print(f"  Computing drought metrics (window={n_mo} mo) ...")
             metrics_low = calculate_drought_metrics_per_year(
                 all_data['climate_adjusted_low'], 'climate_adjusted_low', n_months_prior=n_mo)
             metrics_high = calculate_drought_metrics_per_year(
@@ -603,8 +548,6 @@ def main():
         x_label = f'NYC contribution / inflow\n({n_mo}-mo prior, %)'
         suffix = f'contribution_ratio_{n_mo}mo'
 
-        print(f"  Creating figure: {suffix} ...")
-
         fig = plt.figure(figsize=(14, 12))
         gs = fig.add_gridspec(
             3, 2,
@@ -615,20 +558,20 @@ def main():
         )
 
         ax_A = fig.add_subplot(gs[0:2, 0])
-        ax_B1 = fig.add_subplot(gs[0, 1])
-        ax_B2 = fig.add_subplot(gs[1, 1])
+        ax_B1 = fig.add_subplot(gs[0, 1])   # climate_adjusted_low (top)
+        ax_B2 = fig.add_subplot(gs[1, 1])   # climate_adjusted_high (bottom)
         ax_C = fig.add_subplot(gs[2, 0])
         ax_legend = fig.add_subplot(gs[2, 1])
 
         # Panel A
         kde_handles, kde_labels = plot_panel_A(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
 
-        # Panel B1 (climate_adjusted_low)
+        # Panel B1 (climate_adjusted_low - top)
         sc1 = plot_panel_B(ax_B1, metrics_low, ffmp_lines,
                            x_key, x_label, vmin=ds_vmin, vmax=ds_vmax,
                            panel_label='b)', show_xlabel=False)
 
-        # Panel B2 (climate_adjusted_high)
+        # Panel B2 (climate_adjusted_high - bottom)
         sc2 = plot_panel_B(ax_B2, metrics_high, ffmp_lines,
                            x_key, x_label, vmin=ds_vmin, vmax=ds_vmax,
                            panel_label='c)', show_xlabel=True)
@@ -636,7 +579,7 @@ def main():
         # Sync x-limits across B1/B2 and suppress B1 x-tick labels
         xlim_lo = min(ax_B1.get_xlim()[0], ax_B2.get_xlim()[0])
         xlim_hi = max(ax_B1.get_xlim()[1], ax_B2.get_xlim()[1])
-        xlim_lo = 0.0 
+        xlim_lo = 0.0
         ax_B1.set_xlim(xlim_lo, xlim_hi)
         ax_B2.set_xlim(xlim_lo, xlim_hi)
         ax_B1.set_xticklabels([])
@@ -656,14 +599,10 @@ def main():
         create_shared_legend(ax_legend, kde_handles, kde_labels)
 
         # Save
-        fname_base = f"{FIG_OUTPUT_DIR}/F6_drought_contribution_composite_{suffix}"
+        fname_base = f"{FIG_OUTPUT_DIR}/F3_drought_contribution_composite_{suffix}"
         fig.savefig(f"{fname_base}.png", dpi=DPI_HIGH, bbox_inches='tight')
-        print(f"  Saved: {fname_base}.png")
+        print(f"Saved: {fname_base}.png")
         plt.close(fig)
-
-    print("\n" + "=" * 80)
-    print("F6 COMPLETE!")
-    print("=" * 80)
 
 
 if __name__ == '__main__':

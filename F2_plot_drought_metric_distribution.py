@@ -1,5 +1,5 @@
 """
-Multipanel manuscript figure: drought metric distributions.
+F2: Drought metric distribution figure.
 
 Left panel: hexbin of severity vs magnitude for the stationary ensemble.
 Right panels (2x2): exceedance-rate CDFs per climate scenario (rows) and
@@ -7,10 +7,6 @@ drought metric (columns), with stationary ensemble shown as outline bands.
 
 Usage:
   python F2_plot_drought_metric_distribution.py [ssi_window]
-
-Examples:
-  python F2_plot_drought_metric_distribution.py
-  python F2_plot_drought_metric_distribution.py 6
 """
 
 import sys
@@ -19,11 +15,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import *
+from methods.config import FIG_DIR, N_YEARS, TOTAL_REALIZATIONS, SSI_WINDOWS
 from methods.load import load_drought_events
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
@@ -33,29 +28,23 @@ from methods.plotting.styles import (
 )
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/drought_distributions"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F2_drought_distributions"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Axis labels (clean for manuscript)
+# Axis labels
 METRIC_AXIS_LABELS = {
     'severity': 'Severity (min SSI)',
     'magnitude': 'Magnitude (cumulative deficit)',
     'duration': 'Duration (months)',
 }
 
-# Panel labels
 PANEL_LETTERS = list('abcdefghij')
 
 # Number of years for exceedance rate normalization
-HISTORIC_N_YEARS = 77  # 1945-2022
-ENSEMBLE_N_YEARS = N_YEARS * TOTAL_REALIZATIONS
+HISTORIC_N_YEARS = 77
 
-# Climate scenario datasets for right-panel rows
+# Climate scenario datasets for right-panel rows (low above high)
 CLIMATE_SCENARIOS = ['climate_adjusted_low', 'climate_adjusted_high']
-SCENARIO_ROW_LABELS = {
-    'climate_adjusted_low': 'Climate Low',
-    'climate_adjusted_high': 'Climate High',
-}
 
 
 def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
@@ -364,7 +353,7 @@ def plot_drought_manuscript_figure(
             # Row label on right side of rightmost column
             if c == n_cols - 1:
                 ax.text(
-                    1.02, 0.5, SCENARIO_ROW_LABELS[scenario_id],
+                    1.02, 0.5, DATASET_LABELS.get(scenario_id, scenario_id),
                     transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
                     va='center', ha='left', rotation=-90,
                 )
@@ -419,16 +408,12 @@ def main():
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
 
-    print("=" * 60)
-    print(f"F2: DROUGHT METRIC DISTRIBUTION (SSI-{ssi_window})")
-    print("=" * 60)
+    print(f"F2: Drought metric distribution (SSI-{ssi_window})")
 
-    plot_drought_manuscript_figure(ssi_window=ssi_window, 
+    plot_drought_manuscript_figure(ssi_window=ssi_window,
                                    log_magnitude=True,
                                    log_exceedance=False)
     plt.close('all')
-
-    print("\nDone.")
 
 
 if __name__ == "__main__":
