@@ -34,101 +34,47 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/F9_performance_metrics"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # ============================================================================
-# CONFIGURABLE METRICS
+# CONFIGURABLE METRICS - 3x3 GRID BY CATEGORY
 # ============================================================================
-# Specify which metrics to plot and in what order
-# The order of this list determines the order of boxes in the plot
+# The figure uses a 3x3 grid layout where each row corresponds to a category:
+#   Row 1: NYC Reservoir Storage
+#   Row 2: NYC Diversion/Demand Outcomes
+#   Row 3: Montague Flow Outcomes
 #
-# Available metrics (from methods/postprocess.py calculate_performance_metrics):
-#
-# See PERFORMANCE_METRICS_DOCUMENTATION.md for comprehensive descriptions.
-#
-# CATEGORY 1: Flow Reliability (Montague & Trenton)
-#   - years_reliable_montague: Years Montague flow target met >90% of days
-#   - years_reliable_montague_95: Years Montague flow target met >95% of days
-#   - mean_annual_montague_reliability: Average annual Montague reliability (0-1)
-#   - min_annual_montague_reliability: Worst annual Montague reliability
-#   - total_montague_shortage_mg: Total Montague shortage (MG)
-#   - mean_annual_montague_shortage_mg: Mean annual Montague shortage (MG/year)
-#   - years_reliable_trenton: Years Trenton flow target met >90% of days
-#   - years_reliable_trenton_95: Years Trenton flow target met >95% of days
-#   - mean_annual_trenton_reliability: Average annual Trenton reliability (0-1)
-#   - total_trenton_shortage_mg: Total Trenton shortage (MG)
-#   - mean_annual_trenton_shortage_mg: Mean annual Trenton shortage (MG/year)
-#
-# CATEGORY 2: NYC Reservoir Storage
-#   - years_above_30pct: Years min storage stays >30%
-#   - years_above_20pct: Years min storage stays >20%
-#   - years_above_10pct: Years min storage stays >10%
-#   - years_below_10pct: Years min storage drops ≤10%
-#   - years_high_storage_june1: Years ≥95% storage on June 1
-#   - years_high_storage_june1_90: Years ≥90% storage on June 1
-#   - mean_june1_storage_pct: Average June 1 storage (%)
-#   - mean_sept1_storage_pct: Average Sept 1 storage (%)
-#   - years_low_carryover: Years <50% storage on Sept 1
-#   - years_low_carryover_40: Years <40% storage on Sept 1
-#   - mean_storage_pct: Long-term average storage (%)
-#   - median_storage_pct: Median storage (%)
-#   - min_storage_pct: Absolute minimum storage (%)
-#   - max_storage_pct: Maximum storage (%)
-#   - std_storage_pct: Storage standard deviation (%)
-#   - pct_days_storage_below_30: % days storage <30%
-#   - pct_days_storage_below_20: % days storage <20%
-#   - mean_annual_storage_range: Average annual storage swing (%)
-#
-# CATEGORY 3: Water Supply Reliability
-#   - pct_days_nyc_diversion_shortage: % days NYC diversion shortage
-#   - total_nyc_diversion_shortage_mg: Total NYC diversion shortage (MG)
-#   - mean_annual_nyc_diversion_shortage_mg: Mean annual NYC shortage (MG/year)
-#   - max_daily_nyc_diversion_shortage_mg: Max daily NYC shortage (MGD)
-#   - years_no_nyc_shortage: Years with zero NYC shortage
-#   - years_minor_nyc_shortage: Years with ≤365 MG shortage
-#
-# CATEGORY 4: Drought Characteristics
-#   - max_consecutive_drought_days: Longest Montague drought (days)
-#   - mean_drought_duration_days: Average Montague drought duration (days)
-#   - n_drought_events: Number of Montague drought events
-#   - n_major_droughts: Number of ≥90-day droughts
-#   - n_severe_droughts: Number of ≥180-day droughts
-#   - worst_drought_max_daily_shortage_mg: Peak shortage in worst drought (MGD)
-#   - max_consecutive_drought_days_trenton: Longest Trenton drought (days)
-#   - n_drought_events_trenton: Number of Trenton drought events
-#   - pct_days_combined_stress: % days with both NYC & Montague shortage
-#
-# CATEGORY 5: NYC Contributions
-#   - mean_annual_nyc_contribution_mg: Mean annual NYC contribution (MG/year)
-#   - max_annual_nyc_contribution_mg: Max annual NYC contribution (MG/year)
-#   - min_annual_nyc_contribution_mg: Min annual NYC contribution (MG/year)
-#   - std_annual_nyc_contribution_mg: Std dev annual NYC contribution (MG/year)
-#   - total_nyc_contribution_mg: Total NYC contribution (MG)
-#   - pct_days_nyc_contribution: % days with NYC contribution
-#   - n_days_high_nyc_contribution: Days with >100 MGD contribution
-#
-# CATEGORY 6: System Balance
-#   - nyc_contribution_to_shortage_ratio: NYC contribution / Montague shortage
-#   - years_high_storage_and_reliable: Years with high storage AND reliability
-#   - years_vulnerable: Years with low storage OR low reliability
-#
-# LEGACY (backward compatibility):
-#   - years_reliable: Alias for years_reliable_montague
-#   - years_high_storage: Alias for years_high_storage_june1
-#   - years_trenton_reliable: Alias for years_reliable_trenton
+# Metrics were selected based on sensitivity analysis (relative differences
+# between stationary and climate-adjusted datasets).
 
-METRICS_TO_PLOT = [
-    'years_drought_emergency',
-    'max_1day_montague_shortage_mg',
-    # 'years_below_30pct',
-    # 'mean_annual_montague_shortage_mg',
-    # 'years_reliable',
-    # 'years_high_storage',
-    # 'years_above_20pct',
-    # 'years_above_10pct',
-    # 'years_low_carryover',
-    # 'years_trenton_reliable',
-    'max_consecutive_drought_days',
-    # 'mean_annual_nyc_contribution_mg',
-    # 'pct_days_nyc_contribution',
+# Category 1: NYC Reservoir Storage (Row 1)
+# Selected metrics with highest sensitivity to climate scenarios
+METRICS_NYC_STORAGE = [
+    'min_storage_pct',              # Absolute minimum storage (%) - 29% avg change
+    'pct_days_storage_below_30',    # % days storage <30% - 59% avg change
+    'years_below_30pct',            # Years with storage dropping ≤30% - 52% avg change
 ]
+
+# Category 2: NYC Diversion/Demand Outcomes (Row 2)
+METRICS_NYC_DIVERSION = [
+    'mean_annual_nyc_diversion_shortage_mg',  # Mean annual NYC shortage - 53% avg change
+    'pct_days_nyc_diversion_shortage',        # % days with NYC shortage - 11% avg change
+    'mean_annual_nyc_contribution_mg',        # Mean annual NYC contribution - 12% avg change
+]
+
+# Category 3: Montague Flow Outcomes (Row 3)
+METRICS_MONTAGUE = [
+    'mean_annual_montague_shortage_mg',  # Mean annual Montague shortage - 62% avg change
+    'max_1day_montague_shortage_mg',     # Max single-day shortage - 28% avg change
+    'max_consecutive_drought_days',      # Longest drought duration - 21% avg change
+]
+
+# Combined list for compatibility with existing code
+METRICS_TO_PLOT = METRICS_NYC_STORAGE + METRICS_NYC_DIVERSION + METRICS_MONTAGUE
+
+# Category labels for row titles
+CATEGORY_LABELS = {
+    'NYC_STORAGE': 'NYC Reservoir Storage',
+    'NYC_DIVERSION': 'NYC Diversion Outcomes',
+    'MONTAGUE': 'Montague Flow Outcomes',
+}
 
 # ============================================================================
 # DATASET CONFIGURATION
@@ -456,10 +402,13 @@ def calculate_quantiles_by_dataset(all_metrics_dfs, datasets_to_plot, metrics_to
 
 def plot_boxplot_comparison():
     """
-    Generate multi-panel performance metrics figure.
+    Generate 3x3 multi-panel performance metrics figure.
 
     Layout:
-    - One subplot per metric
+    - 3 rows x 3 columns grid
+    - Row 1: NYC Reservoir Storage metrics
+    - Row 2: NYC Diversion/Demand Outcomes
+    - Row 3: Montague Flow Outcomes
     - Within each subplot: grouped bars by quantile (5th, 50th, 95th)
     - Colors distinguish datasets
     """
@@ -495,17 +444,11 @@ def plot_boxplot_comparison():
             historic_quantiles = {}
             for metric in METRICS_TO_PLOT:
                 if metric in historic_metrics_df.columns:
-                    # For reconstruction, we only have one realization (single value)
-                    # Use this value for all quantiles since there's no distribution
                     raw_value = historic_metrics_df[metric].iloc[0]
-
-                    # Scale metrics that count years to make them comparable
                     if metric in METRICS_TO_SCALE:
                         scaled_value = raw_value * RECONSTRUCTION_SCALE_FACTOR
                     else:
                         scaled_value = raw_value
-
-                    # Use same value for all quantiles (no distribution)
                     historic_quantiles[metric] = {
                         'p5': scaled_value,
                         'p50': scaled_value,
@@ -519,21 +462,20 @@ def plot_boxplot_comparison():
         all_metrics_dfs, datasets_to_plot, METRICS_TO_PLOT
     )
 
-    # Determine subplot layout
-    n_metrics = len(METRICS_TO_PLOT)
-    n_cols = min(3, n_metrics)  # Max 3 columns
-    n_rows = int(np.ceil(n_metrics / n_cols))
+    # Define the 3x3 grid layout with categories
+    category_metrics = [
+        ('NYC Reservoir Storage', METRICS_NYC_STORAGE),
+        ('NYC Diversion Outcomes', METRICS_NYC_DIVERSION),
+        ('Montague Flow Outcomes', METRICS_MONTAGUE),
+    ]
 
-    # Create figure with subplots
-    fig_width = 6 * n_cols
-    fig_height = 5 * n_rows
+    n_rows = 3
+    n_cols = 3
+
+    # Create figure with extra space on left for row labels
+    fig_width = 14
+    fig_height = 11
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
-
-    # Flatten axes array for easier iteration
-    if n_metrics == 1:
-        axes = [axes]
-    else:
-        axes = axes.flatten() if n_metrics > 1 else [axes]
 
     # Set up color palette for datasets
     dataset_colors = {}
@@ -541,83 +483,99 @@ def plot_boxplot_comparison():
         if dataset_id in DATASET_COLORS:
             dataset_colors[dataset_id] = DATASET_COLORS[dataset_id]
         else:
-            # Default colors if not specified
             dataset_colors[dataset_id] = plt.cm.tab10(len(dataset_colors))
 
-    # Plot each metric in its own subplot
+    # Plot settings
     quantile_labels = ['5th', '50th', '95th']
     quantile_keys = ['p5', 'p50', 'p95']
     n_quantiles = len(quantile_labels)
     n_datasets = len(datasets_to_plot)
+    bar_width = 0.25
 
-    for idx, metric in enumerate(METRICS_TO_PLOT):
-        ax = axes[idx]
+    # Plot each category row
+    for row_idx, (category_name, metrics_list) in enumerate(category_metrics):
+        for col_idx, metric in enumerate(metrics_list):
+            ax = axes[row_idx, col_idx]
 
-        # Prepare data for this metric
-        bar_width = 0.25
-        x_positions = np.arange(n_quantiles)
+            x_positions = np.arange(n_quantiles)
 
-        # Plot bars for each dataset
-        for dataset_idx, dataset_id in enumerate(datasets_to_plot):
-            dataset_label = dataset_labels[dataset_id]
-            color = dataset_colors[dataset_id]
+            # Plot bars for each dataset
+            for dataset_idx, dataset_id in enumerate(datasets_to_plot):
+                dataset_label = dataset_labels[dataset_id]
+                color = dataset_colors[dataset_id]
 
-            # Get quantile values for this dataset and metric
-            values = [
-                quantiles_data[metric][dataset_id][qkey]
-                for qkey in quantile_keys
-            ]
+                # Get quantile values for this dataset and metric
+                values = [
+                    quantiles_data[metric][dataset_id][qkey]
+                    for qkey in quantile_keys
+                ]
 
-            # Offset positions for grouped bars
-            offset = (dataset_idx - (n_datasets - 1) / 2) * bar_width
-            positions = x_positions + offset
+                # Offset positions for grouped bars
+                offset = (dataset_idx - (n_datasets - 1) / 2) * bar_width
+                positions = x_positions + offset
 
-            ax.bar(positions, values, bar_width,
-                  label=dataset_label, color=color, alpha=0.8,
-                  edgecolor='black', linewidth=0.5)
+                ax.bar(positions, values, bar_width,
+                      label=dataset_label if (row_idx == 0 and col_idx == 0) else None,
+                      color=color, alpha=0.8,
+                      edgecolor='black', linewidth=0.5)
 
-        # Add historic reconstruction points if available
-        if historic_quantiles is not None and metric in historic_quantiles:
-            historic_values = [
-                historic_quantiles[metric][qkey]
-                for qkey in quantile_keys
-            ]
-            ax.scatter(x_positions, historic_values,
-                      **HISTORIC_MARKER_STYLE,
-                      label='Historic' if idx == 0 else None)
+            # Add historic reconstruction points if available
+            if historic_quantiles is not None and metric in historic_quantiles:
+                historic_values = [
+                    historic_quantiles[metric][qkey]
+                    for qkey in quantile_keys
+                ]
+                ax.scatter(x_positions, historic_values,
+                          **HISTORIC_MARKER_STYLE,
+                          label='Historic' if (row_idx == 0 and col_idx == 0) else None)
 
-        # Formatting
-        metric_display_name = METRIC_DISPLAY_NAMES.get(metric, metric)
-        ax.set_title(metric_display_name, fontsize=12, pad=10)
-        ax.set_xticks(x_positions)
-        ax.set_xticklabels(quantile_labels, fontsize=10)
-        ax.set_xlabel('Percentile', fontsize=11)
+            # Formatting
+            metric_display_name = METRIC_DISPLAY_NAMES.get(metric, metric)
+            ax.set_title(metric_display_name, fontsize=11, pad=8)
+            ax.set_xticks(x_positions)
+            ax.set_xticklabels(quantile_labels, fontsize=9)
 
-        # Y-axis label
-        ylabel = get_ylabel_for_metrics([metric])
-        ax.set_ylabel(ylabel, fontsize=11)
+            # Only show x-axis label on bottom row
+            if row_idx == n_rows - 1:
+                ax.set_xlabel('Percentile', fontsize=10)
+            else:
+                ax.set_xlabel('')
 
-        ax.grid(axis='y', alpha=0.3, linestyle='--')
-        ax.set_axisbelow(True)
+            # Y-axis label
+            ylabel = get_ylabel_for_metrics([metric])
+            ax.set_ylabel(ylabel, fontsize=10)
 
-        # Add legend to first subplot only
-        if idx == 0:
-            ax.legend(loc='upper left', fontsize=9, frameon=True, fancybox=True)
+            ax.grid(axis='y', alpha=0.3, linestyle='--')
+            ax.set_axisbelow(True)
+            ax.tick_params(axis='both', labelsize=9)
 
-    # Hide unused subplots
-    for idx in range(n_metrics, len(axes)):
-        axes[idx].axis('off')
+        # Add category row label on the left side
+        # Use the first axis in each row to add a label on the left
+        ax_left = axes[row_idx, 0]
+        ax_left.annotate(
+            category_name,
+            xy=(-0.35, 0.5),
+            xycoords='axes fraction',
+            fontsize=12,
+            fontweight='bold',
+            ha='center',
+            va='center',
+            rotation=90,
+        )
+
+    # Add legend to top-left subplot
+    axes[0, 0].legend(loc='upper left', fontsize=8, frameon=True, fancybox=True)
 
     # Overall title
     fig.suptitle(
-        'Water System Performance Metrics - Quantile Comparison',
-        fontsize=16, y=0.995
+        'Water System Performance Metrics by Category',
+        fontsize=14, fontweight='bold', y=0.98
     )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0.05, 0.02, 1, 0.96])
 
     # Save
-    fname = f"{FIG_OUTPUT_DIR}/F9_performance_metrics_boxplot.png"
+    fname = f"{FIG_OUTPUT_DIR}/F9_performance_metrics_3x3.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
 

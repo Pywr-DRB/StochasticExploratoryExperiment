@@ -382,6 +382,9 @@ METRIC_DISPLAY_NAMES = {
     'min_annual_montague_reliability': 'Worst Annual\nMontague Reliability',
     'total_montague_shortage_mg': 'Total Montague\nShortage (MG)',
     'mean_annual_montague_shortage_mg': 'Mean Annual\nMontague Shortage',
+    'max_1day_montague_shortage_mg': 'Max 1-Day\nMontague Shortage',
+    'max_3day_montague_shortage_mg': 'Max 3-Day\nMontague Shortage',
+    'max_7day_montague_shortage_mg': 'Max 7-Day\nMontague Shortage',
 
     # Flow Reliability - Trenton
     'years_reliable_trenton': 'Years Trenton\nReliable (>90%)',
@@ -394,6 +397,8 @@ METRIC_DISPLAY_NAMES = {
     'years_above_30pct': 'Years Min\nStorage >30%',
     'years_above_20pct': 'Years Min\nStorage >20%',
     'years_above_10pct': 'Years Min\nStorage >10%',
+    'years_below_30pct': 'Years Min\nStorage ≤30%',
+    'years_below_20pct': 'Years Min\nStorage ≤20%',
     'years_below_10pct': 'Years Min\nStorage ≤10%',
 
     # NYC Storage - Key Dates
@@ -466,6 +471,8 @@ METRIC_UNITS = {
     'years_above_30pct': 'years',
     'years_above_20pct': 'years',
     'years_above_10pct': 'years',
+    'years_below_30pct': 'years',
+    'years_below_20pct': 'years',
     'years_below_10pct': 'years',
     'years_low_carryover': 'years',
     'years_low_carryover_40': 'years',
@@ -512,6 +519,9 @@ METRIC_UNITS = {
     'total_nyc_contribution_mg': 'million_gallons',
     'total_montague_shortage_mg': 'million_gallons',
     'mean_annual_montague_shortage_mg': 'million_gallons',
+    'max_1day_montague_shortage_mg': 'million_gallons',
+    'max_3day_montague_shortage_mg': 'million_gallons',
+    'max_7day_montague_shortage_mg': 'million_gallons',
     'total_trenton_shortage_mg': 'million_gallons',
     'mean_annual_trenton_shortage_mg': 'million_gallons',
     'total_nyc_diversion_shortage_mg': 'million_gallons',
