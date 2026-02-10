@@ -56,7 +56,7 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
         Q_synthetic=syn_ensemble,
         dataset_id=dataset_id,
         fname=fname,
-        percentiles=(5, 95),
+        percentiles=(0.5, 99.5),
         figsize=(9, 9),
     )
 
@@ -81,3 +81,4 @@ if __name__ == "__main__":
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
     main(dataset_id)
+"#2B2B2B"

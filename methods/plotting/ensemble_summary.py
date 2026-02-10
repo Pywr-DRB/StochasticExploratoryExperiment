@@ -751,9 +751,9 @@ def plot_pvalue_comparison(
     bar_width = 0.35
 
     ax.bar(months - bar_width/2, wilcoxon_pvals, bar_width,
-           label='Wilcoxon', color=wilcoxon_color, edgecolor='none')
+           label='Wilcoxon', color=wilcoxon_color, edgecolor='k')
     ax.bar(months + bar_width/2, levene_pvals, bar_width,
-           label='Levene', color=levene_color, edgecolor='none')
+           label='Levene', color=levene_color, edgecolor='k')
 
     ax.axhline(significance_threshold, color='k', linewidth=1, linestyle='--',
                label=f'p={significance_threshold}')
@@ -825,8 +825,8 @@ def plot_ensemble_summary_figure(
     synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
     synthetic_label = DATASET_LABELS.get(dataset_id, 'Synthetic')
 
-    wilcoxon_color = '#648FFF'
-    levene_color = '#DC267F'
+    wilcoxon_color = "#2E2E2E"
+    levene_color = "#B0B0B0"
 
     # Pre-aggregate flows ONCE for all panels
     hist_agg = _get_aggregate_flow(Q_historic, sites)
@@ -834,7 +834,7 @@ def plot_ensemble_summary_figure(
 
     # Create figure with GridSpec layout
     fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 0.6])
+    gs = gridspec.GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 0.3])
 
     ax_autocorr = fig.add_subplot(gs[0, 0])
     ax_fdc = fig.add_subplot(gs[0, 1])

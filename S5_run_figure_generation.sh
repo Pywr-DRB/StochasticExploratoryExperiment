@@ -17,11 +17,13 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
 PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
-PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-true}
+PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-false}
 PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
+
 PLOT_EXAMPLE_YEARS=${PLOT_EXAMPLE_YEARS:-false}
+PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS=${PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS:-false}
 
 
 # Ensemble flow distribution and verification plots
@@ -65,3 +67,10 @@ if [ "$PLOT_EXAMPLE_YEARS" = true ]; then
     echo "========================================"
     ## TO BE DEVELOPED!
 fi   
+
+if [ "$PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS" = true ]; then
+    echo "========================================"
+    echo "Generating contribution ratio storage figures..."
+    echo "========================================"
+    python3 F10_plot_contribution_storage_timeseries.py stationary_ensemble
+fi
