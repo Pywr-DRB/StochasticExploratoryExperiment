@@ -1,11 +1,15 @@
 """
-F3: Composite drought contribution and storage analysis figure.
+F3: Composite drought contribution and storage analysis figure (Version 2).
 
-Multi-panel figure combining:
-  A) KDE of NYC contributions/inflow ratio by drought storage zone (stationary)
-  B1) Scatter: x-metric vs min storage % for climate_adjusted_low
-  B2) Scatter: x-metric vs min storage % for climate_adjusted_high
-  C) Bar chart: drought zone frequency across scenarios
+New Layout:
+  Top row: A (KDE) | B1/B2 (frequency and duration bar charts)
+  Bottom row: C1, C2, C3 (scatter plots for all three datasets)
+
+Changes from v1:
+  - B1: Frequency bar chart (fraction of years in each drought zone) with stacked percentiles
+  - B2: Duration bar chart (event duration percentiles) with stacked percentiles
+  - C1-C3: Scatter plots for stationary, climate_adjusted_low, climate_adjusted_high
+  - Generates two versions: full (A+B1+B2+C1+C2+C3) and simplified (A+B1+B2 only)
 
 Usage:
     python F3_plot_drought_contribution_composite.py
@@ -30,7 +34,7 @@ from methods.config import (
 )
 from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    FONTSIZE_SMALL, FONTSIZE_LABEL, FONTSIZE_MEDIUM,
     ALPHA_LINE,
     apply_publication_style,
 )
@@ -373,11 +377,11 @@ def plot_panel_B(ax, metrics_df, ffmp_lines, x_key, x_label,
 
 
 # ============================================================================
-# PANEL C: Bar chart of drought zone frequency
+# PANEL C: Bar chart of drought zone frequency (DEPRECATED - replaced by B1/B2)
 # ============================================================================
 
 def plot_panel_C(ax):
-    """Grouped bar chart of drought zone frequency across scenarios."""
+    """Grouped bar chart of drought zone frequency across scenarios (deprecated)."""
     zone_keys = ['years_exactly_warning', 'years_exactly_watch', 'years_exactly_emergency']
     zone_labels = ['Warning', 'Watch', 'Emergency']
 
@@ -413,6 +417,312 @@ def plot_panel_C(ax):
 
     # Panel label
     ax.text(-0.08, 1.02, 'd)', transform=ax.transAxes, fontsize=14, va='bottom', ha='right')
+
+
+# ============================================================================
+# PANEL B1/B2: New bar charts with stacked percentiles
+# ============================================================================
+
+# Percentiles for stacked bars (user-configurable)
+PERCENTILES = [5, 50, 95]
+
+def plot_frequency_bar_chart_stacked(ax, panel_label='b)'):
+    """
+    Plot Panel B1: Frequency bar chart with grouped + stacked percentiles.
+
+    X-axis groups: Warning, Watch, Emergency (3 groups)
+    Per group: 3 side-by-side bars (Stationary, Climate Low, Climate High)
+    Per bar: 3 stacked segments (5th, 50th, 95th percentiles) with color shading
+    """
+    from methods.zone_duration_metrics import calculate_zone_frequency
+    import matplotlib.colors as mcolors
+
+    # Drought zones and order (left to right on x-axis)
+    zone_order = [4, 5, 6]  # Warning, Watch, Emergency
+    zone_labels_map = {4: 'Warning', 5: 'Watch', 6: 'Emergency'}
+
+    # Calculate frequency for each dataset and zone
+    all_freq_data = {}
+    for dataset_id in SCENARIOS:
+        all_freq_data[dataset_id] = calculate_zone_frequency(dataset_id, zones=zone_order)
+
+    # Set up grouped bar positions
+    n_zones = len(zone_order)
+    n_datasets = len(SCENARIOS)
+    group_width = 0.8  # Total width for each zone group
+    bar_width = group_width / n_datasets  # Width of individual bars
+    x_groups = np.arange(n_zones)  # [0, 1, 2] for Warning, Watch, Emergency
+
+    # Dataset-specific base colors
+    dataset_colors = {
+        'stationary_ensemble': '#2E86AB',           # Blue
+        'climate_adjusted_low': '#A23B72',          # Purple
+        'climate_adjusted_high': '#F18F01',         # Orange
+    }
+
+    # Plot bars for each zone group
+    for zone_idx, zone_num in enumerate(zone_order):
+        # Plot bars for each dataset within this zone group
+        for ds_idx, dataset_id in enumerate(SCENARIOS):
+            # Get dataset-specific base color
+            base_color = dataset_colors[dataset_id]
+            rgb = mcolors.to_rgb(base_color)
+
+            # Create 3 shades for percentiles: darkest (p5), medium (p50), lightest (p95)
+            shades = [
+                tuple(c * 0.5 for c in rgb),   # p5: darkest
+                tuple(c * 0.75 for c in rgb),  # p50: medium
+                rgb,                           # p95: lightest (original)
+            ]
+
+            # Calculate x position for this bar
+            x_pos = x_groups[zone_idx] + (ds_idx - 1) * bar_width
+
+            # Get percentile values
+            freq_data = all_freq_data[dataset_id][zone_num]
+            p5_val = freq_data['p5']
+            p50_val = freq_data['p50']
+            p95_val = freq_data['p95']
+
+            # Stack the percentile segments
+            # Bottom segment: 0 to p5 (darkest)
+            ax.bar(x_pos, p5_val, bar_width * 0.9,
+                   color=shades[0], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+            # Middle segment: p5 to p50 (medium)
+            ax.bar(x_pos, p50_val - p5_val, bar_width * 0.9,
+                   bottom=p5_val,
+                   color=shades[1], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+            # Top segment: p50 to p95 (lightest)
+            ax.bar(x_pos, p95_val - p50_val, bar_width * 0.9,
+                   bottom=p50_val,
+                   color=shades[2], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+    # Format axes
+    ax.set_xticks(x_groups)
+    ax.set_xticklabels([zone_labels_map[z] for z in zone_order],
+                       fontsize=FONTSIZE_SMALL)
+    ax.set_ylabel('Fraction of years', fontsize=FONTSIZE_LABEL)
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.1)  # Add headroom
+    ax.grid(True, axis='y', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    ax.text(-0.08, 1.02, panel_label, transform=ax.transAxes,
+            fontsize=14, va='bottom', ha='right')
+
+
+def plot_duration_bar_chart_stacked(ax, panel_label='c)'):
+    """
+    Plot Panel B2: Duration bar chart with grouped + stacked percentiles.
+
+    X-axis groups: Warning, Watch, Emergency (3 groups)
+    Per group: 3 side-by-side bars (Stationary, Climate Low, Climate High)
+    Per bar: 3 stacked segments (5th, 50th, 95th percentiles) with color shading
+    """
+    from methods.zone_duration_metrics import calculate_zone_duration_percentiles
+    import matplotlib.colors as mcolors
+
+    # Drought zones and order (left to right on x-axis)
+    zone_order = [4, 5, 6]  # Warning, Watch, Emergency
+    zone_labels_map = {4: 'Warning', 5: 'Watch', 6: 'Emergency'}
+
+    # Calculate duration for each dataset
+    all_duration_data = {}
+    for dataset_id in SCENARIOS:
+        all_duration_data[dataset_id] = calculate_zone_duration_percentiles(
+            dataset_id, zones=zone_order, percentiles=PERCENTILES
+        )
+
+    # Set up grouped bar positions
+    n_zones = len(zone_order)
+    n_datasets = len(SCENARIOS)
+    group_width = 0.8  # Total width for each zone group
+    bar_width = group_width / n_datasets  # Width of individual bars
+    x_groups = np.arange(n_zones)  # [0, 1, 2] for Warning, Watch, Emergency
+
+    # Dataset-specific base colors
+    dataset_colors = {
+        'stationary_ensemble': '#2E86AB',           # Blue
+        'climate_adjusted_low': '#A23B72',          # Purple
+        'climate_adjusted_high': '#F18F01',         # Orange
+    }
+
+    # Plot bars for each zone group
+    for zone_idx, zone_num in enumerate(zone_order):
+        # Plot bars for each dataset within this zone group
+        for ds_idx, dataset_id in enumerate(SCENARIOS):
+            # Get dataset-specific base color
+            base_color = dataset_colors[dataset_id]
+            rgb = mcolors.to_rgb(base_color)
+
+            # Create 3 shades for percentiles: darkest (p5), medium (p50), lightest (p95)
+            shades = [
+                tuple(c * 0.5 for c in rgb),   # p5: darkest
+                tuple(c * 0.75 for c in rgb),  # p50: medium
+                rgb,                           # p95: lightest (original)
+            ]
+
+            # Calculate x position for this bar
+            x_pos = x_groups[zone_idx] + (ds_idx - 1) * bar_width
+
+            # Get percentile values
+            duration_df = all_duration_data[dataset_id]
+            p5_val = duration_df.loc[zone_num, 'p5']
+            p50_val = duration_df.loc[zone_num, 'p50']
+            p95_val = duration_df.loc[zone_num, 'p95']
+
+            # Stack the percentile segments
+            # Bottom segment: 0 to p5 (darkest)
+            ax.bar(x_pos, p5_val, bar_width * 0.9,
+                   color=shades[0], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+            # Middle segment: p5 to p50 (medium)
+            ax.bar(x_pos, p50_val - p5_val, bar_width * 0.9,
+                   bottom=p5_val,
+                   color=shades[1], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+            # Top segment: p50 to p95 (lightest)
+            ax.bar(x_pos, p95_val - p50_val, bar_width * 0.9,
+                   bottom=p50_val,
+                   color=shades[2], alpha=0.95,
+                   edgecolor='white', linewidth=0.5)
+
+    # Format axes
+    ax.set_xticks(x_groups)
+    ax.set_xticklabels([zone_labels_map[z] for z in zone_order],
+                       fontsize=FONTSIZE_SMALL)
+    ax.set_ylabel('Event duration (days)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.1)
+    ax.grid(True, axis='y', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    ax.text(-0.08, 1.02, panel_label, transform=ax.transAxes,
+            fontsize=14, va='bottom', ha='right')
+
+
+def add_bar_chart_legend(fig):
+    """
+    Add comprehensive shared legend for all figure elements.
+
+    Includes:
+    - KDE drought zone colors (Panel A)
+    - Mean/1964 lines (Panel A)
+    - Dataset colors (Panels B1/B2)
+    - Percentile shading (Panels B1/B2)
+    """
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+
+    legend_elements = []
+
+    # Row 1: KDE drought zone lines (Panel A)
+    legend_elements.append(Line2D([0], [0], color=DROUGHT_CATEGORIES['emergency']['color'],
+                                   linewidth=2.5, label='Emergency'))
+    legend_elements.append(Line2D([0], [0], color=DROUGHT_CATEGORIES['watch']['color'],
+                                   linewidth=2.5, label='Watch'))
+    legend_elements.append(Line2D([0], [0], color=DROUGHT_CATEGORIES['warning']['color'],
+                                   linewidth=2.5, label='Warning'))
+    legend_elements.append(Line2D([0], [0], color=DROUGHT_CATEGORIES['other']['color'],
+                                   linewidth=2.5, label='Normal'))
+
+    # Row 2: Special lines (Panel A)
+    legend_elements.append(Line2D([0], [0], color='gray', linestyle='--',
+                                   linewidth=1.5, label='Mean'))
+    legend_elements.append(Line2D([0], [0], color='black', linestyle='-',
+                                   linewidth=2.5, label='1964 Drought'))
+
+    # Row 3: Dataset patches (Panels B1/B2 bar charts)
+    dataset_colors = {
+        'Stationary': '#2E86AB',
+        'Climate Low': '#A23B72',
+        'Climate High': '#F18F01',
+    }
+    for name, color in dataset_colors.items():
+        legend_elements.append(Patch(facecolor=color, edgecolor='white',
+                                      linewidth=0.5, label=name))
+
+    # Row 4: Percentile shading (Panels B1/B2 bar charts)
+    gray_base = (0.5, 0.5, 0.5)
+    legend_elements.append(Patch(facecolor=tuple(c * 0.5 for c in gray_base),
+                                  edgecolor='white', linewidth=0.5,
+                                  label='p5 (dark)'))
+    legend_elements.append(Patch(facecolor=tuple(c * 0.75 for c in gray_base),
+                                  edgecolor='white', linewidth=0.5,
+                                  label='p50 (med)'))
+    legend_elements.append(Patch(facecolor=gray_base,
+                                  edgecolor='white', linewidth=0.5,
+                                  label='p95 (light)'))
+
+    # Add legend at bottom center with simple styling
+    fig.legend(handles=legend_elements, loc='lower center',
+               ncol=6, fontsize=FONTSIZE_SMALL - 1,
+               frameon=True, framealpha=1.0, edgecolor='black',
+               fancybox=False,
+               bbox_to_anchor=(0.5, -0.01))
+
+
+def plot_scatter_panel_simple(ax, metrics_df, dataset_id, ffmp_lines,
+                              x_key, x_label, panel_label,
+                              vmin=None, vmax=None, show_xlabel=True):
+    """
+    Plot scatter panel for a single dataset (for C1-C3).
+
+    Similar to plot_panel_B but simplified for bottom row.
+    """
+    df = metrics_df.dropna(subset=[x_key, 'min_storage_pct', 'worst_1mo_demand_sat'])
+    if len(df) == 0:
+        ax.text(0.5, 0.5, 'No data', transform=ax.transAxes, ha='center')
+        return None
+
+    x = df[x_key].values
+    y = df['min_storage_pct'].values
+    c = df['worst_1mo_demand_sat'].values
+
+    if vmin is None:
+        vmin = np.nanpercentile(c, 5)
+    if vmax is None:
+        vmax = np.nanpercentile(c, 95)
+
+    sc = ax.scatter(x, y, c=c, cmap='viridis', s=8, alpha=0.4,
+                    edgecolors='none', vmin=vmin, vmax=vmax, rasterized=True)
+
+    # Regression line
+    valid = np.isfinite(x) & np.isfinite(y)
+    if valid.sum() > 10:
+        z = np.polyfit(x[valid], y[valid], 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(np.nanmin(x), np.nanmax(x), 100)
+        ax.plot(x_line, p(x_line), 'k--', linewidth=1.2, alpha=0.6)
+        r = np.corrcoef(x[valid], y[valid])[0, 1]
+        ax.text(0.05, 0.95, f'r = {r:.2f}', transform=ax.transAxes,
+                fontsize=FONTSIZE_SMALL, va='top')
+
+    # FFMP zone median lines
+    for line_info in ffmp_lines:
+        ax.axhline(line_info['median'], color=line_info['color'],
+                   linestyle='--', linewidth=0.8, alpha=0.6)
+
+    ax.set_ylim(0, 100)
+    ax.set_ylabel('Min NYC storage (%)', fontsize=FONTSIZE_SMALL)
+    if show_xlabel:
+        ax.set_xlabel(x_label, fontsize=FONTSIZE_SMALL)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    ax.tick_params(labelsize=FONTSIZE_SMALL-1)
+
+    # Panel label and title
+    ax.text(-0.12, 1.02, panel_label, transform=ax.transAxes,
+            fontsize=12, va='bottom', ha='right')
+    ax.set_title(DATASET_LABELS.get(dataset_id, dataset_id),
+                 fontsize=FONTSIZE_SMALL, pad=3)
+
+    return sc
 
 
 # ============================================================================
@@ -464,6 +774,123 @@ def create_shared_legend(ax_legend, kde_handles, kde_labels):
 # MAIN
 # ============================================================================
 
+def create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low, metrics_high,
+                       ffmp_lines, ds_vmin, ds_vmax):
+    """
+    Create full figure with all panels (A, B1, B2, C1, C2, C3).
+
+    Layout:
+      Top row: A (KDE) | B1/B2 (frequency and duration bar charts)
+      Bottom row: C1, C2, C3 (scatter plots)
+    """
+    x_key = 'contribution_ratio'
+    x_label = f'NYC contribution / inflow\n({n_mo}-mo prior, %)'
+
+    fig = plt.figure(figsize=(14, 10))
+    gs = fig.add_gridspec(
+        3, 4,
+        height_ratios=[1.2, 1.2, 1],
+        width_ratios=[1, 1, 0.8, 0.8],
+        hspace=0.35, wspace=0.35,
+        left=0.08, right=0.95, top=0.95, bottom=0.12,  # Increased bottom margin for legend
+    )
+
+    # Top row
+    ax_A = fig.add_subplot(gs[0:2, 0:2])  # KDE spans left
+    ax_B1 = fig.add_subplot(gs[0, 2:4])    # Frequency bar chart (top right)
+    ax_B2 = fig.add_subplot(gs[1, 2:4])    # Duration bar chart (bottom right)
+
+    # Bottom row - scatter plots
+    ax_C1 = fig.add_subplot(gs[2, 0])
+    ax_C2 = fig.add_subplot(gs[2, 1])
+    ax_C3 = fig.add_subplot(gs[2, 2])
+
+    # Panel A: KDE
+    kde_handles, kde_labels = plot_panel_A(ax_A, all_categorized['stationary_ensemble'],
+                                           n_months_prior=n_mo)
+
+    # Panel B1: Frequency bar chart
+    plot_frequency_bar_chart_stacked(ax_B1, panel_label='b)')
+
+    # Panel B2: Duration bar chart
+    plot_duration_bar_chart_stacked(ax_B2, panel_label='c)')
+
+    # Panel C1-C3: Scatter plots
+    metrics_dict = {
+        'stationary_ensemble': metrics_stat,
+        'climate_adjusted_low': metrics_low,
+        'climate_adjusted_high': metrics_high,
+    }
+    panel_labels = ['d)', 'e)', 'f)']
+
+    scatter_axes = [ax_C1, ax_C2, ax_C3]
+    scatter_objs = []
+
+    for idx, (ax_c, dataset_id) in enumerate(zip(scatter_axes, SCENARIOS)):
+        sc = plot_scatter_panel_simple(
+            ax_c, metrics_dict[dataset_id], dataset_id, ffmp_lines,
+            x_key, x_label, panel_labels[idx],
+            vmin=ds_vmin, vmax=ds_vmax,
+            show_xlabel=(idx == 1)  # Only middle plot shows xlabel
+        )
+        scatter_objs.append(sc)
+
+    # Sync x-limits across C1-C3
+    xlim_lo = min(ax.get_xlim()[0] for ax in scatter_axes)
+    xlim_hi = max(ax.get_xlim()[1] for ax in scatter_axes)
+    for ax in scatter_axes:
+        ax.set_xlim(xlim_lo, xlim_hi)
+
+    # Shared colorbar for scatter plots
+    sc_ref = next((s for s in scatter_objs if s is not None), None)
+    if sc_ref is not None:
+        cbar_ax = fig.add_axes([0.08, 0.02, 0.5, 0.015])
+        cbar = fig.colorbar(sc_ref, cax=cbar_ax, orientation='horizontal')
+        cbar.set_label('Worst 1-mo demand satisfaction (%)', fontsize=FONTSIZE_SMALL)
+        cbar.ax.tick_params(labelsize=FONTSIZE_SMALL-1)
+
+    # Shared legend for bar charts (datasets + percentiles)
+    # Position it between the bar charts and scatter plots
+    add_bar_chart_legend(fig)
+
+    return fig
+
+
+def create_figure_simplified(n_mo, all_categorized):
+    """
+    Create simplified figure with only A, B1, B2.
+
+    Layout:
+      A (KDE) | B1/B2 (frequency and duration bar charts)
+    """
+    fig = plt.figure(figsize=(12, 6))
+    gs = fig.add_gridspec(
+        2, 2,
+        height_ratios=[1, 1],
+        width_ratios=[1.5, 1],
+        hspace=0.25, wspace=0.35,
+        left=0.10, right=0.95, top=0.92, bottom=0.18,  # Increased bottom margin for legend
+    )
+
+    ax_A = fig.add_subplot(gs[0:2, 0])   # KDE spans left column
+    ax_B1 = fig.add_subplot(gs[0, 1])    # Frequency bar chart (top right)
+    ax_B2 = fig.add_subplot(gs[1, 1])    # Duration bar chart (bottom right)
+
+    # Panel A: KDE
+    plot_panel_A(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
+
+    # Panel B1: Frequency bar chart
+    plot_frequency_bar_chart_stacked(ax_B1, panel_label='b)')
+
+    # Panel B2: Duration bar chart
+    plot_duration_bar_chart_stacked(ax_B2, panel_label='c)')
+
+    # Shared legend for bar charts (datasets + percentiles)
+    add_bar_chart_legend(fig)
+
+    return fig
+
+
 def main():
     apply_publication_style()
     plt.rcParams.update({
@@ -475,7 +902,8 @@ def main():
         'legend.fontsize': 11,
     })
 
-    print("F3: Composite drought contribution figure")
+    print("F3 v2: Composite drought contribution figure")
+    print("=" * 70)
 
     # Try loading pre-computed metrics first (FAST PATH)
     use_cached = True
@@ -497,8 +925,10 @@ def main():
 
     ffmp_lines = get_ffmp_zone_medians()
 
-    # Generate one figure per window length
+    # Generate figures for each window length
     for n_mo in WINDOW_MONTHS:
+        print(f"\nProcessing {n_mo}-month window...")
+
         # Set F4 module variable so Panel A KDE + 1964 line use same window
         F4_module.N_MONTHS_PRIOR = n_mo
 
@@ -526,83 +956,54 @@ def main():
                 }
                 all_categorized[scenario] = categorize_by_zone(window_df, zone_categories)
 
+            metrics_stat = get_metrics_for_window(metrics_cache['stationary_ensemble'], window_days)
             metrics_low = get_metrics_for_window(metrics_cache['climate_adjusted_low'], window_days)
             metrics_high = get_metrics_for_window(metrics_cache['climate_adjusted_high'], window_days)
+            metrics_stat = metrics_stat.rename(columns=column_rename_map)
             metrics_low = metrics_low.rename(columns=column_rename_map)
             metrics_high = metrics_high.rename(columns=column_rename_map)
 
         else:
             # FALLBACK: Original calculation
             all_categorized = categorize_all_scenarios(all_data, n_mo)
+            metrics_stat = calculate_drought_metrics_per_year(
+                all_data['stationary_ensemble'], 'stationary_ensemble', n_months_prior=n_mo)
             metrics_low = calculate_drought_metrics_per_year(
                 all_data['climate_adjusted_low'], 'climate_adjusted_low', n_months_prior=n_mo)
             metrics_high = calculate_drought_metrics_per_year(
                 all_data['climate_adjusted_high'], 'climate_adjusted_high', n_months_prior=n_mo)
 
-        # Common color range for worst 1-month demand satisfaction across both scenarios
-        all_ds = pd.concat([metrics_low['worst_1mo_demand_sat'], metrics_high['worst_1mo_demand_sat']]).dropna()
+        # Common color range for worst 1-month demand satisfaction across all scenarios
+        all_ds = pd.concat([
+            metrics_stat['worst_1mo_demand_sat'],
+            metrics_low['worst_1mo_demand_sat'],
+            metrics_high['worst_1mo_demand_sat']
+        ]).dropna()
         ds_vmin = np.nanpercentile(all_ds, 5)
         ds_vmax = np.nanpercentile(all_ds, 95)
 
-        x_key = 'contribution_ratio'
-        x_label = f'NYC contribution / inflow\n({n_mo}-mo prior, %)'
         suffix = f'contribution_ratio_{n_mo}mo'
 
-        fig = plt.figure(figsize=(14, 12))
-        gs = fig.add_gridspec(
-            3, 2,
-            height_ratios=[1, 1, 0.8],
-            width_ratios=[1.2, 1],
-            hspace=0.30, wspace=0.30,
-            left=0.08, right=0.92, top=0.95, bottom=0.06,
-        )
+        # Generate full version
+        print(f"  Creating full version (A + B1 + B2 + C1 + C2 + C3)...")
+        fig_full = create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low,
+                                      metrics_high, ffmp_lines, ds_vmin, ds_vmax)
+        fname_full = f"{FIG_OUTPUT_DIR}/F3_composite_full_{suffix}.png"
+        fig_full.savefig(fname_full, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"    Saved: {fname_full}")
+        plt.close(fig_full)
 
-        ax_A = fig.add_subplot(gs[0:2, 0])
-        ax_B1 = fig.add_subplot(gs[0, 1])   # climate_adjusted_low (top)
-        ax_B2 = fig.add_subplot(gs[1, 1])   # climate_adjusted_high (bottom)
-        ax_C = fig.add_subplot(gs[2, 0])
-        ax_legend = fig.add_subplot(gs[2, 1])
+        # Generate simplified version
+        print(f"  Creating simplified version (A + B1 + B2 only)...")
+        fig_simple = create_figure_simplified(n_mo, all_categorized)
+        fname_simple = f"{FIG_OUTPUT_DIR}/F3_composite_simplified_{suffix}.png"
+        fig_simple.savefig(fname_simple, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"    Saved: {fname_simple}")
+        plt.close(fig_simple)
 
-        # Panel A
-        kde_handles, kde_labels = plot_panel_A(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
-
-        # Panel B1 (climate_adjusted_low - top)
-        sc1 = plot_panel_B(ax_B1, metrics_low, ffmp_lines,
-                           x_key, x_label, vmin=ds_vmin, vmax=ds_vmax,
-                           panel_label='b)', show_xlabel=False)
-
-        # Panel B2 (climate_adjusted_high - bottom)
-        sc2 = plot_panel_B(ax_B2, metrics_high, ffmp_lines,
-                           x_key, x_label, vmin=ds_vmin, vmax=ds_vmax,
-                           panel_label='c)', show_xlabel=True)
-
-        # Sync x-limits across B1/B2 and suppress B1 x-tick labels
-        xlim_lo = min(ax_B1.get_xlim()[0], ax_B2.get_xlim()[0])
-        xlim_hi = max(ax_B1.get_xlim()[1], ax_B2.get_xlim()[1])
-        xlim_lo = 0.0
-        ax_B1.set_xlim(xlim_lo, xlim_hi)
-        ax_B2.set_xlim(xlim_lo, xlim_hi)
-        ax_B1.set_xticklabels([])
-
-        # Shared colorbar for B1/B2
-        sc_ref = sc1 if sc1 is not None else sc2
-        if sc_ref is not None:
-            cbar = fig.colorbar(sc_ref, ax=[ax_B1, ax_B2], shrink=0.6,
-                                pad=0.03, aspect=30)
-            cbar.set_label('Worst 1-mo demand satisfaction (%)', fontsize=FONTSIZE_LABEL)
-            cbar.ax.tick_params(labelsize=FONTSIZE_MEDIUM)
-
-        # Panel C
-        plot_panel_C(ax_C)
-
-        # Shared legend
-        create_shared_legend(ax_legend, kde_handles, kde_labels)
-
-        # Save
-        fname_base = f"{FIG_OUTPUT_DIR}/F3_drought_contribution_composite_{suffix}"
-        fig.savefig(f"{fname_base}.png", dpi=DPI_HIGH, bbox_inches='tight')
-        print(f"Saved: {fname_base}.png")
-        plt.close(fig)
+    print("\n" + "=" * 70)
+    print("All F3 figures generated successfully!")
+    print("=" * 70)
 
 
 if __name__ == '__main__':
