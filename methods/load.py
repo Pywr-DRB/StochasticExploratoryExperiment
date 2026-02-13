@@ -541,11 +541,8 @@ def compute_event_exceedances(df, metric='severity', n_years=70):
     """
     Compute exceedance rates for each drought event across the entire ensemble.
 
-    For each event, computes the average exceedance rate across all realizations:
-    how many events per realization have metric >= this event's value.
-
-    This matches F2's approach: compute per-realization exceedance curves,
-    then take the median across realizations.
+    For each event, computes how many events across ALL realizations have
+    metric >= this event's value, normalized by total ensemble-years.
 
     Parameters
     ----------
@@ -559,7 +556,7 @@ def compute_event_exceedances(df, metric='severity', n_years=70):
     Returns
     -------
     exceedances : np.ndarray
-        Median exceedance rate across all realizations for each event (events per year)
+        Exceedance rate for each event across entire ensemble (events per year)
 
     Examples
     --------
@@ -571,29 +568,22 @@ def compute_event_exceedances(df, metric='severity', n_years=70):
     >>> best_idx = np.argmin(np.abs(exceedances - target))
     >>> selected_event = df.loc[best_idx]
     """
-    exceedances = np.zeros(len(df))
+    # Total years across all realizations
+    n_realizations = df['realization_id'].nunique()
+    total_years = n_years * n_realizations
 
-    # Get all unique realizations
-    realization_ids = sorted(df['realization_id'].unique())
-    n_realizations = len(realization_ids)
+    # Get all metric values across entire ensemble
+    all_values = df[metric].values
+
+    exceedances = np.zeros(len(df))
 
     for idx, row in df.iterrows():
         val = row[metric]
 
-        # Compute exceedance rate for each realization
-        realization_exceedances = []
-        for rid in realization_ids:
-            # Get all events from this realization
-            realization_events = df[df['realization_id'] == rid]
+        # Count how many events across ALL realizations have metric >= this value
+        n_exceedances = np.sum(all_values >= val)
 
-            # Count events with metric >= this value
-            n_exceedances = np.sum(realization_events[metric].values >= val)
-
-            # Normalize by years
-            exceedance_rate = n_exceedances / n_years
-            realization_exceedances.append(exceedance_rate)
-
-        # Take median across all realizations (consistent with F2)
-        exceedances[idx] = np.median(realization_exceedances)
+        # Normalize by total ensemble-years
+        exceedances[idx] = n_exceedances / total_years
 
     return exceedances
