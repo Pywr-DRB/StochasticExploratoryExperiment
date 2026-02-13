@@ -29,10 +29,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY, N_YEARS
+from methods.config import FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY
 from methods.plotting.styles import (
     DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_LABEL,
+    DATASET_COLORS, DATASET_LABELS,
 )
+from methods.load import load_drought_events, compute_event_exceedances
 
 # ============================================================================
 # CONFIGURATION
@@ -41,10 +43,8 @@ from methods.plotting.styles import (
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F12_drought_comparison"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-SATISFICING_DATA_DIR = "./pywrdrb/satisficing_analysis"
-DROUGHT_METRICS_DIR = "./pywrdrb/drought_metrics"
 SSI_WINDOW = 3  # Editable: 3, 6, or 12
-DATASET_ID = 'stationary_ensemble'
+DATASET_ID = 'stationary_ensemble'  # Used for loading timeseries data
 
 # Buffer days before/after drought period
 BUFFER_DAYS = 90
@@ -55,96 +55,8 @@ COLOR_THRESHOLD = 'black'
 
 
 # ============================================================================
-# DATA LOADING
+# EVENT SELECTION
 # ============================================================================
-
-def load_drought_data_with_satisficing():
-    """
-    Load drought events with correct simulation dates and merge with satisficing.
-
-    The drought_events.csv has actual simulation dates (2030-2099).
-    The years_with_droughts.csv has satisficing outcomes by year.
-    We merge them to get drought events with satisficing info.
-    """
-    # Load drought events (has correct simulation dates)
-    events_fname = f"{DROUGHT_METRICS_DIR}/{DATASET_ID}_ssi{SSI_WINDOW}_drought_events.csv"
-    events_df = pd.read_csv(events_fname)
-    events_df['start'] = pd.to_datetime(events_df['start'])
-    events_df['end'] = pd.to_datetime(events_df['end'])
-    events_df['start_year'] = events_df['start'].dt.year
-
-    # Load satisficing data (by year)
-    satisficing_fname = f"{SATISFICING_DATA_DIR}/{DATASET_ID}_ssi{SSI_WINDOW}_years_with_droughts.csv"
-    satisficing_df = pd.read_csv(satisficing_fname)
-
-    # Rename columns for merge
-    if 'realization' in satisficing_df.columns:
-        satisficing_df = satisficing_df.rename(columns={'realization': 'realization_id'})
-
-    # Merge on year and realization
-    merged = events_df.merge(
-        satisficing_df[['year', 'realization_id', 'min_storage_pct', 'max_violation_days', 'satisficing']],
-        left_on=['start_year', 'realization_id'],
-        right_on=['year', 'realization_id'],
-        how='left'
-    )
-
-    # Drop rows without satisficing data
-    merged = merged.dropna(subset=['min_storage_pct'])
-
-    # Add satisficing category
-    merged['storage_pass'] = merged['min_storage_pct'] >= STORAGE_THRESHOLD
-    merged['montague_pass'] = merged['max_violation_days'] <= 3  # 3 days threshold
-
-    # convert magnitude and severity to abs val
-    merged['severity'] = np.abs(merged['severity'])
-    merged['magnitude'] = np.abs(merged['magnitude'])
-
-    print(f"  Loaded {len(merged)} drought events with satisficing data")
-    print(f"  Date range: {merged['start'].min()} to {merged['end'].max()}")
-    print(f"  Satisficing pass: {merged['satisficing'].sum()}, fail: {(~merged['satisficing']).sum()}")
-
-    return merged
-
-
-def compute_event_exceedances(df, metric='severity', n_years=N_YEARS):
-    """
-    Compute exceedance rates for each drought event in a dataset.
-
-    For each realization, computes how many events have metric >= this event's value,
-    then divides by n_years to get exceedance rate.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Drought events with 'realization_id' and metric columns
-    metric : str
-        Metric to use for exceedance calculation (e.g., 'severity', 'magnitude')
-    n_years : int
-        Number of years per realization for normalization
-
-    Returns
-    -------
-    exceedances : np.ndarray
-        Exceedance rate for each event in df
-    """
-    exceedances = np.zeros(len(df))
-
-    for idx, row in df.iterrows():
-        rid = row['realization_id']
-        val = row[metric]
-
-        # Get all events from this realization
-        realization_events = df[df['realization_id'] == rid]
-
-        # Count events with metric >= this value
-        n_exceedances = np.sum(realization_events[metric].values >= val)
-
-        # Normalize by years
-        exceedances[idx] = n_exceedances / n_years
-
-    return exceedances
-
 
 def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severity',
                                 ssi_window=SSI_WINDOW):
@@ -169,16 +81,9 @@ def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severi
     selected_event : pd.Series
         The drought event closest to the target exceedance
     """
-    # Load drought events for this dataset
-    events_fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-    df = pd.read_csv(events_fname)
-    df['start'] = pd.to_datetime(df['start'])
-    df['end'] = pd.to_datetime(df['end'])
-    
-    # convert severity & magnitude to abs val
-    df['severity'] = np.abs(df['severity'])
-    df['magnitude'] = np.abs(df['magnitude'])
-    
+    # Load drought events using centralized function
+    df = load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=False)
+
     # Compute exceedances for all events
     exceedances = compute_event_exceedances(df, metric=metric)
 
@@ -202,14 +107,33 @@ def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severi
 def load_drought_timeseries(realization_id, start_date, end_date):
     """
     Load timeseries data for a drought period from HDF5.
+
+    Parameters
+    ----------
+    realization_id : int
+        Realization ID to load
+    start_date : pd.Timestamp or str
+        Start date of drought event
+    end_date : pd.Timestamp or str
+        End date of drought event
+
+    Returns
+    -------
+    dict
+        Dictionary with timeseries data for the drought period
     """
     fname = f'./pywrdrb/outputs/{DATASET_ID}_with_postprocessing.hdf5'
 
+    # Only load the specific realization needed (much faster!)
     data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=[
-        'res_storage', 'major_flow', 'contribution', 'shortage',
-        'ibt_diversions', 'ibt_demands'
-    ])
+    data.load_from_export(
+        fname,
+        results_sets=[
+            'res_storage', 'major_flow', 'contribution', 'shortage',
+            'ibt_diversions', 'ibt_demands'
+        ],
+        realizations=[realization_id]
+    )
 
     r = realization_id
 
@@ -282,37 +206,6 @@ def calculate_satisfaction_pct(shortage_series):
     is_satisfied = (shortage_series == 0).astype(int)
     satisfaction_pct = is_satisfied.rolling(window=3, min_periods=1).mean() * 100
     return satisfaction_pct
-
-
-def create_yearless_month_axis(dates):
-    """
-    Convert datetime index to year-agnostic month positions.
-
-    Returns positions (0-based from first month) and month labels.
-    """
-    if len(dates) == 0:
-        return np.array([]), []
-
-    # Get the first date to establish reference
-    first_date = dates[0]
-    first_month = first_date.month
-    first_year = first_date.year
-
-    # Calculate position for each date (months from start)
-    positions = []
-    for date in dates:
-        years_diff = date.year - first_year
-        months_diff = date.month - first_month
-        position = years_diff * 12 + months_diff
-        positions.append(position)
-
-    positions = np.array(positions) / 30.0  # Convert to approximate months (using days)
-
-    # Create month labels
-    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-    return positions, month_names
 
 
 # ============================================================================
@@ -490,18 +383,8 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity'):
     metric : str
         Metric to use for exceedance selection (default: 'severity')
     """
-    # Define datasets and colors
+    # Define datasets - use only the three available datasets
     datasets = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
-    dataset_labels = {
-        'stationary_ensemble': 'Stationary',
-        'climate_adjusted_low': 'Climate Low',
-        'climate_adjusted_high': 'Climate High'
-    }
-    colors = {
-        'stationary_ensemble': '#009E73',  # Green
-        'climate_adjusted_low': '#D55E00',  # Orange
-        'climate_adjusted_high': '#0072B2'   # Blue
-    }
 
     print(f"\n{'=' * 70}")
     print(f"Selecting events at {target_exceedance} exceedance rate")
@@ -529,18 +412,22 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity'):
             event['start'],
             event['end']
         )
-        datasets_dict[dataset_labels[dataset_id]] = data
+        # Use standardized label from styles.py
+        label = DATASET_LABELS[dataset_id]
+        datasets_dict[label] = data
 
     # Create figure with 3 panels (vertical stack)
     print("\nCreating figure...")
     fig, axes = plt.subplots(3, 1, figsize=(10, 10))
 
     # Plot using the reusable function
-    labels = [dataset_labels[d] for d in datasets]
+    labels = [DATASET_LABELS[d] for d in datasets]
+    colors_dict = {DATASET_LABELS[d]: DATASET_COLORS[d] for d in datasets}
+
     plot_three_panel_timeseries(
         axes,
         datasets_dict,
-        colors={dataset_labels[d]: colors[d] for d in datasets},
+        colors=colors_dict,
         labels=labels
     )
 

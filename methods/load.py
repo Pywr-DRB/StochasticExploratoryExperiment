@@ -535,3 +535,55 @@ def load_satisficing_results(dataset_id, ssi_window):
         results[condition] = pd.read_csv(fname)
 
     return results
+
+
+def compute_event_exceedances(df, metric='severity', n_years=70):
+    """
+    Compute exceedance rates for each drought event in a dataset.
+
+    For each realization, computes how many events have metric >= this event's value,
+    then divides by n_years to get exceedance rate.
+
+    This is the same calculation as used in F2_plot_drought_metric_distribution.py
+    for computing exceedance-rate curves.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Drought events with 'realization_id' and metric columns
+    metric : str
+        Metric to use for exceedance calculation (e.g., 'severity', 'magnitude')
+    n_years : int
+        Number of years per realization for normalization (default: 70)
+
+    Returns
+    -------
+    exceedances : np.ndarray
+        Exceedance rate for each event in df (events per year)
+
+    Examples
+    --------
+    >>> from methods.load import load_drought_events, compute_event_exceedances
+    >>> df = load_drought_events('stationary_ensemble', ssi_window=3)
+    >>> exceedances = compute_event_exceedances(df, metric='severity')
+    >>> # Select events at 0.1 yr^-1 exceedance rate
+    >>> target = 0.1
+    >>> best_idx = np.argmin(np.abs(exceedances - target))
+    >>> selected_event = df.loc[best_idx]
+    """
+    exceedances = np.zeros(len(df))
+
+    for idx, row in df.iterrows():
+        rid = row['realization_id']
+        val = row[metric]
+
+        # Get all events from this realization
+        realization_events = df[df['realization_id'] == rid]
+
+        # Count events with metric >= this value
+        n_exceedances = np.sum(realization_events[metric].values >= val)
+
+        # Normalize by years
+        exceedances[idx] = n_exceedances / n_years
+
+    return exceedances
