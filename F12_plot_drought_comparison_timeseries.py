@@ -59,22 +59,29 @@ COLOR_THRESHOLD = 'black'
 # ============================================================================
 
 def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severity',
-                                ssi_window=SSI_WINDOW, target_month=None, month_tolerance=1):
+                                ssi_window=SSI_WINDOW, target_month=None, month_tolerance=1,
+                                severity_exceedance=None, magnitude_exceedance=None,
+                                exceedance_tolerance=0.05):
     """
-    Select a drought event from a dataset based on target exceedance rate.
+    Select a drought event from a dataset based on target exceedance rate(s).
 
-    Finds the event whose exceedance rate is closest to the target.
+    Can filter on single metric OR both severity and magnitude exceedances independently.
     If target_month is specified, only considers events starting within
     +/- month_tolerance months of that target.
+
+    Note: When using dual-metric selection (severity_exceedance + magnitude_exceedance),
+    this finds events that are independently rare in BOTH dimensions. This is NOT the
+    same as joint exceedance, but is appropriate for finding balanced, comparable events
+    across ensembles.
 
     Parameters
     ----------
     dataset_id : str
         Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
-    target_exceedance : float
-        Target exceedance rate (events per year)
-    metric : str
-        Metric to use for exceedance calculation (default: 'severity')
+    target_exceedance : float, optional
+        Target exceedance rate for single metric selection (events per year)
+    metric : str, optional
+        Metric to use for single-metric exceedance calculation (default: 'severity')
     ssi_window : int
         SSI window to use
     target_month : int, optional
@@ -82,54 +89,129 @@ def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severi
         +/- month_tolerance months are considered.
     month_tolerance : int, optional
         Allowable deviation from target_month (default: 1)
+    severity_exceedance : float, optional
+        Target severity exceedance rate. If specified (along with magnitude_exceedance),
+        uses dual-metric selection instead of single metric.
+    magnitude_exceedance : float, optional
+        Target magnitude exceedance rate. Must be used with severity_exceedance.
+    exceedance_tolerance : float, optional
+        Tolerance for dual-metric selection (default: 0.05 yr^-1)
 
     Returns
     -------
     selected_event : pd.Series
-        The drought event closest to the target exceedance
+        The drought event closest to the target exceedance(s)
     """
     # Load drought events using centralized function
     df = load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=False)
 
-    # Compute exceedances for all events
-    exceedances = compute_event_exceedances(df, metric=metric)
+    # Decide on selection mode: dual-metric or single-metric
+    dual_metric = (severity_exceedance is not None and magnitude_exceedance is not None)
 
-    # Add exceedances to dataframe for filtering
-    df['exceedance'] = exceedances
+    if dual_metric:
+        # ===================================================================
+        # DUAL-METRIC SELECTION (severity AND magnitude exceedances)
+        # ===================================================================
+        print(f"  Using dual-metric selection (severity + magnitude)")
 
-    # Filter by month if specified
-    if target_month is not None:
-        df['start_month'] = df['start'].dt.month
+        # Compute exceedances for both metrics
+        severity_exc = compute_event_exceedances(df, metric='severity')
+        magnitude_exc = compute_event_exceedances(df, metric='magnitude')
 
-        # Handle wraparound (e.g., target=1, tolerance=1 should include 12, 1, 2)
-        valid_months = []
-        for offset in range(-month_tolerance, month_tolerance + 1):
-            month = ((target_month - 1 + offset) % 12) + 1
-            valid_months.append(month)
+        df['severity_exceedance'] = severity_exc
+        df['magnitude_exceedance'] = magnitude_exc
 
-        df_filtered = df[df['start_month'].isin(valid_months)].copy()
+        # Filter by month if specified
+        if target_month is not None:
+            df['start_month'] = df['start'].dt.month
+            valid_months = []
+            for offset in range(-month_tolerance, month_tolerance + 1):
+                month = ((target_month - 1 + offset) % 12) + 1
+                valid_months.append(month)
+            df_filtered = df[df['start_month'].isin(valid_months)].copy()
 
-        if len(df_filtered) == 0:
-            print(f"  WARNING: No events found starting in month {target_month} +/- {month_tolerance}")
-            print(f"  Falling back to all events")
+            if len(df_filtered) == 0:
+                print(f"  WARNING: No events found starting in month {target_month} +/- {month_tolerance}")
+                print(f"  Falling back to all events")
+                df_filtered = df
+        else:
             df_filtered = df
+
+        # Filter events within tolerance of BOTH targets
+        severity_match = np.abs(df_filtered['severity_exceedance'] - severity_exceedance) <= exceedance_tolerance
+        magnitude_match = np.abs(df_filtered['magnitude_exceedance'] - magnitude_exceedance) <= exceedance_tolerance
+
+        df_candidates = df_filtered[severity_match & magnitude_match].copy()
+
+        if len(df_candidates) == 0:
+            print(f"  WARNING: No events within tolerance {exceedance_tolerance:.3f}. Relaxing...")
+            # Relax tolerance
+            severity_match = np.abs(df_filtered['severity_exceedance'] - severity_exceedance) <= exceedance_tolerance * 2
+            magnitude_match = np.abs(df_filtered['magnitude_exceedance'] - magnitude_exceedance) <= exceedance_tolerance * 2
+            df_candidates = df_filtered[severity_match & magnitude_match].copy()
+
+            if len(df_candidates) == 0:
+                print(f"  ERROR: Still no matches. Using best available event.")
+                df_candidates = df_filtered
+
+        # Among candidates, find event with minimum combined error
+        severity_error = np.abs(df_candidates['severity_exceedance'] - severity_exceedance)
+        magnitude_error = np.abs(df_candidates['magnitude_exceedance'] - magnitude_exceedance)
+        combined_error = severity_error + magnitude_error
+
+        best_idx = df_candidates.index[np.argmin(combined_error)]
+        selected_event = df_candidates.loc[best_idx]
+
+        print(f"  Dataset: {dataset_id}")
+        print(f"  Target severity exceedance: {severity_exceedance:.3f} yr^-1")
+        print(f"  Selected severity exceedance: {selected_event['severity_exceedance']:.3f} yr^-1")
+        print(f"  Target magnitude exceedance: {magnitude_exceedance:.3f} yr^-1")
+        print(f"  Selected magnitude exceedance: {selected_event['magnitude_exceedance']:.3f} yr^-1")
+        print(f"  Event severity: {selected_event['severity']:.2f}")
+        print(f"  Event magnitude: {selected_event['magnitude']:.2f}")
+        print(f"  Event: {selected_event['start'].strftime('%Y-%m-%d')} to {selected_event['end'].strftime('%Y-%m-%d')}")
+        print(f"  Start month: {selected_event['start'].month}")
+        print(f"  Realization: {int(selected_event['realization_id'])}")
+
     else:
-        df_filtered = df
+        # ===================================================================
+        # SINGLE-METRIC SELECTION (original behavior)
+        # ===================================================================
+        # Compute exceedances for specified metric
+        exceedances = compute_event_exceedances(df, metric=metric)
+        df['exceedance'] = exceedances
 
-    # Find event closest to target exceedance
-    differences = np.abs(df_filtered['exceedance'] - target_exceedance)
-    best_idx = df_filtered.index[np.argmin(differences)]
-    selected_event = df_filtered.loc[best_idx]
-    actual_exceedance = selected_event['exceedance']
+        # Filter by month if specified
+        if target_month is not None:
+            df['start_month'] = df['start'].dt.month
+            valid_months = []
+            for offset in range(-month_tolerance, month_tolerance + 1):
+                month = ((target_month - 1 + offset) % 12) + 1
+                valid_months.append(month)
 
-    print(f"  Dataset: {dataset_id}")
-    print(f"  Target exceedance: {target_exceedance:.3f} yr^-1")
-    print(f"  Selected event exceedance: {actual_exceedance:.3f} yr^-1")
-    print(f"  Event severity: {selected_event['severity']:.2f}")
-    print(f"  Event magnitude: {selected_event['magnitude']:.2f}")
-    print(f"  Event: {selected_event['start'].strftime('%Y-%m-%d')} to {selected_event['end'].strftime('%Y-%m-%d')}")
-    print(f"  Start month: {selected_event['start'].month}")
-    print(f"  Realization: {int(selected_event['realization_id'])}")
+            df_filtered = df[df['start_month'].isin(valid_months)].copy()
+
+            if len(df_filtered) == 0:
+                print(f"  WARNING: No events found starting in month {target_month} +/- {month_tolerance}")
+                print(f"  Falling back to all events")
+                df_filtered = df
+        else:
+            df_filtered = df
+
+        # Find event closest to target exceedance
+        differences = np.abs(df_filtered['exceedance'] - target_exceedance)
+        best_idx = df_filtered.index[np.argmin(differences)]
+        selected_event = df_filtered.loc[best_idx]
+        actual_exceedance = selected_event['exceedance']
+
+        print(f"  Dataset: {dataset_id}")
+        print(f"  Target exceedance: {target_exceedance:.3f} yr^-1")
+        print(f"  Selected event exceedance: {actual_exceedance:.3f} yr^-1")
+        print(f"  Event severity: {selected_event['severity']:.2f}")
+        print(f"  Event magnitude: {selected_event['magnitude']:.2f}")
+        print(f"  Event: {selected_event['start'].strftime('%Y-%m-%d')} to {selected_event['end'].strftime('%Y-%m-%d')}")
+        print(f"  Start month: {selected_event['start'].month}")
+        print(f"  Realization: {int(selected_event['realization_id'])}")
 
     return selected_event
 
@@ -400,39 +482,69 @@ def plot_three_panel_timeseries(axes, datasets_dict, colors, labels):
 # MAIN
 # ============================================================================
 
-def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_tolerance=1):
+def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_tolerance=1,
+                               severity_exceedance=None, magnitude_exceedance=None,
+                               exceedance_tolerance=0.05):
     """
     Generate figure comparing drought events across 3 ensembles.
 
-    Selects one event from each dataset at the specified exceedance rate.
+    Selects one event from each dataset at the specified exceedance rate(s).
     Events are selected to start in similar months (+/- month_tolerance).
+
+    Can use either single-metric or dual-metric selection:
+    - Single: Specify target_exceedance and metric
+    - Dual: Specify severity_exceedance AND magnitude_exceedance
 
     Parameters
     ----------
-    target_exceedance : float
-        Target exceedance rate (events per year)
-    metric : str
-        Metric to use for exceedance selection (default: 'severity')
+    target_exceedance : float, optional
+        Target exceedance rate for single-metric selection (events per year)
+    metric : str, optional
+        Metric to use for single-metric exceedance selection (default: 'severity')
     month_tolerance : int, optional
         Allowable deviation in start month between events (default: 1)
+    severity_exceedance : float, optional
+        Target severity exceedance for dual-metric selection
+    magnitude_exceedance : float, optional
+        Target magnitude exceedance for dual-metric selection
+    exceedance_tolerance : float, optional
+        Tolerance for dual-metric selection (default: 0.05 yr^-1)
     """
     # Define datasets - use only the three available datasets
     datasets = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
+    # Determine selection mode
+    dual_metric = (severity_exceedance is not None and magnitude_exceedance is not None)
+
     print(f"\n{'=' * 70}")
-    print(f"Selecting events at {target_exceedance} exceedance rate")
-    print(f"Metric: {metric}, SSI Window: {SSI_WINDOW}")
+    if dual_metric:
+        print(f"Selecting events with DUAL-METRIC exceedance")
+        print(f"Severity exceedance: {severity_exceedance} yr^-1, Magnitude exceedance: {magnitude_exceedance} yr^-1")
+        print(f"Exceedance tolerance: {exceedance_tolerance} yr^-1")
+    else:
+        print(f"Selecting events at {target_exceedance} exceedance rate")
+        print(f"Metric: {metric}")
+    print(f"SSI Window: {SSI_WINDOW}")
     print(f"Month tolerance: +/- {month_tolerance} months")
     print(f"{'=' * 70}\n")
 
     # Step 1: Select reference event from stationary ensemble (no month constraint)
     print(f"\nSelecting reference event from stationary_ensemble...")
-    reference_event = select_event_by_exceedance(
-        'stationary_ensemble',
-        target_exceedance=target_exceedance,
-        metric=metric,
-        ssi_window=SSI_WINDOW
-    )
+    if dual_metric:
+        reference_event = select_event_by_exceedance(
+            'stationary_ensemble',
+            ssi_window=SSI_WINDOW,
+            severity_exceedance=severity_exceedance,
+            magnitude_exceedance=magnitude_exceedance,
+            exceedance_tolerance=exceedance_tolerance
+        )
+    else:
+        reference_event = select_event_by_exceedance(
+            'stationary_ensemble',
+            target_exceedance=target_exceedance,
+            metric=metric,
+            ssi_window=SSI_WINDOW
+        )
     reference_month = reference_event['start'].month
 
     print(f"\n  -> Reference month: {reference_month} ({reference_event['start'].strftime('%B')})")
@@ -446,14 +558,25 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
             event = reference_event
         else:
             print(f"\nSelecting event from {dataset_id} (targeting month {reference_month})...")
-            event = select_event_by_exceedance(
-                dataset_id,
-                target_exceedance=target_exceedance,
-                metric=metric,
-                ssi_window=SSI_WINDOW,
-                target_month=reference_month,
-                month_tolerance=month_tolerance
-            )
+            if dual_metric:
+                event = select_event_by_exceedance(
+                    dataset_id,
+                    ssi_window=SSI_WINDOW,
+                    target_month=reference_month,
+                    month_tolerance=month_tolerance,
+                    severity_exceedance=severity_exceedance,
+                    magnitude_exceedance=magnitude_exceedance,
+                    exceedance_tolerance=exceedance_tolerance
+                )
+            else:
+                event = select_event_by_exceedance(
+                    dataset_id,
+                    target_exceedance=target_exceedance,
+                    metric=metric,
+                    ssi_window=SSI_WINDOW,
+                    target_month=reference_month,
+                    month_tolerance=month_tolerance
+                )
             selected_events[dataset_id] = event
 
         # Load timeseries data
@@ -467,8 +590,18 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
         label = DATASET_LABELS[dataset_id]
         datasets_dict[label] = data
 
+    # Print summary of selected events
+    print(f"\n{'=' * 70}")
+    print("SELECTED EVENTS SUMMARY:")
+    print(f"{'=' * 70}")
+    for dataset_id, event in selected_events.items():
+        start_date = event['start']
+        print(f"{DATASET_LABELS[dataset_id]:20s}: Month {start_date.month:2d} ({start_date.strftime('%B'):>9s}), "
+              f"Severity {event['severity']:.2f}, Realization {int(event['realization_id'])}")
+    print(f"{'=' * 70}\n")
+
     # Create figure with 3 panels (vertical stack)
-    print("\nCreating figure...")
+    print("Creating figure...")
     fig, axes = plt.subplots(3, 1, figsize=(10, 10))
 
     # Plot using the reusable function
@@ -483,9 +616,13 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
     )
 
     # Overall title
+    import calendar
+    month_name = calendar.month_name[reference_month]
+
     fig.suptitle(
         f'Drought Comparison Across Ensembles\n'
-        f'Exceedance Rate: {target_exceedance} yr$^{{-1}}$, SSI-{SSI_WINDOW}',
+        f'Exceedance Rate: {target_exceedance} yr$^{{-1}}$, SSI-{SSI_WINDOW}, '
+        f'Start Month: {month_name} ±{month_tolerance}',
         fontsize=14, fontweight='bold', y=0.99
     )
 
@@ -508,8 +645,26 @@ def main():
     print(f"SSI Window: {SSI_WINDOW}")
     print("=" * 70)
 
-    # Generate figure at 0.1 exceedance rate
-    fname = generate_comparison_figure(target_exceedance=0.1, metric='magnitude')
+    # ========================================================================
+    # DUAL-METRIC SELECTION (recommended for balanced event comparison)
+    # ========================================================================
+    # Select events at 0.1 exceedance for BOTH severity and magnitude
+    fname = generate_comparison_figure(
+        severity_exceedance=0.1,
+        magnitude_exceedance=0.1,
+        exceedance_tolerance=0.05,
+        month_tolerance=1
+    )
+
+    # ========================================================================
+    # SINGLE-METRIC SELECTION (alternative)
+    # ========================================================================
+    # Uncomment to use single-metric selection instead:
+    # fname = generate_comparison_figure(
+    #     target_exceedance=0.1,
+    #     metric='severity',  # or 'magnitude'
+    #     month_tolerance=1
+    # )
 
     # Summary
     print("\n" + "=" * 70)
