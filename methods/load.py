@@ -577,13 +577,15 @@ def compute_event_exceedances(df, metric='severity', n_years=70):
 
     exceedances = np.zeros(len(df))
 
-    for idx, row in df.iterrows():
+    # Use enumerate to get positional index (not label index)
+    # This handles cases where df.index has gaps due to filtering
+    for i, (idx, row) in enumerate(df.iterrows()):
         val = row[metric]
 
         # Count how many events across ALL realizations have metric >= this value
         n_exceedances = np.sum(all_values >= val)
 
         # Normalize by total ensemble-years
-        exceedances[idx] = n_exceedances / total_years
+        exceedances[i] = n_exceedances / total_years
 
     return exceedances
