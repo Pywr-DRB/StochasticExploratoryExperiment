@@ -31,8 +31,8 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from methods.config import FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY
 from methods.plotting.styles import (
-    DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_LABEL,
-    DATASET_COLORS, DATASET_LABELS,
+    DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    DATASET_COLORS, DATASET_LABELS, CMAP_SEQUENTIAL,
 )
 from methods.load import load_drought_events, compute_event_exceedances
 
@@ -103,7 +103,7 @@ def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severi
         The drought event closest to the target exceedance(s)
     """
     # Load drought events using centralized function
-    df = load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=False)
+    df = load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=True)
 
     # Decide on selection mode: dual-metric or single-metric
     dual_metric = (severity_exceedance is not None and magnitude_exceedance is not None)
@@ -214,6 +214,128 @@ def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severi
         print(f"  Realization: {int(selected_event['realization_id'])}")
 
     return selected_event
+
+
+# ============================================================================
+# DROUGHT CONTEXT VISUALIZATION
+# ============================================================================
+
+def plot_event_context_figure(selected_events, ssi_window=SSI_WINDOW,
+                               severity_exceedance=None, magnitude_exceedance=None):
+    """
+    Plot selected drought events in the context of the full ensemble distribution.
+
+    Creates a hexbin plot of severity vs magnitude for all ensemble events,
+    with selected events overlaid using dataset-specific colors.
+
+    Parameters
+    ----------
+    selected_events : dict
+        Dictionary mapping dataset_id to selected event (pd.Series)
+    ssi_window : int
+        SSI window used for event selection
+    severity_exceedance : float, optional
+        Target severity exceedance (for figure title/filename)
+    magnitude_exceedance : float, optional
+        Target magnitude exceedance (for figure title/filename)
+
+    Returns
+    -------
+    fname : str
+        Path to saved figure
+    """
+    print("\nCreating drought event context figure...")
+
+    # Determine datasets from selected_events
+    datasets = list(selected_events.keys())
+
+    # Load all drought events for hexbin background
+    print("  Loading ensemble events for context...")
+    all_events = []
+    for dataset_id in datasets:
+        df = load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=True)
+        df['dataset_id'] = dataset_id
+        all_events.append(df)
+    all_events_df = pd.concat(all_events, ignore_index=True)
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Hexbin for all ensemble events
+    hexbin_kwargs = dict(
+        gridsize=30,
+        cmap=CMAP_SEQUENTIAL,
+        mincnt=1,
+        alpha=0.7,
+        zorder=1
+    )
+    hb = ax.hexbin(
+        all_events_df['severity'].values,
+        all_events_df['magnitude'].values,
+        **hexbin_kwargs,
+    )
+
+    # Overlay selected events with dataset-specific colors
+    print("  Plotting selected events...")
+    for dataset_id, event in selected_events.items():
+        color = DATASET_COLORS[dataset_id]
+        label = DATASET_LABELS[dataset_id]
+
+        ax.scatter(
+            event['severity'],
+            event['magnitude'],
+            s=150,
+            marker='o',
+            c=color,
+            edgecolors='white',
+            linewidths=2.0,
+            alpha=1.0,
+            zorder=10,
+            label=label
+        )
+
+    # Formatting
+    ax.set_xlabel('Severity (min SSI)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Magnitude (cumulative deficit)', fontsize=FONTSIZE_LABEL)
+    ax.tick_params(labelsize=FONTSIZE_SMALL)
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    # Title
+    if severity_exceedance is not None and magnitude_exceedance is not None:
+        title = (f'Selected Drought Events in Ensemble Context\n'
+                 f'Target: Severity={severity_exceedance:.2f} yr$^{{-1}}$, '
+                 f'Magnitude={magnitude_exceedance:.2f} yr$^{{-1}}$, SSI-{ssi_window}')
+    else:
+        title = f'Selected Drought Events in Ensemble Context\nSSI-{ssi_window}'
+
+    ax.set_title(title, fontsize=FONTSIZE_MEDIUM, fontweight='bold')
+
+    # Legend
+    ax.legend(loc='best', fontsize=FONTSIZE_SMALL, frameon=True, fancybox=True, shadow=True)
+
+    # Colorbar
+    cb = fig.colorbar(hb, ax=ax, pad=0.02)
+    cb.set_label('Event Count', fontsize=FONTSIZE_SMALL)
+    cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
+
+    plt.tight_layout()
+
+    # Save
+    if severity_exceedance is not None and magnitude_exceedance is not None:
+        fname = (f"{FIG_OUTPUT_DIR}/F12_event_context_ssi{ssi_window}_"
+                 f"sev{severity_exceedance:.2f}_mag{magnitude_exceedance:.2f}.png")
+    else:
+        fname = f"{FIG_OUTPUT_DIR}/F12_event_context_ssi{ssi_window}.png"
+
+    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    print(f"  Saved: {fname}")
+
+    plt.close()
+
+    return fname
 
 
 def load_drought_timeseries(realization_id, start_date, end_date):
@@ -603,8 +725,16 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
               f"Severity {event['severity']:.2f}, Realization {int(event['realization_id'])}")
     print(f"{'=' * 70}\n")
 
-    # Create figure with 3 panels (vertical stack)
-    print("Creating figure...")
+    # Create context figure showing events in ensemble distribution
+    context_fname = plot_event_context_figure(
+        selected_events,
+        ssi_window=SSI_WINDOW,
+        severity_exceedance=severity_exceedance if dual_metric else None,
+        magnitude_exceedance=magnitude_exceedance if dual_metric else None
+    )
+
+    # Create timeseries comparison figure with 3 panels (vertical stack)
+    print("\nCreating timeseries comparison figure...")
     fig, axes = plt.subplots(3, 1, figsize=(10, 10))
 
     # Plot using the reusable function
@@ -622,23 +752,30 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
     import calendar
     month_name = calendar.month_name[reference_month]
 
-    fig.suptitle(
-        f'Drought Comparison Across Ensembles\n'
-        f'Exceedance Rate: {target_exceedance} yr$^{{-1}}$, SSI-{SSI_WINDOW}, '
-        f'Start Month: {month_name} ±{month_tolerance}',
-        fontsize=14, fontweight='bold', y=0.99
-    )
+    if dual_metric:
+        title = (f'Drought Comparison Across Ensembles\n'
+                 f'Severity={severity_exceedance:.2f} yr$^{{-1}}$, '
+                 f'Magnitude={magnitude_exceedance:.2f} yr$^{{-1}}$, '
+                 f'SSI-{SSI_WINDOW}, Start: {month_name} ±{month_tolerance}')
+        fname = (f"{FIG_OUTPUT_DIR}/F12_timeseries_ssi{SSI_WINDOW}_"
+                 f"sev{severity_exceedance:.2f}_mag{magnitude_exceedance:.2f}.png")
+    else:
+        title = (f'Drought Comparison Across Ensembles\n'
+                 f'{metric.capitalize()} Exceedance: {target_exceedance:.2f} yr$^{{-1}}$, '
+                 f'SSI-{SSI_WINDOW}, Start: {month_name} ±{month_tolerance}')
+        fname = f"{FIG_OUTPUT_DIR}/F12_timeseries_ssi{SSI_WINDOW}_{metric}_exc{target_exceedance:.3f}.png"
+
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.99)
 
     plt.tight_layout(rect=[0, 0.01, 1, 0.96])
 
     # Save
-    
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"\nSaved: {fname}")
+    print(f"  Saved: {fname}")
 
     plt.close()
 
-    return fname
+    return {'timeseries': fname, 'context': context_fname}
 
 
 def main():
