@@ -258,16 +258,15 @@ def plot_event_context_figure(selected_events, ssi_window=SSI_WINDOW,
         all_events.append(df)
     all_events_df = pd.concat(all_events, ignore_index=True)
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # Create figure (match F2 aspect ratio)
+    fig, ax = plt.subplots(figsize=(7, 6))
 
-    # Hexbin for all ensemble events
+    # Hexbin for all ensemble events (matching F2 style exactly)
     hexbin_kwargs = dict(
         gridsize=30,
         cmap=CMAP_SEQUENTIAL,
         mincnt=1,
-        alpha=0.7,
-        zorder=1
+        yscale='log',  # Log scale for magnitude (matching F2)
     )
     hb = ax.hexbin(
         all_events_df['severity'].values,
@@ -284,41 +283,40 @@ def plot_event_context_figure(selected_events, ssi_window=SSI_WINDOW,
         ax.scatter(
             event['severity'],
             event['magnitude'],
-            s=150,
+            s=200,  # Larger markers for visibility on log scale
             marker='o',
             c=color,
             edgecolors='white',
-            linewidths=2.0,
+            linewidths=2.5,
             alpha=1.0,
             zorder=10,
             label=label
         )
 
-    # Formatting
-    ax.set_xlabel('Severity (min SSI)', fontsize=FONTSIZE_LABEL)
-    ax.set_ylabel('Magnitude (cumulative deficit)', fontsize=FONTSIZE_LABEL)
+    # Formatting (matching F2 style)
+    ax.set_xlabel('Severity (min SSI)', fontsize=FONTSIZE_MEDIUM)
+    ax.set_ylabel('Magnitude (cumulative deficit)', fontsize=FONTSIZE_MEDIUM)
     ax.tick_params(labelsize=FONTSIZE_SMALL)
-    ax.grid(True, alpha=0.3, linestyle='--')
-    ax.set_axisbelow(True)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
 
     # Title
     if severity_exceedance is not None and magnitude_exceedance is not None:
         title = (f'Selected Drought Events in Ensemble Context\n'
-                 f'Target: Severity={severity_exceedance:.2f} yr$^{{-1}}$, '
-                 f'Magnitude={magnitude_exceedance:.2f} yr$^{{-1}}$, SSI-{ssi_window}')
+                 f'Severity={severity_exceedance:.2f} yr$^{{-1}}$, '
+                 f'Magnitude={magnitude_exceedance:.2f} yr$^{{-1}}$ (SSI-{ssi_window})')
     else:
-        title = f'Selected Drought Events in Ensemble Context\nSSI-{ssi_window}'
+        title = f'Selected Drought Events in Ensemble Context (SSI-{ssi_window})'
 
-    ax.set_title(title, fontsize=FONTSIZE_MEDIUM, fontweight='bold')
+    ax.set_title(title, fontsize=FONTSIZE_MEDIUM, fontweight='bold', pad=10)
 
-    # Legend
-    ax.legend(loc='best', fontsize=FONTSIZE_SMALL, frameon=True, fancybox=True, shadow=True)
+    # Legend (simpler style matching F2)
+    ax.legend(loc='upper left', fontsize=FONTSIZE_SMALL, frameon=True,
+              fancybox=False, edgecolor='black', framealpha=0.9)
 
-    # Colorbar
+    # Colorbar (matching F2 style)
     cb = fig.colorbar(hb, ax=ax, pad=0.02)
-    cb.set_label('Event Count', fontsize=FONTSIZE_SMALL)
+    cb.set_label('Count', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
 
     plt.tight_layout()
