@@ -81,4 +81,3 @@ if __name__ == "__main__":
     dataset_id = sys.argv[1]
     verify_dataset_id(dataset_id)
     main(dataset_id)
-"#2B2B2B"

@@ -1,32 +1,37 @@
 """
 F12: Drought Comparison Timeseries Figure.
 
-Compares two water years from the stationary ensemble that have similar
-drought hazard (SSI severity/magnitude) but different satisficing outcomes.
+Compares drought events across multiple ensembles (stationary, climate low, climate high)
+by selecting events at a specified exceedance rate.
 
-Layout: 3x2 grid
-  - Rows: Storage, Flow+Contribution, Satisficing Metrics
-  - Columns: Pass drought (left), Fail drought (right)
-  - Each column shows actual dates for its drought period
+Layout: 3 vertical panels showing overlaid timeseries
+  - Panel 1: NYC Storage (%)
+  - Panel 2: NYC Releases to Support Montague (MGD, linear scale)
+  - Panel 3: Montague Satisfaction (%)
+
+Features:
+  - Year-agnostic time axis (generic month labels)
+  - Exceedance-based event selection (similar to F2)
+  - Multiple datasets overlaid on same axes
+  - SSI_WINDOW = 3 by default (editable)
 
 Usage:
     python F12_plot_drought_comparison_timeseries.py
 
-Generates 5 figures with different selection schemes.
+Generates 1 figure comparing events at 0.1 exceedance rate.
 """
 
 import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY
+from methods.config import FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY, N_YEARS
 from methods.plotting.styles import (
-    DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LABEL,
+    DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_LABEL,
 )
 
 # ============================================================================
@@ -38,25 +43,15 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SATISFICING_DATA_DIR = "./pywrdrb/satisficing_analysis"
 DROUGHT_METRICS_DIR = "./pywrdrb/drought_metrics"
-SSI_WINDOW = 12
+SSI_WINDOW = 3  # Editable: 3, 6, or 12
 DATASET_ID = 'stationary_ensemble'
 
 # Buffer days before/after drought period
 BUFFER_DAYS = 90
 
-# Colors
-COLOR_PASS = '#009E73'   # Bluish green
-COLOR_FAIL = '#D55E00'   # Vermilion/orange
-COLOR_SECONDARY = '#0072B2'  # Blue for secondary metrics
-COLOR_THRESHOLD = 'black'
-
-# Thresholds
+# Thresholds (for visualization)
 STORAGE_THRESHOLD = 20.0  # %
-VIOLATION_DAYS_THRESHOLD = 3  # days
-
-# Pair selection thresholds
-SEVERITY_TOLERANCE = 0.5   # Absolute difference (relaxed)
-MAGNITUDE_TOLERANCE = 0.40  # Relative difference (40%, relaxed)
+COLOR_THRESHOLD = 'black'
 
 
 # ============================================================================
@@ -99,7 +94,11 @@ def load_drought_data_with_satisficing():
 
     # Add satisficing category
     merged['storage_pass'] = merged['min_storage_pct'] >= STORAGE_THRESHOLD
-    merged['montague_pass'] = merged['max_violation_days'] <= VIOLATION_DAYS_THRESHOLD
+    merged['montague_pass'] = merged['max_violation_days'] <= 3  # 3 days threshold
+
+    # convert magnitude and severity to abs val
+    merged['severity'] = np.abs(merged['severity'])
+    merged['magnitude'] = np.abs(merged['magnitude'])
 
     print(f"  Loaded {len(merged)} drought events with satisficing data")
     print(f"  Date range: {merged['start'].min()} to {merged['end'].max()}")
@@ -108,135 +107,96 @@ def load_drought_data_with_satisficing():
     return merged
 
 
-def find_contrasting_pair(df, scheme='closest_severity'):
+def compute_event_exceedances(df, metric='severity', n_years=N_YEARS):
     """
-    Find two droughts with similar hazard but different outcomes.
+    Compute exceedance rates for each drought event in a dataset.
+
+    For each realization, computes how many events have metric >= this event's value,
+    then divides by n_years to get exceedance rate.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Drought events with satisficing data
-    scheme : str
-        Selection scheme:
-        - 'closest_severity': Best severity match
-        - 'extreme_contrast': Maximum storage difference
-        - 'moderate_drought': Mid-severity droughts only
-        - 'long_duration': Prefer longer duration droughts
-        - 'different_realizations': Force different realizations
+        Drought events with 'realization_id' and metric columns
+    metric : str
+        Metric to use for exceedance calculation (e.g., 'severity', 'magnitude')
+    n_years : int
+        Number of years per realization for normalization
+
+    Returns
+    -------
+    exceedances : np.ndarray
+        Exceedance rate for each event in df
     """
-    df_pass = df[df['satisficing'] == True].copy()
-    df_fail = df[df['satisficing'] == False].copy()
+    exceedances = np.zeros(len(df))
 
-    print(f"  Pass droughts: {len(df_pass)}, Fail droughts: {len(df_fail)}")
-    print(f"  Selection scheme: {scheme}")
+    for idx, row in df.iterrows():
+        rid = row['realization_id']
+        val = row[metric]
 
-    if len(df_fail) == 0:
-        print("  No failed droughts found, selecting by storage difference")
-        df_sorted = df.sort_values('min_storage_pct')
-        return df_sorted.iloc[-1], df_sorted.iloc[0]
+        # Get all events from this realization
+        realization_events = df[df['realization_id'] == rid]
 
-    # Different selection schemes
-    if scheme == 'closest_severity':
-        # Original: find closest severity match
-        best_pair = None
-        best_score = float('inf')
-        for _, fail_row in df_fail.iterrows():
-            for _, pass_row in df_pass.iterrows():
-                sev_diff = abs(pass_row['severity'] - fail_row['severity'])
-                if sev_diff > SEVERITY_TOLERANCE:
-                    continue
-                mag_ref = max(abs(pass_row['magnitude']), abs(fail_row['magnitude']), 1)
-                mag_diff = abs(pass_row['magnitude'] - fail_row['magnitude']) / mag_ref
-                if mag_diff > MAGNITUDE_TOLERANCE:
-                    continue
-                storage_diff = pass_row['min_storage_pct'] - fail_row['min_storage_pct']
-                score = sev_diff - storage_diff / 20
-                if score < best_score:
-                    best_score = score
-                    best_pair = (pass_row, fail_row)
-        if best_pair:
-            return best_pair
+        # Count events with metric >= this value
+        n_exceedances = np.sum(realization_events[metric].values >= val)
 
-    elif scheme == 'extreme_contrast':
-        # Maximum storage contrast with reasonable severity match
-        best_pair = None
-        best_contrast = 0
-        for _, fail_row in df_fail.iterrows():
-            for _, pass_row in df_pass.iterrows():
-                sev_diff = abs(pass_row['severity'] - fail_row['severity'])
-                if sev_diff > SEVERITY_TOLERANCE * 1.5:  # Slightly relaxed
-                    continue
-                storage_diff = pass_row['min_storage_pct'] - fail_row['min_storage_pct']
-                if storage_diff > best_contrast:
-                    best_contrast = storage_diff
-                    best_pair = (pass_row, fail_row)
-        if best_pair:
-            return best_pair
+        # Normalize by years
+        exceedances[idx] = n_exceedances / n_years
 
-    elif scheme == 'moderate_drought':
-        # Select mid-severity droughts (not extreme)
-        median_sev = df['severity'].median()
-        df_pass_mod = df_pass[df_pass['severity'].between(median_sev - 1, median_sev + 0.5)]
-        df_fail_mod = df_fail[df_fail['severity'].between(median_sev - 1, median_sev + 0.5)]
-        if len(df_pass_mod) > 0 and len(df_fail_mod) > 0:
-            pass_row = df_pass_mod.loc[df_pass_mod['min_storage_pct'].idxmax()]
-            fail_row = df_fail_mod.loc[df_fail_mod['min_storage_pct'].idxmin()]
-            return pass_row, fail_row
-
-    elif scheme == 'long_duration':
-        # Prefer longer duration droughts
-        min_duration = df['duration'].quantile(0.5)  # Above median
-        df_pass_long = df_pass[df_pass['duration'] >= min_duration]
-        df_fail_long = df_fail[df_fail['duration'] >= min_duration]
-        if len(df_pass_long) > 0 and len(df_fail_long) > 0:
-            best_pair = None
-            best_score = float('inf')
-            for _, fail_row in df_fail_long.iterrows():
-                for _, pass_row in df_pass_long.iterrows():
-                    sev_diff = abs(pass_row['severity'] - fail_row['severity'])
-                    if sev_diff > SEVERITY_TOLERANCE * 1.5:
-                        continue
-                    score = sev_diff
-                    if score < best_score:
-                        best_score = score
-                        best_pair = (pass_row, fail_row)
-            if best_pair:
-                return best_pair
-
-    elif scheme == 'different_realizations':
-        # Force selection from different realizations
-        best_pair = None
-        best_score = float('inf')
-        for _, fail_row in df_fail.iterrows():
-            for _, pass_row in df_pass.iterrows():
-                if pass_row['realization_id'] == fail_row['realization_id']:
-                    continue  # Force different realizations
-                sev_diff = abs(pass_row['severity'] - fail_row['severity'])
-                if sev_diff > SEVERITY_TOLERANCE * 1.2:
-                    continue
-                storage_diff = pass_row['min_storage_pct'] - fail_row['min_storage_pct']
-                score = sev_diff - storage_diff / 30
-                if score < best_score:
-                    best_score = score
-                    best_pair = (pass_row, fail_row)
-        if best_pair:
-            return best_pair
-
-    # Fallback
-    print(f"  No matching pair found for scheme '{scheme}', using fallback")
-    best_pass = df_pass.loc[df_pass['min_storage_pct'].idxmax()]
-    worst_fail = df_fail.loc[df_fail['min_storage_pct'].idxmin()]
-    return best_pass, worst_fail
+    return exceedances
 
 
-# Available selection schemes
-SELECTION_SCHEMES = [
-    'closest_severity',
-    'extreme_contrast',
-    'moderate_drought',
-    'long_duration',
-    'different_realizations',
-]
+def select_event_by_exceedance(dataset_id, target_exceedance=0.1, metric='severity',
+                                ssi_window=SSI_WINDOW):
+    """
+    Select a drought event from a dataset based on target exceedance rate.
+
+    Finds the event whose exceedance rate is closest to the target.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
+    target_exceedance : float
+        Target exceedance rate (events per year)
+    metric : str
+        Metric to use for exceedance calculation (default: 'severity')
+    ssi_window : int
+        SSI window to use
+
+    Returns
+    -------
+    selected_event : pd.Series
+        The drought event closest to the target exceedance
+    """
+    # Load drought events for this dataset
+    events_fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
+    df = pd.read_csv(events_fname)
+    df['start'] = pd.to_datetime(df['start'])
+    df['end'] = pd.to_datetime(df['end'])
+    
+    # convert severity & magnitude to abs val
+    df['severity'] = np.abs(df['severity'])
+    df['magnitude'] = np.abs(df['magnitude'])
+    
+    # Compute exceedances for all events
+    exceedances = compute_event_exceedances(df, metric=metric)
+
+    # Find event closest to target exceedance
+    differences = np.abs(exceedances - target_exceedance)
+    best_idx = df.index[np.argmin(differences)]
+    selected_event = df.loc[best_idx]
+    actual_exceedance = exceedances[best_idx]
+
+    print(f"  Dataset: {dataset_id}")
+    print(f"  Target exceedance: {target_exceedance:.3f} yr^-1")
+    print(f"  Selected event exceedance: {actual_exceedance:.3f} yr^-1")
+    print(f"  Event severity: {selected_event['severity']:.2f}")
+    print(f"  Event magnitude: {selected_event['magnitude']:.2f}")
+    print(f"  Event: {selected_event['start'].strftime('%Y-%m-%d')} to {selected_event['end'].strftime('%Y-%m-%d')}")
+    print(f"  Realization: {int(selected_event['realization_id'])}")
+
+    return selected_event
 
 
 def load_drought_timeseries(realization_id, start_date, end_date):
@@ -312,212 +272,289 @@ def calculate_consecutive_violations(shortage_series):
     return consecutive
 
 
+def calculate_satisfaction_pct(shortage_series):
+    """
+    Calculate rolling 30-day satisfaction percentage (0-100%).
+
+    Satisfaction % = (days without shortage / 30) * 100
+    """
+    # Rolling 30-day window: count non-shortage days
+    is_satisfied = (shortage_series == 0).astype(int)
+    satisfaction_pct = is_satisfied.rolling(window=3, min_periods=1).mean() * 100
+    return satisfaction_pct
+
+
+def create_yearless_month_axis(dates):
+    """
+    Convert datetime index to year-agnostic month positions.
+
+    Returns positions (0-based from first month) and month labels.
+    """
+    if len(dates) == 0:
+        return np.array([]), []
+
+    # Get the first date to establish reference
+    first_date = dates[0]
+    first_month = first_date.month
+    first_year = first_date.year
+
+    # Calculate position for each date (months from start)
+    positions = []
+    for date in dates:
+        years_diff = date.year - first_year
+        months_diff = date.month - first_month
+        position = years_diff * 12 + months_diff
+        positions.append(position)
+
+    positions = np.array(positions) / 30.0  # Convert to approximate months (using days)
+
+    # Create month labels
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+    return positions, month_names
+
+
 # ============================================================================
 # PLOTTING
 # ============================================================================
 
-def plot_storage_row(axes, data_pass, data_fail, drought_pass, drought_fail):
-    """Plot Row 1: NYC Storage panels."""
-    for ax, data, drought, color, title_suffix in [
-        (axes[0], data_pass, drought_pass, COLOR_PASS, 'Pass'),
-        (axes[1], data_fail, drought_fail, COLOR_FAIL, 'Fail'),
-    ]:
-        # Storage line
-        ax.plot(data['storage_pct'].index, data['storage_pct'].values,
-                color=color, linewidth=1.5)
+def plot_three_panel_timeseries(axes, datasets_dict, colors, labels):
+    """
+    Create 3-panel subplot with year-agnostic time axis aligned by calendar month.
 
-        # Threshold line
-        ax.axhline(STORAGE_THRESHOLD, color=COLOR_THRESHOLD,
-                   linestyle='--', linewidth=1, alpha=0.7)
+    Reusable function that plots multiple datasets on the same axes.
+    Events are aligned by their actual calendar month/day-of-year.
 
-        # Formatting
-        start_str = str(drought['start'])[:10]
-        end_str = str(drought['end'])[:10]
-        sev = drought['severity']
-        min_stor = drought['min_storage_pct']
-        ax.set_title(f"{start_str[:7]} to {end_str[:7]} ({title_suffix})\n"
-                     f"Severity: {sev:.2f}, Min Storage: {min_stor:.1f}%",
-                     fontsize=FONTSIZE_MEDIUM)
+    Parameters
+    ----------
+    axes : list of 3 matplotlib axes
+        [storage_ax, release_ax, satisfaction_ax]
+    datasets_dict : dict
+        {label: data_dict} where data_dict has keys:
+        'storage_pct', 'contribution', 'montague_shortage'
+    colors : dict
+        {label: color_string}
+    labels : list
+        Dataset labels in order to plot
+    """
+    ax_storage, ax_release, ax_satisfaction = axes
 
-        ax.set_ylim(0, 100)
-        ax.grid(True, alpha=0.3, linestyle='--')
-        ax.set_axisbelow(True)
+    # Month labels for x-axis
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-    axes[0].set_ylabel('NYC Storage (%)', fontsize=FONTSIZE_LABEL)
+    # Track x-axis range across all datasets
+    all_x_min = float('inf')
+    all_x_max = float('-inf')
+
+    def get_day_of_year_positions(dates):
+        """Convert dates to day-of-year positions (year-agnostic)."""
+        # Use day of year (1-365/366) as x-position
+        # For events spanning multiple years, continue counting past 365
+        positions = []
+        first_date = dates[0]
+        first_year = first_date.year
+
+        for date in dates:
+            years_passed = date.year - first_year
+            doy = date.dayofyear
+            # Position = days since start of first year
+            position = years_passed * 365 + doy
+            positions.append(position)
+
+        return np.array(positions)
+
+    # ========================================================================
+    # Panel 1: Storage
+    # ========================================================================
+    for label in labels:
+        data = datasets_dict[label]
+        color = colors[label]
+
+        # Convert to year-agnostic x-axis based on day-of-year
+        dates = data['storage_pct'].index
+        x_positions = get_day_of_year_positions(dates)
+
+        all_x_min = min(all_x_min, x_positions[0])
+        all_x_max = max(all_x_max, x_positions[-1])
+
+        # Plot storage
+        ax_storage.plot(x_positions, data['storage_pct'].values,
+                       color=color, linewidth=1.5, label=label, alpha=0.8)
+
+    # Threshold line
+    ax_storage.axhline(STORAGE_THRESHOLD, color=COLOR_THRESHOLD,
+                      linestyle='--', linewidth=1, alpha=0.7, label='Threshold')
+
+    ax_storage.set_ylabel('NYC Storage (%)', fontsize=FONTSIZE_LABEL)
+    ax_storage.set_ylim(0, 100)
+    ax_storage.grid(True, alpha=0.3, linestyle='--')
+    ax_storage.set_axisbelow(True)
+    ax_storage.legend(fontsize=FONTSIZE_SMALL, loc='best')
+
+    # ========================================================================
+    # Panel 2: NYC Releases to Support Montague (linear scale, single y-axis)
+    # ========================================================================
+    for label in labels:
+        data = datasets_dict[label]
+        color = colors[label]
+
+        dates = data['contribution'].index
+        x_positions = get_day_of_year_positions(dates)
+
+        # Plot NYC contribution/release (non-dashed, linear scale)
+        ax_release.plot(x_positions, data['contribution'].values,
+                       color=color, linewidth=1.5, label=label, alpha=0.8)
+
+    ax_release.set_ylabel('NYC Release to\nSupport Montague (MGD)', fontsize=FONTSIZE_LABEL)
+    ax_release.grid(True, alpha=0.3, linestyle='--')
+    ax_release.set_axisbelow(True)
+
+    # ========================================================================
+    # Panel 3: Satisfaction % (instead of violation days)
+    # ========================================================================
+    for label in labels:
+        data = datasets_dict[label]
+        color = colors[label]
+
+        dates = data['montague_shortage'].index
+        x_positions = get_day_of_year_positions(dates)
+
+        # Calculate satisfaction %
+        satisfaction_pct = calculate_satisfaction_pct(data['montague_shortage'])
+
+        # Plot satisfaction %
+        ax_satisfaction.plot(x_positions, satisfaction_pct.values,
+                           color=color, linewidth=1.5, label=label, alpha=0.8)
+
+    ax_satisfaction.set_ylabel('Montague\nSatisfaction (%)', fontsize=FONTSIZE_LABEL)
+    ax_satisfaction.set_ylim(0, 120)
+    ax_satisfaction.grid(True, alpha=0.3, linestyle='--')
+    ax_satisfaction.set_axisbelow(True)
+
+    # ========================================================================
+    # Format x-axes: Generic month labels (year-agnostic, aligned by calendar)
+    # ========================================================================
+    # Only show x-axis labels on bottom panel
+    for ax in [ax_storage, ax_release]:
+        ax.tick_params(labelbottom=False)
+
+    # Bottom panel gets month labels
+    # Create tick positions at month boundaries (roughly every 30 days)
+    # Starting from day 1 of the year
+    month_starts_doy = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]  # Approximate day-of-year for each month
+
+    # Generate ticks for the range of data
+    tick_positions = []
+    tick_labels = []
+    year_offset = 0
+    while True:
+        for month_idx, doy in enumerate(month_starts_doy):
+            pos = year_offset * 365 + doy
+            if all_x_min <= pos <= all_x_max:
+                tick_positions.append(pos)
+                tick_labels.append(month_names[month_idx])
+            elif pos > all_x_max:
+                break
+        if pos > all_x_max:
+            break
+        year_offset += 1
+
+    ax_satisfaction.set_xticks(tick_positions)
+    ax_satisfaction.set_xticklabels(tick_labels, fontsize=FONTSIZE_SMALL)
+    ax_satisfaction.set_xlabel('Month', fontsize=FONTSIZE_LABEL)
+    ax_satisfaction.set_xlim(all_x_min - 10, all_x_max + 10)  # Add small padding
+
+    # Apply same x-limits to all panels
+    ax_storage.set_xlim(all_x_min - 10, all_x_max + 10)
+    ax_release.set_xlim(all_x_min - 10, all_x_max + 10)
 
 
-def plot_flow_row(axes, data_pass, data_fail):
-    """Plot Row 2: Montague Flow + Contribution % (dual y-axis)."""
-    for ax, data, color in [
-        (axes[0], data_pass, COLOR_PASS),
-        (axes[1], data_fail, COLOR_FAIL),
-    ]:
-        # Left axis: Montague flow
-        ax.plot(data['montague_flow'].index, data['montague_flow'].values,
-                color=color, linewidth=1.2, label='Montague Flow')
-
-        ax.grid(True, alpha=0.3, linestyle='--')
-        ax.set_axisbelow(True)
-
-        # Right axis: Contribution %
-        ax2 = ax.twinx()
-        ax2.plot(data['contribution_pct'].index, data['contribution_pct'].values,
-                 color=COLOR_SECONDARY, linewidth=1, linestyle='--',
-                 alpha=0.8, label='NYC Contrib %')
-        ax2.set_ylim(0, 100)
-
-        if ax == axes[1]:
-            ax2.set_ylabel('NYC Contribution (%)', fontsize=FONTSIZE_SMALL,
-                          color=COLOR_SECONDARY)
-            ax2.tick_params(axis='y', labelcolor=COLOR_SECONDARY)
-        else:
-            ax2.set_yticklabels([])
-
-    axes[0].set_ylabel('Montague Flow (MGD)', fontsize=FONTSIZE_LABEL)
-
-
-def plot_satisficing_row(axes, data_pass, data_fail):
-    """Plot Row 3: Consecutive violations + NYC shortage (dual y-axis)."""
-    for ax, data, color in [
-        (axes[0], data_pass, COLOR_PASS),
-        (axes[1], data_fail, COLOR_FAIL),
-    ]:
-        # Calculate consecutive violations
-        violations = calculate_consecutive_violations(data['montague_shortage'])
-
-        # Left axis: Consecutive violation days
-        ax.plot(violations.index, violations.values,
-                color=color, linewidth=1.2, label='Consec. Violations')
-
-        # Threshold line
-        ax.axhline(VIOLATION_DAYS_THRESHOLD, color=COLOR_THRESHOLD,
-                   linestyle='--', linewidth=1, alpha=0.7)
-
-        ax.grid(True, alpha=0.3, linestyle='--')
-        ax.set_axisbelow(True)
-
-        # Right axis: NYC shortage
-        ax2 = ax.twinx()
-        ax2.fill_between(data['nyc_shortage'].index, 0, data['nyc_shortage'].values,
-                         color=COLOR_SECONDARY, alpha=0.3, label='NYC Shortage')
-        ax2.plot(data['nyc_shortage'].index, data['nyc_shortage'].values,
-                 color=COLOR_SECONDARY, linewidth=0.8, alpha=0.6)
-
-        if ax == axes[1]:
-            ax2.set_ylabel('NYC Shortage (MGD)', fontsize=FONTSIZE_SMALL,
-                          color=COLOR_SECONDARY)
-            ax2.tick_params(axis='y', labelcolor=COLOR_SECONDARY)
-        else:
-            ax2.set_yticklabels([])
-
-    axes[0].set_ylabel('Consecutive\nViolation Days', fontsize=FONTSIZE_LABEL)
-
-
-def create_shared_legend(fig):
-    """Create shared legend at bottom of figure."""
-    handles = [
-        Line2D([0], [0], color=COLOR_PASS, linewidth=2, label='Pass Drought'),
-        Line2D([0], [0], color=COLOR_FAIL, linewidth=2, label='Fail Drought'),
-        Line2D([0], [0], color=COLOR_SECONDARY, linewidth=1.5, linestyle='--',
-               label='NYC Contrib % / Shortage'),
-        Line2D([0], [0], color=COLOR_THRESHOLD, linewidth=1, linestyle='--',
-               label='Satisficing Threshold'),
-    ]
-
-    fig.legend(handles=handles, loc='lower center', ncol=4,
-               bbox_to_anchor=(0.5, 0.01), fontsize=FONTSIZE_SMALL,
-               frameon=True, fancybox=True)
 
 
 # ============================================================================
 # MAIN
 # ============================================================================
 
-def generate_figure(df, scheme, scheme_idx):
-    """Generate figure for a specific selection scheme."""
-    print(f"\n{'=' * 60}")
-    print(f"Scheme {scheme_idx + 1}/{len(SELECTION_SCHEMES)}: {scheme}")
-    print(f"{'=' * 60}")
+def generate_comparison_figure(target_exceedance=0.1, metric='severity'):
+    """
+    Generate figure comparing drought events across 3 ensembles.
 
-    print("\nFinding contrasting drought pair...")
-    drought_pass, drought_fail = find_contrasting_pair(df, scheme=scheme)
+    Selects one event from each dataset at the specified exceedance rate.
 
-    print(f"\nSelected droughts:")
-    print(f"  PASS: realization={int(drought_pass['realization_id'])}, "
-          f"{str(drought_pass['start'])[:10]} to {str(drought_pass['end'])[:10]}")
-    print(f"        severity={drought_pass['severity']:.2f}, "
-          f"magnitude={drought_pass['magnitude']:.1f}, "
-          f"min_storage={drought_pass['min_storage_pct']:.1f}%")
-    print(f"  FAIL: realization={int(drought_fail['realization_id'])}, "
-          f"{str(drought_fail['start'])[:10]} to {str(drought_fail['end'])[:10]}")
-    print(f"        severity={drought_fail['severity']:.2f}, "
-          f"magnitude={drought_fail['magnitude']:.1f}, "
-          f"min_storage={drought_fail['min_storage_pct']:.1f}%, "
-          f"violations={int(drought_fail['max_violation_days'])} days")
-
-    # Load timeseries data
-    print("\nLoading timeseries data...")
-    print("  Loading pass drought data...")
-    data_pass = load_drought_timeseries(
-        int(drought_pass['realization_id']),
-        drought_pass['start'], drought_pass['end']
-    )
-    print("  Loading fail drought data...")
-    data_fail = load_drought_timeseries(
-        int(drought_fail['realization_id']),
-        drought_fail['start'], drought_fail['end']
-    )
-
-    # Create figure
-    print("\nCreating figure...")
-    fig, axes = plt.subplots(3, 2, figsize=(14, 10))
-
-    # Plot each row
-    plot_storage_row(axes[0], data_pass, data_fail, drought_pass, drought_fail)
-    plot_flow_row(axes[1], data_pass, data_fail)
-    plot_satisficing_row(axes[2], data_pass, data_fail)
-
-    # Format x-axes (only bottom row shows labels)
-    for row in range(2):
-        for col in range(2):
-            axes[row, col].tick_params(labelbottom=False)
-
-    for col in range(2):
-        axes[2, col].set_xlabel('Date', fontsize=FONTSIZE_LABEL)
-        axes[2, col].tick_params(axis='x', rotation=45)
-
-    # Add row labels on left
-    row_labels = ['NYC Storage', 'Montague Flow', 'Satisficing']
-    for row, label in enumerate(row_labels):
-        axes[row, 0].annotate(
-            label, xy=(-0.18, 0.5), xycoords='axes fraction',
-            fontsize=FONTSIZE_MEDIUM,
-            ha='center', va='center', rotation=90,
-        )
-
-    # Shared legend
-    create_shared_legend(fig)
-
-    # Overall title with scheme name
-    scheme_labels = {
-        'closest_severity': 'Closest Severity Match',
-        'extreme_contrast': 'Maximum Storage Contrast',
-        'moderate_drought': 'Moderate Severity Droughts',
-        'long_duration': 'Longer Duration Droughts',
-        'different_realizations': 'Different Realizations',
+    Parameters
+    ----------
+    target_exceedance : float
+        Target exceedance rate (events per year)
+    metric : str
+        Metric to use for exceedance selection (default: 'severity')
+    """
+    # Define datasets and colors
+    datasets = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
+    dataset_labels = {
+        'stationary_ensemble': 'Stationary',
+        'climate_adjusted_low': 'Climate Low',
+        'climate_adjusted_high': 'Climate High'
     }
-    scheme_label = scheme_labels.get(scheme, scheme)
+    colors = {
+        'stationary_ensemble': '#009E73',  # Green
+        'climate_adjusted_low': '#D55E00',  # Orange
+        'climate_adjusted_high': '#0072B2'   # Blue
+    }
 
+    print(f"\n{'=' * 70}")
+    print(f"Selecting events at {target_exceedance} exceedance rate")
+    print(f"Metric: {metric}, SSI Window: {SSI_WINDOW}")
+    print(f"{'=' * 70}\n")
+
+    # Select events from each dataset
+    selected_events = {}
+    datasets_dict = {}
+
+    for dataset_id in datasets:
+        print(f"\nSelecting event from {dataset_id}...")
+        event = select_event_by_exceedance(
+            dataset_id,
+            target_exceedance=target_exceedance,
+            metric=metric,
+            ssi_window=SSI_WINDOW
+        )
+        selected_events[dataset_id] = event
+
+        # Load timeseries data
+        print(f"  Loading timeseries data...")
+        data = load_drought_timeseries(
+            int(event['realization_id']),
+            event['start'],
+            event['end']
+        )
+        datasets_dict[dataset_labels[dataset_id]] = data
+
+    # Create figure with 3 panels (vertical stack)
+    print("\nCreating figure...")
+    fig, axes = plt.subplots(3, 1, figsize=(10, 10))
+
+    # Plot using the reusable function
+    labels = [dataset_labels[d] for d in datasets]
+    plot_three_panel_timeseries(
+        axes,
+        datasets_dict,
+        colors={dataset_labels[d]: colors[d] for d in datasets},
+        labels=labels
+    )
+
+    # Overall title
     fig.suptitle(
-        f'Comparing Droughts with Similar Severity but Different Outcomes\n'
-        f'({scheme_label})',
+        f'Drought Comparison Across Ensembles\n'
+        f'Exceedance Rate: {target_exceedance} yr$^{{-1}}$, SSI-{SSI_WINDOW}',
         fontsize=14, fontweight='bold', y=0.99
     )
 
-    plt.tight_layout(rect=[0.05, 0.06, 1, 0.94])
+    plt.tight_layout(rect=[0, 0.01, 1, 0.96])
 
-    # Save with scheme in filename
-    fname = f"{FIG_OUTPUT_DIR}/F12_drought_comparison_ssi{SSI_WINDOW}_{scheme}.png"
+    # Save
+    fname = f"{FIG_OUTPUT_DIR}/F12_drought_comparison_ssi{SSI_WINDOW}_exceedance{target_exceedance:.3f}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
@@ -530,26 +567,17 @@ def main():
     """Main entry point."""
     print("=" * 70)
     print("F12: Drought Comparison Timeseries")
-    print(f"Running {len(SELECTION_SCHEMES)} selection schemes")
+    print(f"SSI Window: {SSI_WINDOW}")
     print("=" * 70)
 
-    # Load drought data with satisficing (once)
-    print("\nLoading drought data with satisficing...")
-    df = load_drought_data_with_satisficing()
-
-    # Generate figure for each selection scheme
-    saved_files = []
-    for idx, scheme in enumerate(SELECTION_SCHEMES):
-        fname = generate_figure(df, scheme, idx)
-        saved_files.append(fname)
+    # Generate figure at 0.1 exceedance rate
+    fname = generate_comparison_figure(target_exceedance=0.1, metric='magnitude')
 
     # Summary
     print("\n" + "=" * 70)
-    print("ALL FIGURES GENERATED!")
+    print("FIGURE GENERATED!")
     print("=" * 70)
-    print("\nSaved files:")
-    for fname in saved_files:
-        print(f"  - {fname}")
+    print(f"\nSaved: {fname}")
     print("\nDone!")
 
 
