@@ -407,9 +407,10 @@ def plot_three_panel_timeseries(axes, datasets_dict, colors, labels):
 
         dates = data['contribution'].index
         x_positions = get_day_of_year_positions(dates)
+        ys = data['contribution'].rolling(window=7, min_periods=1).mean().values  # rolling mean for smoother visualization
 
         # Plot NYC contribution/release (non-dashed, linear scale)
-        ax_release.plot(x_positions, data['contribution'].values,
+        ax_release.plot(x_positions, ys,
                        color=color, linewidth=1.5, label=label, alpha=0.8)
 
     ax_release.set_ylabel('NYC Release to\nSupport Montague (MGD)', fontsize=FONTSIZE_LABEL)
@@ -518,10 +519,12 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
 
     print(f"\n{'=' * 70}")
     if dual_metric:
+        fname = f"{FIG_OUTPUT_DIR}/F12_drought_comparison_dual_metric_ssi{SSI_WINDOW}_sev{severity_exceedance:.3f}_mag{magnitude_exceedance:.3f}_tol{exceedance_tolerance:.3f}.png"
         print(f"Selecting events with DUAL-METRIC exceedance")
         print(f"Severity exceedance: {severity_exceedance} yr^-1, Magnitude exceedance: {magnitude_exceedance} yr^-1")
         print(f"Exceedance tolerance: {exceedance_tolerance} yr^-1")
     else:
+        fname = f"{FIG_OUTPUT_DIR}/F12_drought_comparison_ssi{SSI_WINDOW}_exceedance{target_exceedance:.3f}.png"
         print(f"Selecting events at {target_exceedance} exceedance rate")
         print(f"Metric: {metric}")
     print(f"SSI Window: {SSI_WINDOW}")
@@ -629,7 +632,7 @@ def generate_comparison_figure(target_exceedance=0.1, metric='severity', month_t
     plt.tight_layout(rect=[0, 0.01, 1, 0.96])
 
     # Save
-    fname = f"{FIG_OUTPUT_DIR}/F12_drought_comparison_ssi{SSI_WINDOW}_exceedance{target_exceedance:.3f}.png"
+    
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
@@ -650,9 +653,9 @@ def main():
     # ========================================================================
     # Select events at 0.1 exceedance for BOTH severity and magnitude
     fname = generate_comparison_figure(
-        severity_exceedance=0.1,
-        magnitude_exceedance=0.1,
-        exceedance_tolerance=0.05,
+        severity_exceedance=0.01,
+        magnitude_exceedance=0.01,
+        exceedance_tolerance=0.02,
         month_tolerance=1
     )
 
