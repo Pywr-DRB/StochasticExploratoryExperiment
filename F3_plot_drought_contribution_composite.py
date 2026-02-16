@@ -1,15 +1,21 @@
 """
-F3: Composite drought contribution and storage analysis figure (Version 2).
+F3: Composite drought contribution and storage analysis figure (Version 3).
 
-New Layout:
-  Top row: A (KDE) | B1/B2 (frequency and duration bar charts)
-  Bottom row: C1, C2, C3 (scatter plots for all three datasets)
+Simplified 3-panel layout:
+  Left: A (KDE of contribution ratio by drought zone)
+  Right: B1 (frequency box plots) | B2 (duration box plots)
 
-Changes from v1:
-  - B1: Frequency bar chart (fraction of years in each drought zone) with stacked percentiles
-  - B2: Duration bar chart (event duration percentiles) with stacked percentiles
-  - C1-C3: Scatter plots for stationary, climate_adjusted_low, climate_adjusted_high
-  - Generates two versions: full (A+B1+B2+C1+C2+C3) and simplified (A+B1+B2 only)
+Key features:
+  - A: KDE showing NYC contribution/inflow ratio for different drought zones
+  - B1: Box plots showing distribution of fraction of years in each drought zone across realizations
+  - B2: Box plots showing distribution of mean event duration across realizations
+  - Uses correct colorblind-friendly dataset colors from methods.plotting.styles
+
+Changes from v2:
+  - Replaced stacked bar charts with box plots for B1 and B2
+  - Fixed dataset colors to use DATASET_COLORS from styles module
+  - Focus on simplified 3-panel figure (removed full version with scatter plots)
+  - Box plots show distribution across ensemble realizations (not stacked percentiles)
 
 Usage:
     python F3_plot_drought_contribution_composite.py
@@ -426,88 +432,67 @@ def plot_panel_C(ax):
 # Percentiles for stacked bars (user-configurable)
 PERCENTILES = [5, 50, 95]
 
-def plot_frequency_bar_chart_stacked(ax, panel_label='b)'):
+def plot_frequency_boxplot(ax, panel_label='b)'):
     """
-    Plot Panel B1: Frequency bar chart with grouped + stacked percentiles.
+    Plot Panel B1: Frequency box plot showing distribution across realizations.
 
     X-axis groups: Warning, Watch, Emergency (3 groups)
-    Per group: 3 side-by-side bars (Stationary, Climate Low, Climate High)
-    Per bar: 3 stacked segments (5th, 50th, 95th percentiles) with color shading
+    Per group: 3 side-by-side box plots (Stationary, Climate Low, Climate High)
+    Box plots show the distribution of frequency values across ensemble realizations
     """
-    from methods.zone_duration_metrics import calculate_zone_frequency
-    import matplotlib.colors as mcolors
+    from methods.load import load_performance_metrics
 
     # Drought zones and order (left to right on x-axis)
-    zone_order = [4, 5, 6]  # Warning, Watch, Emergency
-    zone_labels_map = {4: 'Warning', 5: 'Watch', 6: 'Emergency'}
+    zone_keys = ['years_exactly_warning', 'years_exactly_watch', 'years_exactly_emergency']
+    zone_labels = ['Warning', 'Watch', 'Emergency']
 
-    # Calculate frequency for each dataset and zone
+    # Load performance metrics for all datasets
     all_freq_data = {}
     for dataset_id in SCENARIOS:
-        all_freq_data[dataset_id] = calculate_zone_frequency(dataset_id, zones=zone_order)
+        metrics = load_performance_metrics(dataset_id)
+        # Convert counts to fractions
+        freq_data = {}
+        for zk in zone_keys:
+            freq_data[zk] = metrics[zk].values / N_YEARS
+        all_freq_data[dataset_id] = freq_data
 
-    # Set up grouped bar positions
-    n_zones = len(zone_order)
+    # Set up grouped box plot positions
+    n_zones = len(zone_keys)
     n_datasets = len(SCENARIOS)
-    group_width = 0.8  # Total width for each zone group
-    bar_width = group_width / n_datasets  # Width of individual bars
-    x_groups = np.arange(n_zones)  # [0, 1, 2] for Warning, Watch, Emergency
+    positions_all = []
+    colors_all = []
+    data_all = []
 
-    # Dataset-specific base colors
-    dataset_colors = {
-        'stationary_ensemble': '#2E86AB',           # Blue
-        'climate_adjusted_low': '#A23B72',          # Purple
-        'climate_adjusted_high': '#F18F01',         # Orange
-    }
+    group_width = 0.8
+    box_width = group_width / (n_datasets + 0.5)  # Add spacing between groups
 
-    # Plot bars for each zone group
-    for zone_idx, zone_num in enumerate(zone_order):
-        # Plot bars for each dataset within this zone group
+    for zone_idx, zk in enumerate(zone_keys):
         for ds_idx, dataset_id in enumerate(SCENARIOS):
-            # Get dataset-specific base color
-            base_color = dataset_colors[dataset_id]
-            rgb = mcolors.to_rgb(base_color)
+            # Calculate position for this box
+            x_pos = zone_idx + (ds_idx - 1) * box_width
+            positions_all.append(x_pos)
+            colors_all.append(DATASET_COLORS[dataset_id])
+            data_all.append(all_freq_data[dataset_id][zk])
 
-            # Create 3 shades for percentiles: darkest (p5), medium (p50), lightest (p95)
-            shades = [
-                tuple(c * 0.5 for c in rgb),   # p5: darkest
-                tuple(c * 0.75 for c in rgb),  # p50: medium
-                rgb,                           # p95: lightest (original)
-            ]
+    # Create box plots
+    bp = ax.boxplot(data_all, positions=positions_all, widths=box_width * 0.8,
+                    patch_artist=True, showfliers=True,
+                    boxprops=dict(linewidth=1.2),
+                    whiskerprops=dict(linewidth=1.2),
+                    capprops=dict(linewidth=1.2),
+                    medianprops=dict(linewidth=1.5, color='black'),
+                    flierprops=dict(marker='o', markersize=3, alpha=0.5))
 
-            # Calculate x position for this bar
-            x_pos = x_groups[zone_idx] + (ds_idx - 1) * bar_width
-
-            # Get percentile values
-            freq_data = all_freq_data[dataset_id][zone_num]
-            p5_val = freq_data['p5']
-            p50_val = freq_data['p50']
-            p95_val = freq_data['p95']
-
-            # Stack the percentile segments
-            # Bottom segment: 0 to p5 (darkest)
-            ax.bar(x_pos, p5_val, bar_width * 0.9,
-                   color=shades[0], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
-
-            # Middle segment: p5 to p50 (medium)
-            ax.bar(x_pos, p50_val - p5_val, bar_width * 0.9,
-                   bottom=p5_val,
-                   color=shades[1], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
-
-            # Top segment: p50 to p95 (lightest)
-            ax.bar(x_pos, p95_val - p50_val, bar_width * 0.9,
-                   bottom=p50_val,
-                   color=shades[2], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
+    # Color the boxes
+    for patch, color in zip(bp['boxes'], colors_all):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
 
     # Format axes
-    ax.set_xticks(x_groups)
-    ax.set_xticklabels([zone_labels_map[z] for z in zone_order],
-                       fontsize=FONTSIZE_SMALL)
+    ax.set_xticks(range(n_zones))
+    ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_SMALL)
     ax.set_ylabel('Fraction of years', fontsize=FONTSIZE_LABEL)
-    ax.set_ylim(0, ax.get_ylim()[1] * 1.1)  # Add headroom
+    ax.set_ylim(bottom=0)
     ax.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
 
@@ -515,90 +500,88 @@ def plot_frequency_bar_chart_stacked(ax, panel_label='b)'):
             fontsize=14, va='bottom', ha='right')
 
 
-def plot_duration_bar_chart_stacked(ax, panel_label='c)'):
+def plot_duration_boxplot(ax, panel_label='c)'):
     """
-    Plot Panel B2: Duration bar chart with grouped + stacked percentiles.
+    Plot Panel B2: Duration box plot showing distribution across realizations.
 
     X-axis groups: Warning, Watch, Emergency (3 groups)
-    Per group: 3 side-by-side bars (Stationary, Climate Low, Climate High)
-    Per bar: 3 stacked segments (5th, 50th, 95th percentiles) with color shading
+    Per group: 3 side-by-side box plots (Stationary, Climate Low, Climate High)
+    Box plots show the distribution of mean duration per realization
     """
-    from methods.zone_duration_metrics import calculate_zone_duration_percentiles
-    import matplotlib.colors as mcolors
+    from methods.zone_duration_metrics import calculate_zone_events
+    import pywrdrb
 
     # Drought zones and order (left to right on x-axis)
     zone_order = [4, 5, 6]  # Warning, Watch, Emergency
     zone_labels_map = {4: 'Warning', 5: 'Watch', 6: 'Emergency'}
 
-    # Calculate duration for each dataset
+    # Calculate duration data for all datasets
     all_duration_data = {}
     for dataset_id in SCENARIOS:
-        all_duration_data[dataset_id] = calculate_zone_duration_percentiles(
-            dataset_id, zones=zone_order, percentiles=PERCENTILES
-        )
+        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+        data = pywrdrb.Data()
+        data.load_from_export(fname, results_sets=['res_level'])
 
-    # Set up grouped bar positions
+        dataset_durations = {}
+        for zone_num in zone_order:
+            realization_means = []
+            realizations = sorted(data.res_level[dataset_id].keys())
+
+            for r in realizations:
+                zone_series = data.res_level[dataset_id][r]['nyc']
+                events = calculate_zone_events(zone_series, zone_num, min_end_days=7)
+                durations = [e['duration_days'] for e in events]
+
+                # Calculate mean duration for this realization
+                if len(durations) > 0:
+                    realization_means.append(np.mean(durations))
+                else:
+                    realization_means.append(0)
+
+            dataset_durations[zone_num] = realization_means
+
+        all_duration_data[dataset_id] = dataset_durations
+
+    # Set up grouped box plot positions
     n_zones = len(zone_order)
     n_datasets = len(SCENARIOS)
-    group_width = 0.8  # Total width for each zone group
-    bar_width = group_width / n_datasets  # Width of individual bars
-    x_groups = np.arange(n_zones)  # [0, 1, 2] for Warning, Watch, Emergency
+    positions_all = []
+    colors_all = []
+    data_all = []
 
-    # Dataset-specific base colors
-    dataset_colors = {
-        'stationary_ensemble': '#2E86AB',           # Blue
-        'climate_adjusted_low': '#A23B72',          # Purple
-        'climate_adjusted_high': '#F18F01',         # Orange
-    }
+    group_width = 0.8
+    box_width = group_width / (n_datasets + 0.5)  # Add spacing between groups
 
-    # Plot bars for each zone group
     for zone_idx, zone_num in enumerate(zone_order):
-        # Plot bars for each dataset within this zone group
         for ds_idx, dataset_id in enumerate(SCENARIOS):
-            # Get dataset-specific base color
-            base_color = dataset_colors[dataset_id]
-            rgb = mcolors.to_rgb(base_color)
+            # Calculate position for this box
+            x_pos = zone_idx + (ds_idx - 1) * box_width
+            positions_all.append(x_pos)
+            colors_all.append(DATASET_COLORS[dataset_id])
 
-            # Create 3 shades for percentiles: darkest (p5), medium (p50), lightest (p95)
-            shades = [
-                tuple(c * 0.5 for c in rgb),   # p5: darkest
-                tuple(c * 0.75 for c in rgb),  # p50: medium
-                rgb,                           # p95: lightest (original)
-            ]
+            # Get mean durations for this zone and dataset (per realization)
+            zone_durations = all_duration_data[dataset_id][zone_num]
+            data_all.append(zone_durations)
 
-            # Calculate x position for this bar
-            x_pos = x_groups[zone_idx] + (ds_idx - 1) * bar_width
+    # Create box plots
+    bp = ax.boxplot(data_all, positions=positions_all, widths=box_width * 0.8,
+                    patch_artist=True, showfliers=True,
+                    boxprops=dict(linewidth=1.2),
+                    whiskerprops=dict(linewidth=1.2),
+                    capprops=dict(linewidth=1.2),
+                    medianprops=dict(linewidth=1.5, color='black'),
+                    flierprops=dict(marker='o', markersize=3, alpha=0.5))
 
-            # Get percentile values
-            duration_df = all_duration_data[dataset_id]
-            p5_val = duration_df.loc[zone_num, 'p5']
-            p50_val = duration_df.loc[zone_num, 'p50']
-            p95_val = duration_df.loc[zone_num, 'p95']
-
-            # Stack the percentile segments
-            # Bottom segment: 0 to p5 (darkest)
-            ax.bar(x_pos, p5_val, bar_width * 0.9,
-                   color=shades[0], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
-
-            # Middle segment: p5 to p50 (medium)
-            ax.bar(x_pos, p50_val - p5_val, bar_width * 0.9,
-                   bottom=p5_val,
-                   color=shades[1], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
-
-            # Top segment: p50 to p95 (lightest)
-            ax.bar(x_pos, p95_val - p50_val, bar_width * 0.9,
-                   bottom=p50_val,
-                   color=shades[2], alpha=0.95,
-                   edgecolor='white', linewidth=0.5)
+    # Color the boxes
+    for patch, color in zip(bp['boxes'], colors_all):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
 
     # Format axes
-    ax.set_xticks(x_groups)
-    ax.set_xticklabels([zone_labels_map[z] for z in zone_order],
-                       fontsize=FONTSIZE_SMALL)
-    ax.set_ylabel('Event duration (days)', fontsize=FONTSIZE_LABEL)
-    ax.set_ylim(0, ax.get_ylim()[1] * 1.1)
+    ax.set_xticks(range(n_zones))
+    ax.set_xticklabels([zone_labels_map[z] for z in zone_order], fontsize=FONTSIZE_SMALL)
+    ax.set_ylabel('Mean event duration (days)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylim(bottom=0)
     ax.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
 
@@ -606,15 +589,14 @@ def plot_duration_bar_chart_stacked(ax, panel_label='c)'):
             fontsize=14, va='bottom', ha='right')
 
 
-def add_bar_chart_legend(fig):
+def add_boxplot_legend(fig):
     """
     Add comprehensive shared legend for all figure elements.
 
     Includes:
     - KDE drought zone colors (Panel A)
     - Mean/1964 lines (Panel A)
-    - Dataset colors (Panels B1/B2)
-    - Percentile shading (Panels B1/B2)
+    - Dataset colors (Panels B1/B2 box plots)
     """
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
@@ -637,31 +619,15 @@ def add_bar_chart_legend(fig):
     legend_elements.append(Line2D([0], [0], color='black', linestyle='-',
                                    linewidth=2.5, label='1964 Drought'))
 
-    # Row 3: Dataset patches (Panels B1/B2 bar charts)
-    dataset_colors = {
-        'Stationary': '#2E86AB',
-        'Climate Low': '#A23B72',
-        'Climate High': '#F18F01',
-    }
-    for name, color in dataset_colors.items():
-        legend_elements.append(Patch(facecolor=color, edgecolor='white',
-                                      linewidth=0.5, label=name))
-
-    # Row 4: Percentile shading (Panels B1/B2 bar charts)
-    gray_base = (0.5, 0.5, 0.5)
-    legend_elements.append(Patch(facecolor=tuple(c * 0.5 for c in gray_base),
-                                  edgecolor='white', linewidth=0.5,
-                                  label='p5 (dark)'))
-    legend_elements.append(Patch(facecolor=tuple(c * 0.75 for c in gray_base),
-                                  edgecolor='white', linewidth=0.5,
-                                  label='p50 (med)'))
-    legend_elements.append(Patch(facecolor=gray_base,
-                                  edgecolor='white', linewidth=0.5,
-                                  label='p95 (light)'))
+    # Row 3: Dataset patches (Panels B1/B2 box plots)
+    for dataset_id in SCENARIOS:
+        legend_elements.append(Patch(facecolor=DATASET_COLORS[dataset_id], alpha=0.7,
+                                      edgecolor='black', linewidth=1.2,
+                                      label=DATASET_LABELS[dataset_id]))
 
     # Add legend at bottom center with simple styling
     fig.legend(handles=legend_elements, loc='lower center',
-               ncol=6, fontsize=FONTSIZE_SMALL - 1,
+               ncol=5, fontsize=FONTSIZE_SMALL,
                frameon=True, framealpha=1.0, edgecolor='black',
                fancybox=False,
                bbox_to_anchor=(0.5, -0.01))
@@ -809,11 +775,11 @@ def create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low, metrics
     kde_handles, kde_labels = plot_panel_A(ax_A, all_categorized['stationary_ensemble'],
                                            n_months_prior=n_mo)
 
-    # Panel B1: Frequency bar chart
-    plot_frequency_bar_chart_stacked(ax_B1, panel_label='b)')
+    # Panel B1: Frequency box plot
+    plot_frequency_boxplot(ax_B1, panel_label='b)')
 
-    # Panel B2: Duration bar chart
-    plot_duration_bar_chart_stacked(ax_B2, panel_label='c)')
+    # Panel B2: Duration box plot
+    plot_duration_boxplot(ax_B2, panel_label='c)')
 
     # Panel C1-C3: Scatter plots
     metrics_dict = {
@@ -849,9 +815,8 @@ def create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low, metrics
         cbar.set_label('Worst 1-mo demand satisfaction (%)', fontsize=FONTSIZE_SMALL)
         cbar.ax.tick_params(labelsize=FONTSIZE_SMALL-1)
 
-    # Shared legend for bar charts (datasets + percentiles)
-    # Position it between the bar charts and scatter plots
-    add_bar_chart_legend(fig)
+    # Shared legend for box plots
+    add_boxplot_legend(fig)
 
     return fig
 
@@ -879,14 +844,14 @@ def create_figure_simplified(n_mo, all_categorized):
     # Panel A: KDE
     plot_panel_A(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
 
-    # Panel B1: Frequency bar chart
-    plot_frequency_bar_chart_stacked(ax_B1, panel_label='b)')
+    # Panel B1: Frequency box plot
+    plot_frequency_boxplot(ax_B1, panel_label='b)')
 
-    # Panel B2: Duration bar chart
-    plot_duration_bar_chart_stacked(ax_B2, panel_label='c)')
+    # Panel B2: Duration box plot
+    plot_duration_boxplot(ax_B2, panel_label='c)')
 
-    # Shared legend for bar charts (datasets + percentiles)
-    add_bar_chart_legend(fig)
+    # Shared legend for box plots
+    add_boxplot_legend(fig)
 
     return fig
 
@@ -984,22 +949,22 @@ def main():
 
         suffix = f'contribution_ratio_{n_mo}mo'
 
-        # Generate full version
-        print(f"  Creating full version (A + B1 + B2 + C1 + C2 + C3)...")
-        fig_full = create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low,
-                                      metrics_high, ffmp_lines, ds_vmin, ds_vmax)
-        fname_full = f"{FIG_OUTPUT_DIR}/F3_composite_full_{suffix}.png"
-        fig_full.savefig(fname_full, dpi=DPI_HIGH, bbox_inches='tight')
-        print(f"    Saved: {fname_full}")
-        plt.close(fig_full)
-
-        # Generate simplified version
-        print(f"  Creating simplified version (A + B1 + B2 only)...")
+        # Generate simplified version (main figure)
+        print(f"  Creating simplified 3-panel figure (A + B1 + B2)...")
         fig_simple = create_figure_simplified(n_mo, all_categorized)
-        fname_simple = f"{FIG_OUTPUT_DIR}/F3_composite_simplified_{suffix}.png"
+        fname_simple = f"{FIG_OUTPUT_DIR}/F3_composite_{suffix}.png"
         fig_simple.savefig(fname_simple, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"    Saved: {fname_simple}")
         plt.close(fig_simple)
+
+        # Full version with scatter plots (DEPRECATED - uncomment if needed)
+        # print(f"  Creating full version (A + B1 + B2 + C1 + C2 + C3)...")
+        # fig_full = create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low,
+        #                               metrics_high, ffmp_lines, ds_vmin, ds_vmax)
+        # fname_full = f"{FIG_OUTPUT_DIR}/F3_composite_full_{suffix}.png"
+        # fig_full.savefig(fname_full, dpi=DPI_HIGH, bbox_inches='tight')
+        # print(f"    Saved: {fname_full}")
+        # plt.close(fig_full)
 
     print("\n" + "=" * 70)
     print("All F3 figures generated successfully!")

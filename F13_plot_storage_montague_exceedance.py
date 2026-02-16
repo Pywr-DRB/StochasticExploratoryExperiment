@@ -27,9 +27,13 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY, ROOT_DIR
+from methods.config import (
+    FIG_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY, ROOT_DIR,
+    RECONSTRUCTION_OUTPUT_FNAME
+)
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
+    HISTORIC_COLOR, HISTORIC_LABEL,
     LINEWIDTH_MEDIUM, DPI_HIGH,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LARGE,
 )
@@ -72,6 +76,55 @@ def load_dataset(dataset_id):
     )
 
     return data
+
+
+def load_historic_storage():
+    """
+    Load historic/reconstruction storage data from pub_nhmv10_BC_withObsScaled simulation.
+
+    Returns
+    -------
+    annual_min_storage : np.ndarray
+        Array of annual minimum storage percentages for historic period
+    annual_montague_releases : np.ndarray
+        Array of annual total Montague releases for historic period
+    """
+    if not os.path.exists(RECONSTRUCTION_OUTPUT_FNAME):
+        print(f"  Warning: Historic data not found at {RECONSTRUCTION_OUTPUT_FNAME}")
+        return None, None
+
+    print(f"  Loading historic data from {RECONSTRUCTION_OUTPUT_FNAME}")
+    historic_data = pywrdrb.Data(results_sets=['res_storage', 'nyc_release_components'])
+    historic_data.load_output(
+        output_filenames=[RECONSTRUCTION_OUTPUT_FNAME],
+        results_sets=['res_storage', 'nyc_release_components']
+    )
+
+    # Get reconstruction data (should be keyed by filename stem)
+    file_stem = os.path.splitext(os.path.basename(RECONSTRUCTION_OUTPUT_FNAME))[0]
+    dataset_key = file_stem
+
+    # Should have realization 0
+    realization_key = 0
+
+    # Calculate NYC storage percentage
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+    nyc_storage = historic_data.res_storage[dataset_key][realization_key][nyc_reservoirs].sum(axis=1)
+    nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+    # Calculate NYC→Montague contribution from release components
+    # (same logic as in postprocess.py _compute_contribution)
+    release_components = historic_data.nyc_release_components[dataset_key][realization_key]
+    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
+    montague_releases = release_components.loc[:, contribution_columns].sum(axis=1)
+
+    # Calculate annual metrics
+    annual_min_storage = nyc_storage_pct.resample('YS').min().values
+    annual_montague_total = montague_releases.resample('YS').sum().values
+
+    print(f"    Loaded {len(annual_min_storage)} years of historic data")
+
+    return annual_min_storage, annual_montague_total
 
 
 def compute_annual_metrics(data, dataset_id):
@@ -217,6 +270,10 @@ def plot_storage_montague_exceedance(
         annual_metrics = compute_annual_metrics(data, dataset_id)
         dataset_annual_metrics[dataset_id] = annual_metrics
 
+    # Load historic data
+    print(f"\n  Loading historic data...")
+    historic_storage, historic_montague = load_historic_storage()
+
     # ------------------------------------------------------------------
     # Create figure
     # ------------------------------------------------------------------
@@ -272,6 +329,30 @@ def plot_storage_montague_exceedance(
             linewidth=LINEWIDTH_MEDIUM,
             label=label,
             zorder=5
+        )
+
+    # ------------------------------------------------------------------
+    # Plot historic data as reference (horizontal line at specified percentile)
+    # ------------------------------------------------------------------
+    if historic_storage is not None and historic_montague is not None:
+        # Calculate the specified percentile from historic annual values
+        historic_storage_percentile = np.percentile(historic_storage, ensemble_percentile * 100)
+        historic_montague_percentile = np.percentile(historic_montague, ensemble_percentile * 100)
+
+        # Plot historic storage as horizontal line
+        ax_storage.axhline(
+            historic_storage_percentile,
+            color=HISTORIC_COLOR, linestyle='-',
+            linewidth=LINEWIDTH_MEDIUM, alpha=0.8,
+            label=HISTORIC_LABEL, zorder=10
+        )
+
+        # Plot historic Montague as horizontal line
+        ax_montague.axhline(
+            historic_montague_percentile,
+            color=HISTORIC_COLOR, linestyle='-',
+            linewidth=LINEWIDTH_MEDIUM, alpha=0.8,
+            label=HISTORIC_LABEL, zorder=10
         )
 
     # ------------------------------------------------------------------

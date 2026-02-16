@@ -125,9 +125,6 @@ def plot_satisficing_percentages(results, dataset_id, ssi_window, dataset_label)
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"  Saved: {fname}")
 
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved: {fname_svg}")
 
     plt.close()
 
@@ -231,9 +228,6 @@ def plot_failure_breakdown(results, dataset_id, ssi_window, dataset_label):
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"  Saved: {fname}")
 
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved: {fname_svg}")
 
     plt.close()
 
@@ -322,10 +316,6 @@ def plot_metric_distributions(results, dataset_id, ssi_window, dataset_label):
     fname = f"{FIG_DIR_SATISFICING}/{dataset_id}_ssi{ssi_window}_metric_distributions.png"
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"  Saved: {fname}")
-
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved: {fname_svg}")
 
     plt.close()
 
@@ -435,10 +425,6 @@ def plot_combined_summary(results, dataset_id, ssi_window, dataset_label):
     fname = f"{FIG_DIR_SATISFICING}/{dataset_id}_ssi{ssi_window}_summary_3panel.png"
     plt.savefig(fname, dpi=300, bbox_inches='tight')
     print(f"  Saved: {fname}")
-
-    fname_svg = fname.replace('.png', '.svg')
-    plt.savefig(fname_svg, bbox_inches='tight')
-    print(f"  Saved: {fname_svg}")
 
     plt.close()
 

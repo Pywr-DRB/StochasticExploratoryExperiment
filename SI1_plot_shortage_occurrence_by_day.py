@@ -264,13 +264,6 @@ def main(dataset_id):
         shortage_counts = calculate_shortage_by_day_of_year(data, dataset_id, location)
         shortage_data[location] = shortage_counts
 
-    # Create individual plots
-    print("\nGenerating individual plots:")
-    print("-" * 80)
-
-    for location in locations:
-        plot_shortage_occurrence(shortage_data[location], location,
-                                dataset_id, dataset_label)
 
     # Create comparison plot
     print("\nGenerating comparison plot:")
