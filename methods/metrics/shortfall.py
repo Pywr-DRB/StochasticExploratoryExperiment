@@ -49,6 +49,7 @@ def calculate_shortage_by_day_of_year(data, dataset_id, location):
 
             shortage = demand - delivery
             shortage[shortage < 0] = 0
+            shortage[shortage < 0.1] = 0.0  # Filter out negligible shortages
 
             # Any shortage > 0 is a violation
             violation_days = shortage > 0

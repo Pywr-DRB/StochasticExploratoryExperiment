@@ -8,13 +8,8 @@ import sys
 from mpi4py import MPI
 
 from methods.prepare import prep_ensemble_set
-from methods.config import (
-    DATASET_CONFIGS,
-    N_ENSEMBLE_SETS,
-    verify_dataset_id,
-    get_ensemble_set_spec,
-    get_existing_ensemble_sets
-)
+from methods.config import DATASET_CONFIGS, N_ENSEMBLE_SETS
+from methods.config import verify_dataset_id, get_ensemble_set_spec, get_existing_ensemble_sets
 from methods.print_summary import print_prep_status
 
 
