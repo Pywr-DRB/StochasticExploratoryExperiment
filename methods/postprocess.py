@@ -16,6 +16,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.metrics.shortfall import add_trenton_equiv_flow, get_flow_and_target_values
+from methods.zone_duration_metrics import calculate_drought_zone_events
 from methods.config import (
     N_REALIZATIONS_PER_ENSEMBLE_SET,
     N_ENSEMBLE_SETS,
@@ -581,6 +582,57 @@ def save_performance_metrics(metrics_df, dataset_id, output_dir):
 
     # Print summary using centralized function
     print_performance_metrics_summary(metrics_df)
+
+
+def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):
+    """
+    Calculate drought zone episode durations for all realizations and save to CSV.
+
+    Each contiguous drought episode (NYC zone >= 4, ending after 7+ consecutive days
+    below zone 4) is recorded as one row. The episode is attributed to the maximum
+    zone level reached during it; lower zones passed through are not recorded separately.
+    Duration is the full episode length from the first to the last drought day.
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with res_level containing the 'nyc' zone timeseries.
+    dataset_id : str
+        Dataset identifier.
+    realizations : list
+        List of realization IDs.
+    output_dir : str
+        Output directory for the CSV file.
+
+    Returns
+    -------
+    events_df : pd.DataFrame
+        DataFrame with columns: realization_id, start_date, end_date,
+        duration_days, max_zone.
+    """
+    print(f"  Calculating zone drought episode durations...")
+
+    records = []
+    for r in realizations:
+        zone_series = data.res_level[dataset_id][r]['nyc']
+        episodes = calculate_drought_zone_events(zone_series, min_end_days=7)
+        for ep in episodes:
+            records.append({
+                'realization_id': r,
+                'start_date': ep['start_date'].isoformat(),
+                'end_date': ep['end_date'].isoformat(),
+                'duration_days': ep['duration_days'],
+                'max_zone': ep['max_zone'],
+            })
+
+    events_df = pd.DataFrame(records)
+
+    os.makedirs(output_dir, exist_ok=True)
+    fname = f"{output_dir}/{dataset_id}_zone_duration_events.csv"
+    events_df.to_csv(fname, index=False)
+    print(f"  Saved: {fname} ({len(events_df)} episodes across {len(realizations)} realizations)")
+
+    return events_df
 
 
 def calculate_and_save_performance_metrics(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):

@@ -46,7 +46,7 @@ warnings.filterwarnings("ignore")
 # MPI CONFIGURATION
 # =============================================================================
 # Set USE_MPI=False to run without MPI (single-process, for small local batches)
-USE_MPI = True
+USE_MPI = False
 
 if USE_MPI:
     from mpi4py import MPI
@@ -73,7 +73,11 @@ else:
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
 from methods.config import *
-from methods.postprocess import calculate_and_save_performance_metrics, calculate_contribution_analysis_metrics
+from methods.postprocess import (
+    calculate_and_save_performance_metrics,
+    calculate_contribution_analysis_metrics,
+    calculate_and_save_zone_duration_events,
+)
 
 # Temporary directory for intermediate files
 TEMP_DIR = f"{ROOT_DIR}/pywrdrb/outputs/temp_mpi"
@@ -962,6 +966,12 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             contrib_metrics.to_csv(contrib_fname, index=False)
             print(f"  Saved: {contrib_fname} ({len(contrib_metrics)} year-realization pairs)")
 
+            # Calculate zone drought episode durations
+            print(f"\nCalculating zone duration events for {dataset_id}...")
+            calculate_and_save_zone_duration_events(
+                keep_data, dataset_id, realizations, PERFORMANCE_METRICS_DIR
+            )
+
         except Exception as e:
             print(f"ERROR calculating metrics for {dataset_id}: {e}")
             import traceback
@@ -974,6 +984,9 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             reconstruction_realizations = list(keep_data.shortage['reconstruction'].keys())
             print(f"  Found {len(reconstruction_realizations)} realizations in reconstruction")
             calculate_and_save_performance_metrics(
+                keep_data, 'reconstruction', reconstruction_realizations, PERFORMANCE_METRICS_DIR
+            )
+            calculate_and_save_zone_duration_events(
                 keep_data, 'reconstruction', reconstruction_realizations, PERFORMANCE_METRICS_DIR
             )
         except KeyError:
