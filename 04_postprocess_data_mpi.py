@@ -46,11 +46,17 @@ warnings.filterwarnings("ignore")
 # MPI CONFIGURATION
 # =============================================================================
 # Set USE_MPI=False to run without MPI (single-process, for small local batches)
-USE_MPI = False
 
-if USE_MPI:
+try:
     from mpi4py import MPI
-else:
+    MPI_AVAILABLE = True
+    USE_MPI = True
+except ImportError:
+    MPI_AVAILABLE = False
+    USE_MPI = False
+    print("mpi4py not found - running in single-process mode (USE_MPI=False)")
+
+if not USE_MPI:
     # Mock MPI communicator for single-process execution
     class MockComm:
         def Get_rank(self):
@@ -940,7 +946,8 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             print(f"  {fname}")
 
             required_results_sets = ['shortage', 'mrf_target', 'res_storage',
-                                     'ibt_diversions', 'ibt_demands', 'contribution']
+                                     'ibt_diversions', 'ibt_demands', 'contribution',
+                                     'res_level', 'inflow']
 
             keep_data = pywrdrb.Data()
             keep_data.load_from_export(fname, results_sets=required_results_sets)

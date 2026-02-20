@@ -99,7 +99,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             end_date=None,
             modes=('regression_disagg',),
             use_log=True,
-            remove_zeros=False,
+            remove_zeros=True,
             use_const=False,
             use_mpi=use_mpi  # Enable MPI within the preprocessor
         )
@@ -181,7 +181,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             end_date=None,
             modes=('regression_disagg',),
             use_log=True,
-            remove_zeros=False,
+            remove_zeros=True,
             use_const=False,
             use_mpi=use_mpi
         )
