@@ -95,6 +95,81 @@ def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
     return x_grid, bands
 
 
+def _compute_exceedance_on_grid(df, metric, n_years, x_grid, percentiles=(0, 50, 100)):
+    """
+    Compute exceedance-rate bands on a provided x_grid using vectorised searchsorted.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Drought events with columns ``metric`` and ``realization_id``.
+    metric : str
+        Column name for the drought metric.
+    n_years : int
+        Simulation years per realization for rate normalisation.
+    x_grid : np.ndarray
+        Pre-computed common grid of metric values.
+    percentiles : tuple of int
+        Percentiles to compute across realizations.
+
+    Returns
+    -------
+    bands : dict
+        ``{p: array}`` for each percentile *p*.
+    """
+    realization_ids = sorted(df['realization_id'].unique())
+    curves = np.zeros((len(realization_ids), len(x_grid)))
+
+    for i, rid in enumerate(realization_ids):
+        vals = np.sort(df.loc[df['realization_id'] == rid, metric].dropna().values)
+        counts = len(vals) - np.searchsorted(vals, x_grid, side='left')
+        curves[i, :] = counts / n_years
+
+    return {p: np.percentile(curves, p, axis=0) for p in percentiles}
+
+
+def _compute_delta_bands(df_scenario, baseline_median, metric, n_years, x_grid,
+                         percentiles=(0, 50, 100)):
+    """
+    Compute change in exceedance rate per realization vs. a fixed baseline curve.
+
+    For each realization in *df_scenario*, computes the exceedance rate on *x_grid*
+    then subtracts *baseline_median* element-wise.  Percentile bands of the resulting
+    delta curves are returned.
+
+    Parameters
+    ----------
+    df_scenario : pd.DataFrame
+        Drought events with columns ``metric`` and ``realization_id``.
+    baseline_median : np.ndarray, shape (len(x_grid),)
+        Reference exceedance curve (stationary ensemble median).
+    metric : str
+        Column name for the drought metric.
+    n_years : int
+        Simulation years per realization.
+    x_grid : np.ndarray
+        Shared metric grid.
+    percentiles : tuple of int
+        Percentiles to compute across realization delta curves.
+
+    Returns
+    -------
+    bands : dict
+        ``{p: array}`` delta exceedance rate (yr⁻¹) at each *x_grid* point.
+    """
+    realization_ids = sorted(df_scenario['realization_id'].unique())
+    delta_curves = np.zeros((len(realization_ids), len(x_grid)))
+
+    for i, rid in enumerate(realization_ids):
+        vals = np.sort(
+            df_scenario.loc[df_scenario['realization_id'] == rid, metric].dropna().values
+        )
+        counts = len(vals) - np.searchsorted(vals, x_grid, side='left')
+        delta_curves[i, :] = counts / n_years - baseline_median
+
+    return {p: np.percentile(delta_curves, p, axis=0) for p in percentiles}
+
+
 def plot_drought_manuscript_figure(
     ssi_window=12,
     cdf_metrics=None,
@@ -106,6 +181,7 @@ def plot_drought_manuscript_figure(
     log_magnitude=False,
     log_hexbin_counts=False,
     log_exceedance=True,
+    plot_relative_change=True,
 ):
     """Create the multipanel drought distribution manuscript figure.
 
@@ -136,6 +212,14 @@ def plot_drought_manuscript_figure(
         If True, use log scale for hexbin colorbar counts.
     log_exceedance : bool
         If True, use log scale for the exceedance-rate y-axis.
+    plot_relative_change : bool
+        If True, right panels show the change in exceedance rate relative to the
+        stationary-ensemble median, rather than absolute exceedance rates.
+        For each realization, Δ = exceedance_realization − median_stationary on a
+        shared x-grid.  The filled band is the 0–100th percentile of Δ across
+        realizations; the solid line is the median Δ.  A dashed y = 0 line marks
+        the baseline.  Historic markers are expressed as Δ relative to the
+        stationary median curve.  Default: False.
 
     Returns
     -------
@@ -256,57 +340,108 @@ def plot_drought_manuscript_figure(
     # ------------------------------------------------------------------
     # Right panels: exceedance-rate CDFs (3x2) - one dataset per row
     # ------------------------------------------------------------------
+    # Pre-compute shared x-grids and stationary-median baselines
+    # (used only when plot_relative_change=True)
+    if plot_relative_change:
+        shared_x_grids = {}
+        baseline_medians = {}
+        for metric in cdf_metrics:
+            all_vals = np.concatenate([
+                ensemble_data[did]['droughts'][metric].dropna().values
+                for did in ALL_DATASETS
+            ])
+            x_grid_m = np.linspace(np.nanmin(all_vals), np.nanmax(all_vals), 200)
+            shared_x_grids[metric] = x_grid_m
+            baseline_bands_m = _compute_exceedance_on_grid(
+                ensemble_data['stationary_ensemble']['droughts'],
+                metric, N_YEARS, x_grid_m, percentiles=(50,),
+            )
+            baseline_medians[metric] = baseline_bands_m[50]
+
     panel_idx = 1  # panel (a) is hexbin
     for r, dataset_id in enumerate(ALL_DATASETS):
         for c, metric in enumerate(cdf_metrics):
             ax = cdf_axes[r, c]
-
-            # --- Dataset ensemble: filled bands ---
             df = ensemble_data[dataset_id]['droughts']
             color = DATASET_COLORS.get(dataset_id, '#808080')
-            x, bands = _compute_realization_exceedance_bands(
-                df, metric, n_years=N_YEARS,
-            )
-            # Full range (0-100%)
-            ax.fill_between(
-                x, bands[0], bands[100],
-                color=color, alpha=0.2, zorder=4,
-            )
-            # Median line
-            ax.plot(
-                x, bands[50],
-                color=color, linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
-                linewidth=LINEWIDTH_MEDIUM, zorder=5,
-            )
 
-            # --- Historic markers ---
-            vals = np.sort(obs_droughts[metric].values)[::-1]
-            exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
-            ax.scatter(
-                vals, exceedance,
-                color=HISTORIC_COLOR, marker='^', s=25,
-                edgecolors='white', linewidths=0.4,
-                zorder=6,
-            )
+            if plot_relative_change:
+                # --- Relative-change mode ---
+                x = shared_x_grids[metric]
+                baseline_med = baseline_medians[metric]
 
-            # --- Formatting ---
+                delta_bands = _compute_delta_bands(
+                    df, baseline_med, metric, N_YEARS, x,
+                )
+                # Full range (0-100 percentile) of Δ
+                ax.fill_between(x, delta_bands[0], delta_bands[100],
+                                color=color, alpha=0.2, zorder=4)
+                # Median Δ line
+                ax.plot(x, delta_bands[50],
+                        color=color,
+                        linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                        linewidth=LINEWIDTH_MEDIUM, zorder=5)
+
+                # Zero-change reference
+                ax.axhline(0, color='gray', linestyle='--', linewidth=0.8,
+                           alpha=0.7, zorder=3)
+
+                # Historic markers expressed as Δ vs. stationary baseline median
+                obs_vals = np.sort(obs_droughts[metric].values)[::-1]
+                obs_exc = np.arange(1, len(obs_vals) + 1) / HISTORIC_N_YEARS
+                baseline_at_obs = np.interp(obs_vals, x, baseline_med)
+                ax.scatter(obs_vals, obs_exc - baseline_at_obs,
+                           color=HISTORIC_COLOR, marker='^', s=25,
+                           edgecolors='white', linewidths=0.4, zorder=6)
+
+                # Y-axis label (no log scale for deltas)
+                if c == 0:
+                    ax.set_ylabel('Δ Exceedance rate (yr$^{-1}$)',
+                                  fontsize=FONTSIZE_MEDIUM)
+                else:
+                    ax.set_ylabel('')
+                    ax.set_yticklabels([])
+
+            else:
+                # --- Absolute exceedance mode (default) ---
+                x, bands = _compute_realization_exceedance_bands(
+                    df, metric, n_years=N_YEARS,
+                )
+                # Full range (0-100%)
+                ax.fill_between(x, bands[0], bands[100],
+                                color=color, alpha=0.2, zorder=4)
+                # Median line
+                ax.plot(x, bands[50],
+                        color=color,
+                        linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                        linewidth=LINEWIDTH_MEDIUM, zorder=5)
+
+                vals = np.sort(obs_droughts[metric].values)[::-1]
+                exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
+                ax.scatter(vals, exceedance,
+                           color=HISTORIC_COLOR, marker='^', s=25,
+                           edgecolors='white', linewidths=0.4, zorder=6)
+
+                if c == 0:
+                    ax.set_ylabel('Exceedance rate (yr$^{-1}$)',
+                                  fontsize=FONTSIZE_MEDIUM)
+                else:
+                    ax.set_ylabel('')
+                    ax.set_yticklabels([])
+
+                if log_exceedance:
+                    ax.set_yscale('log')
+                    ax.set_ylim(bottom=1e-3)
+
+            # --- Common formatting ---
             if r == n_rows - 1:
                 ax.set_xlabel(METRIC_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
             else:
                 ax.set_xlabel('')
                 ax.set_xticklabels([])
-            if c == 0:
-                ax.set_ylabel('Exceedance rate (yr$^{-1}$)', fontsize=FONTSIZE_MEDIUM)
-            else:
-                ax.set_ylabel('')
-                ax.set_yticklabels([])
 
             if log_magnitude and metric == 'magnitude':
                 ax.set_xscale('log')
-
-            if log_exceedance:
-                ax.set_yscale('log')
-                ax.set_ylim(bottom=1e-3)
 
             ax.tick_params(labelsize=FONTSIZE_SMALL)
             ax.grid(True, which='both', color='gray', alpha=0.15,
@@ -346,6 +481,11 @@ def plot_drought_manuscript_figure(
                           linewidth=LINEWIDTH_MEDIUM,
                           label=DATASET_LABELS.get(dataset_id, dataset_id))
         )
+    if plot_relative_change:
+        legend_handles.append(
+            mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8,
+                          label='Baseline (stationary median)')
+        )
 
     # Place legend in the bottom-right cell
     ax_legend.legend(
@@ -361,7 +501,8 @@ def plot_drought_manuscript_figure(
     # Save
     # ------------------------------------------------------------------
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}.png"
+        rc_suffix = '_relative_change' if plot_relative_change else ''
+        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}{rc_suffix}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
@@ -378,9 +519,19 @@ def main():
 
     print(f"F2: Drought metric distribution (SSI-{ssi_window})")
 
+    # Absolute exceedance version
     plot_drought_manuscript_figure(ssi_window=ssi_window,
                                    log_magnitude=True,
-                                   log_exceedance=False)
+                                   log_exceedance=False,
+                                   plot_relative_change=False)
+    plt.close('all')
+
+    # Relative-change version
+    print(f"F2: Relative change in exceedance rates (SSI-{ssi_window})")
+    plot_drought_manuscript_figure(ssi_window=ssi_window,
+                                   log_magnitude=True,
+                                   log_exceedance=False,
+                                   plot_relative_change=True)
     plt.close('all')
 
 
