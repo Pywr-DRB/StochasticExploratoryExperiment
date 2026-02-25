@@ -789,7 +789,7 @@ def main():
     # Select events at 0.1 exceedance for BOTH severity and magnitude
     fname = generate_comparison_figure(
         severity_exceedance=0.01,
-        magnitude_exceedance=0.01,
+        magnitude_exceedance=0.1,
         exceedance_tolerance=0.02,
         month_tolerance=1
     )

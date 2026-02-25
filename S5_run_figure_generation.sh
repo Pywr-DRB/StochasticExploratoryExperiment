@@ -4,8 +4,6 @@
 #SBATCH --error=./logs/fig.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --time=48:00:00
-#SBATCH --mem=0
 
 
 # Load modules and environment
@@ -17,10 +15,12 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
 PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-false}
 PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
+PLOT_PERFORMANCE_BARS=${PLOT_PERFORMANCE_BARS:-true}
+
 
 PLOT_EXAMPLE_YEARS=${PLOT_EXAMPLE_YEARS:-false}
 PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS=${PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS:-false}
@@ -58,6 +58,14 @@ if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
     echo "Generating contribution distribution figures..."
     echo "========================================"
     python3 F4_plot_contribution_distributions.py --multipanel
+fi
+
+
+if [ "$PLOT_PERFORMANCE_BARS" = true ]; then
+    echo "========================================"
+    echo "Generating performance bar figures..."
+    echo "========================================"
+    python3 F5_plot_performance_outcome_boxplots.py
 fi
 
 
