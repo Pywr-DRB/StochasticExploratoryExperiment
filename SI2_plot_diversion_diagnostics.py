@@ -42,7 +42,7 @@ plt.rcParams['ytick.labelsize'] = 9
 plt.rcParams['legend.fontsize'] = 9
 
 # Output directory
-FIG_DIR_DIVERSIONS = f"{FIG_DIR}/diversion_diagnostics"
+FIG_DIR_DIVERSIONS = f"{FIG_DIR}/SI2_diversion_diagnostics"
 os.makedirs(FIG_DIR_DIVERSIONS, exist_ok=True)
 
 

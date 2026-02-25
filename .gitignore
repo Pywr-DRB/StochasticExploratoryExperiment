@@ -209,3 +209,5 @@ notebooks/
 archive/*
 .vscode/
 JanStart_pywrdrb/
+figures/*
+manuscript/*

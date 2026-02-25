@@ -262,7 +262,7 @@ def create_discrete_colormap(bin_edges, base_cmap='magma_r'):
 
 
 # Input/output directories
-FIG_OUTPUT_DIR = f"{FIG_DIR}/storage_zones"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI4_storage_zone_probability/"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 

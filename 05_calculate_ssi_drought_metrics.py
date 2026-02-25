@@ -23,7 +23,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from sglib.droughts.ssi import SSIDroughtMetrics
+from synhydro.droughts.ssi import SSIDroughtMetrics
 
 from methods.utils import distribute_realizations_across_ranks
 from methods.verification import verify_postprocessing_output
@@ -176,7 +176,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
             # Save SSI values to hdf5 (optional)
             if EXPORT_SSI_HDF5:
-                from sglib.core.ensemble import Ensemble
+                from synhydro.core.ensemble import Ensemble
                 ssi_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}.hdf5"
                 print(f"  Saving SSI values to hdf5: {ssi_fname}")
                 # Convert syn_ssi_dict to Ensemble format

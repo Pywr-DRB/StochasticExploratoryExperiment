@@ -11,15 +11,15 @@ from methods.verification import verify_dataset_id
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 2000
+TOTAL_REALIZATIONS = 5
 BASELINE_DATASET =  'pub_nhmv10_BC_withObsScaled' # 'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
-N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
+N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
 # Pywr-DRB simulation batching (within each ensemble set)
-N_REALIZATIONS_PER_PYWRDRB_BATCH = 10 # Simulation memory limits
+N_REALIZATIONS_PER_PYWRDRB_BATCH = 5 # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
@@ -47,7 +47,7 @@ assert N_REALIZATIONS_PER_ENSEMBLE_SET % N_REALIZATIONS_PER_PYWRDRB_BATCH == 0, 
 
 
 # Load monthly shift data for climate adjustments
-fname = "./data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv"
+fname = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "nyc_inflow_selected_scenarios_PRMS_2020_2059.csv")
 monthly_shift_scenarios = pd.read_csv(fname, index_col=0)
 
 DATASET_CONFIGS = {

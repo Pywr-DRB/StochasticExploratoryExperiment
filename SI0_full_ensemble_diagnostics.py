@@ -21,13 +21,15 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from sglib import Ensemble
-from sglib.plotting import plot_validation_panel, plot_spatial_correlation
+from synhydro import Ensemble
+from synhydro.plotting import plot_validation_panel, plot_spatial_correlation
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.plotting.ensemble_summary import plot_ensemble_convergence
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import *
+
+FIG_DIR = f"{FIG_DIR}/SI0_ensemble_diagnostics"
 
 
 def plot_full_ensemble_diagnostics(dataset_id: str):
@@ -175,7 +177,7 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
 
             ensemble_cache[cache_key] = Ensemble(ensemble_dict)
 
-        # Use SGLib API
+        # Use SynHydro API
         plot_validation_panel(
             ensemble=ensemble_cache[cache_key],
             observed=Q.loc[:, site],

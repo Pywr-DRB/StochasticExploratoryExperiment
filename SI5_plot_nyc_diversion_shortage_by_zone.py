@@ -50,7 +50,7 @@ from methods.plotting.styles import (
 )
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/SI_NYC_shortage_by_zone"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI5_NYC_shortage_by_zone"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Zone definitions

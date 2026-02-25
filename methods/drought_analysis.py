@@ -14,7 +14,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from sglib.droughts.ssi import SSIDroughtMetrics, SSI
+from synhydro.droughts.ssi import SSIDroughtMetrics, SSI
 
 from scipy.stats import chi2_contingency, mannwhitneyu
 

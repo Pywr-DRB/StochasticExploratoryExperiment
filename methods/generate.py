@@ -13,9 +13,9 @@ from pywrdrb.pre.flows import _subtract_upstream_catchment_inflows
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.pywr_drb_node_data import downstream_node_lags
 
-from sglib.methods.generation.nonparametric.kirsch import KirschGenerator
-from sglib.methods.disaggregation.temporal.nowak import NowakDisaggregator
-from sglib.core.ensemble import Ensemble
+from synhydro.methods.generation.nonparametric.kirsch import KirschGenerator
+from synhydro.methods.disaggregation.temporal.nowak import NowakDisaggregator
+from synhydro.core.ensemble import Ensemble
 
 from methods.load import load_baseline_historical_flow
 from methods.config import (

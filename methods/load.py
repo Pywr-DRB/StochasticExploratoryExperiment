@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from pywrdrb.path_manager import get_pn_object
 from pywrdrb.utils.constants import cfs_to_mgd
-from sglib.core.ensemble import Ensemble
+from synhydro.core.ensemble import Ensemble
 from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS, ROOT_DIR
 
 file_dir = os.path.dirname(os.path.abspath(__file__))

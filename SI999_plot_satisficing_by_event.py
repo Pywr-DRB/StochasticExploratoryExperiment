@@ -31,7 +31,7 @@ from methods.config import *
 from methods.load import load_satisficing_results
 
 # Output directory
-FIG_DIR_SATISFICING = f"{FIG_DIR}/satisficing_comparison"
+FIG_DIR_SATISFICING = f"{FIG_DIR}/SI2_satisficing_by_event"
 os.makedirs(FIG_DIR_SATISFICING, exist_ok=True)
 
 

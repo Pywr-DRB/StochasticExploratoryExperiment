@@ -7,7 +7,7 @@ Stochastic ensemble modeling framework for the Delaware River Basin (DRB), built
 Listed in `requirements.txt`. Key packages:
 
 - [Pywr-DRB](https://github.com/Pywr-DRB/Pywr-DRB) -- Water resources model for the DRB
-- [SGLib](https://github.com/TrevorJA/SGLib) -- Stochastic generation library (Kirsch-Nowak, SSI)
+- [SynHydro](https://github.com/TrevorJA/SynHydro) -- Stochastic generation library (Kirsch-Nowak, SSI)
 - [mpi4py](https://mpi4py.readthedocs.io/) -- MPI-based parallelization
 
 Install with:

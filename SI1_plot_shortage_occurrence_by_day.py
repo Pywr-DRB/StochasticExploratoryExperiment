@@ -34,7 +34,7 @@ from methods.load import load_shortage_data
 from methods.metrics.shortfall import calculate_shortage_by_day_of_year
 
 # Output directory
-FIG_DIR_SHORTAGE = f"{FIG_DIR}/shortage_occurrence"
+FIG_DIR_SHORTAGE = f"{FIG_DIR}/SI1_shortage_occurrence"
 os.makedirs(FIG_DIR_SHORTAGE, exist_ok=True)
 
 

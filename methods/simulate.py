@@ -155,6 +155,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
             model_options = {
                 "inflow_ensemble_indices": indices,
                 'nyc_nj_demand_source': 'custom',
+                'flow_prediction_mode': 'regression_disagg'
             }
 
             # Add salinity LSTM options if enabled
@@ -171,6 +172,10 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
 
             # Save model
             model_fname = f"{os.path.dirname(output_file)}/../models/{dataset_id}_set{set_id + 1}_rank{rank}_batch{batch}.json"
+            
+            # Make directory if it doesn't exist
+            os.makedirs(os.path.dirname(model_fname), exist_ok=True)
+            
             mb.make_model()
             mb.write_model(model_fname)
 

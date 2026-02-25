@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sglib import Ensemble
-from sglib.plotting import plot_flow_duration_curve
+from synhydro import Ensemble
+from synhydro.plotting import plot_flow_duration_curve
 
 
 def plot_fdc_gridded(Qh, Qs,
@@ -79,7 +79,7 @@ def plot_fdc_gridded(Qh, Qs,
 
         ensemble = Ensemble(ensemble_dict)
 
-        # Plot using new SGLib API
+        # Plot using new SynHydro API
         plot_flow_duration_curve(
             ensemble,
             observed=Qh.loc[:, site],
@@ -127,7 +127,7 @@ def plot_autocorrelation_gridded(Qh, Qs,
     fname : str, optional
         Filename to save figure
     """
-    from sglib.plotting import plot_autocorrelation
+    from synhydro.plotting import plot_autocorrelation
 
     # Settings
     sites = list(Qh.columns)
@@ -172,7 +172,7 @@ def plot_autocorrelation_gridded(Qh, Qs,
 
         ensemble = Ensemble(ensemble_dict)
 
-        # Plot using new SGLib API
+        # Plot using new SynHydro API
         plot_autocorrelation(
             ensemble,
             observed=Qh.loc[:, site],
