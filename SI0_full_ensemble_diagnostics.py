@@ -191,71 +191,39 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
     print("\nGenerating spatial correlation plots...")
 
     # Use first realization for correlation analysis
-    Qs_df = syn_ensemble[realization_ids[0]].loc[:, Q.columns]
+    Qs_df = syn_ensemble[realization_ids[0]]
+    Qs_monthly_df = Qs_df.resample('MS').sum()
 
-    # Create daily ensemble (cached)
-    if 'spatial_daily' not in ensemble_cache:
-        ensemble_dict_single = {0: Qs_df}
-        ensemble_cache['spatial_daily'] = Ensemble(ensemble_dict_single)
-    ensemble_single = ensemble_cache['spatial_daily']
+    for node_type in ['major', 'minor']:
+        if node_type == 'major':
+            nodes = pywrdrb_nodes_to_generate
+        else:
+            nodes = pywrdrb_nodes_to_regress
 
-    # Create monthly ensemble (cached)
-    if 'spatial_monthly' not in ensemble_cache:
-        Q_monthly_df = Q_monthly.loc[:, Qs_df.columns]
-        Qs_monthly_df = Qs_df.resample('MS').sum()
-        ensemble_dict_monthly = {0: Qs_monthly_df}
-        ensemble_cache['spatial_monthly'] = Ensemble(ensemble_dict_monthly)
-        ensemble_cache['Q_monthly_df'] = Q_monthly_df
-    ensemble_monthly = ensemble_cache['spatial_monthly']
-    Q_monthly_df = ensemble_cache['Q_monthly_df']
+        # Filter synthetic data to only the relevant nodes
+        ensemble_daily = Ensemble({0: Qs_df.loc[:, nodes]})
+        ensemble_monthly_corr = Ensemble({0: Qs_monthly_df.loc[:, nodes]})
 
-    # Daily major nodes
-    fname = f"{FIG_DIR}/spatial_correlation/{dataset_id}_daily_gage_flow_major_nodes.png"
-    plot_spatial_correlation(
-        ensemble_single,
-        observed=Q.loc[:, pywrdrb_nodes_to_generate],
-        realization=0,
-        timestep='daily',
-        method='pearson',
-        show_difference=False,
-        filename=fname
-    )
+        for freq in ['daily', 'monthly']:
+            print(f"  Plotting {freq} spatial correlation for {node_type} nodes...")
+            fname = f"{FIG_DIR}/spatial_correlation/{dataset_id}_{freq}_gage_flow_{node_type}_nodes.png"
 
-    # Monthly major nodes
-    fname = f"{FIG_DIR}/spatial_correlation/{dataset_id}_monthly_gage_flow_major_nodes.png"
-    plot_spatial_correlation(
-        ensemble_monthly,
-        observed=Q_monthly_df.loc[:, pywrdrb_nodes_to_generate],
-        realization=0,
-        timestep='monthly',
-        method='pearson',
-        show_difference=False,
-        filename=fname
-    )
+            if freq == 'daily':
+                ens = ensemble_daily
+                obs = Q.loc[:, nodes]
+            else:
+                ens = ensemble_monthly_corr
+                obs = Q_monthly.loc[:, nodes]
 
-    # Daily minor nodes
-    fname = f"{FIG_DIR}/spatial_correlation/{dataset_id}_daily_gage_flow_minor_nodes.png"
-    plot_spatial_correlation(
-        ensemble_single,
-        observed=Q.loc[:, pywrdrb_nodes_to_regress],
-        realization=0,
-        timestep='daily',
-        method='pearson',
-        show_difference=False,
-        filename=fname
-    )
-
-    # Monthly minor nodes
-    fname = f"{FIG_DIR}/spatial_correlation/{dataset_id}_monthly_gage_flow_minor_nodes.png"
-    plot_spatial_correlation(
-        ensemble_monthly,
-        observed=Q_monthly_df.loc[:, pywrdrb_nodes_to_regress],
-        realization=0,
-        timestep='monthly',
-        method='pearson',
-        show_difference=False,
-        filename=fname
-    )
+            plot_spatial_correlation(
+                ens,
+                observed=obs,
+                realization=0,
+                timestep=freq,
+                method='pearson',
+                show_difference=False,
+                filename=fname
+            )
 
     ### Ensemble convergence diagnostics
     print("\nGenerating ensemble convergence plots...")

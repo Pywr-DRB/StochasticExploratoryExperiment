@@ -82,3 +82,18 @@ if [ "$PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS" = true ]; then
     echo "========================================"
     python3 F10_plot_contribution_storage_timeseries.py stationary_ensemble
 fi
+
+
+PLOT_SANKEY_PARALLEL=${PLOT_SANKEY_PARALLEL:-true}
+
+if [ "$PLOT_SANKEY_PARALLEL" = true ]; then
+    echo "========================================"
+    echo "Running CART diagnostics for bin selection..."
+    echo "========================================"
+    python3 diagnostics_cart_bin_selection.py
+
+    echo "========================================"
+    echo "Generating Sankey-Parallel Coordinate figures..."
+    echo "========================================"
+    python3 F14_plot_sankey_parallel_coordinates.py --versions default quantile cart
+fi

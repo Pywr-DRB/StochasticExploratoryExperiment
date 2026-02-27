@@ -56,8 +56,8 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # Zone definitions
 ZONE_DEFINITIONS = {
     6: {'name': 'Emergency', 'color': '#8B0000', 'label': 'Emergency (Zone 6)'},
-    5: {'name': 'Watch', 'color': '#FF4500', 'label': 'Watch (Zone 5)'},
-    4: {'name': 'Warning', 'color': '#FFA500', 'label': 'Warning (Zone 4)'},
+    5: {'name': 'Warning', 'color': '#FF4500', 'label': 'Warning (Zone 5)'},
+    4: {'name': 'Watch', 'color': '#FFA500', 'label': 'Watch (Zone 4)'},
     3: {'name': 'Normal', 'color': '#32CD32', 'label': 'Normal (Zone 3)'},
     2: {'name': 'Flood', 'color': '#4169E1', 'label': 'Flood (Zones 1-2)'},
     1: {'name': 'Flood', 'color': '#4169E1', 'label': 'Flood (Zones 1-2)'},

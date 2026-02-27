@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -360,41 +361,31 @@ def plot_drought_manuscript_figure(
 
     panel_idx = 1  # panel (a) is hexbin
     for r, dataset_id in enumerate(ALL_DATASETS):
+        is_baseline = (dataset_id == 'stationary_ensemble')
+
         for c, metric in enumerate(cdf_metrics):
             ax = cdf_axes[r, c]
             df = ensemble_data[dataset_id]['droughts']
             color = DATASET_COLORS.get(dataset_id, '#808080')
 
-            if plot_relative_change:
-                # --- Relative-change mode ---
+            if plot_relative_change and not is_baseline:
+                # --- Relative-change mode (climate scenarios only) ---
                 x = shared_x_grids[metric]
                 baseline_med = baseline_medians[metric]
 
                 delta_bands = _compute_delta_bands(
                     df, baseline_med, metric, N_YEARS, x,
                 )
-                # Full range (0-100 percentile) of Δ
                 ax.fill_between(x, delta_bands[0], delta_bands[100],
                                 color=color, alpha=0.2, zorder=4)
-                # Median Δ line
                 ax.plot(x, delta_bands[50],
                         color=color,
                         linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
                         linewidth=LINEWIDTH_MEDIUM, zorder=5)
 
-                # Zero-change reference
                 ax.axhline(0, color='gray', linestyle='--', linewidth=0.8,
                            alpha=0.7, zorder=3)
 
-                # Historic markers expressed as Δ vs. stationary baseline median
-                obs_vals = np.sort(obs_droughts[metric].values)[::-1]
-                obs_exc = np.arange(1, len(obs_vals) + 1) / HISTORIC_N_YEARS
-                baseline_at_obs = np.interp(obs_vals, x, baseline_med)
-                ax.scatter(obs_vals, obs_exc - baseline_at_obs,
-                           color=HISTORIC_COLOR, marker='^', s=25,
-                           edgecolors='white', linewidths=0.4, zorder=6)
-
-                # Y-axis label (no log scale for deltas)
                 if c == 0:
                     ax.set_ylabel('Δ Exceedance rate (yr$^{-1}$)',
                                   fontsize=FONTSIZE_MEDIUM)
@@ -403,24 +394,32 @@ def plot_drought_manuscript_figure(
                     ax.set_yticklabels([])
 
             else:
-                # --- Absolute exceedance mode (default) ---
-                x, bands = _compute_realization_exceedance_bands(
-                    df, metric, n_years=N_YEARS,
-                )
-                # Full range (0-100%)
+                # --- Absolute exceedance mode ---
+                if plot_relative_change:
+                    # Baseline row in relative-change figure: use shared grid
+                    x = shared_x_grids[metric]
+                    bands = _compute_exceedance_on_grid(
+                        df, metric, N_YEARS, x,
+                    )
+                else:
+                    x, bands = _compute_realization_exceedance_bands(
+                        df, metric, n_years=N_YEARS,
+                    )
+
                 ax.fill_between(x, bands[0], bands[100],
                                 color=color, alpha=0.2, zorder=4)
-                # Median line
                 ax.plot(x, bands[50],
                         color=color,
                         linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
                         linewidth=LINEWIDTH_MEDIUM, zorder=5)
 
-                vals = np.sort(obs_droughts[metric].values)[::-1]
-                exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
-                ax.scatter(vals, exceedance,
-                           color=HISTORIC_COLOR, marker='^', s=25,
-                           edgecolors='white', linewidths=0.4, zorder=6)
+                # Historic markers (all rows for absolute; baseline only for relative change)
+                if not plot_relative_change or is_baseline:
+                    vals = np.sort(obs_droughts[metric].values)[::-1]
+                    exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
+                    ax.scatter(vals, exceedance,
+                               color=HISTORIC_COLOR, marker='^', s=25,
+                               edgecolors='white', linewidths=0.4, zorder=6)
 
                 if c == 0:
                     ax.set_ylabel('Exceedance rate (yr$^{-1}$)',
@@ -467,19 +466,54 @@ def plot_drought_manuscript_figure(
             panel_idx += 1
 
     # ------------------------------------------------------------------
+    # Synchronise y-axis limits across CDF subplots
+    # ------------------------------------------------------------------
+    if plot_relative_change:
+        # Baseline row (absolute) shares one y-range; delta rows share another
+        # Absolute row (r=0)
+        abs_ylims = [cdf_axes[0, c].get_ylim() for c in range(n_cols)]
+        shared_abs_ymin = min(yl[0] for yl in abs_ylims)
+        shared_abs_ymax = max(yl[1] for yl in abs_ylims)
+        for c in range(n_cols):
+            cdf_axes[0, c].set_ylim(shared_abs_ymin, shared_abs_ymax)
+
+        # Delta rows (r=1..n_rows-1)
+        delta_ylims = [cdf_axes[r, c].get_ylim()
+                       for r in range(1, n_rows) for c in range(n_cols)]
+        shared_delta_ymin = min(yl[0] for yl in delta_ylims)
+        shared_delta_ymax = max(yl[1] for yl in delta_ylims)
+        for r in range(1, n_rows):
+            for c in range(n_cols):
+                cdf_axes[r, c].set_ylim(shared_delta_ymin, shared_delta_ymax)
+    else:
+        # All rows use absolute exceedance — share a single y-range
+        all_ylims = [cdf_axes[r, c].get_ylim()
+                     for r in range(n_rows) for c in range(n_cols)]
+        shared_ymin = min(yl[0] for yl in all_ylims)
+        shared_ymax = max(yl[1] for yl in all_ylims)
+        for r in range(n_rows):
+            for c in range(n_cols):
+                cdf_axes[r, c].set_ylim(shared_ymin, shared_ymax)
+
+    # ------------------------------------------------------------------
     # Shared legend below figure
     # ------------------------------------------------------------------
     legend_handles = [
         mlines.Line2D([], [], color=HISTORIC_COLOR, marker='^',
                       linestyle='None', markersize=6, label=HISTORIC_LABEL),
     ]
-    # Add all datasets
+    # Add all datasets (median line + range patch)
     for dataset_id in ALL_DATASETS:
+        color = DATASET_COLORS[dataset_id]
         legend_handles.append(
-            mlines.Line2D([], [], color=DATASET_COLORS[dataset_id],
+            mpatches.Patch(facecolor=color, alpha=0.2,
+                           label=f'{DATASET_LABELS.get(dataset_id, dataset_id)} (range)')
+        )
+        legend_handles.append(
+            mlines.Line2D([], [], color=color,
                           linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
                           linewidth=LINEWIDTH_MEDIUM,
-                          label=DATASET_LABELS.get(dataset_id, dataset_id))
+                          label=f'{DATASET_LABELS.get(dataset_id, dataset_id)} (median)')
         )
     if plot_relative_change:
         legend_handles.append(
@@ -494,7 +528,7 @@ def plot_drought_manuscript_figure(
         ncol=2,
         frameon=False,
         fontsize=FONTSIZE_SMALL,
-        columnspacing=1.5,
+        columnspacing=1.0,
     )
 
     # ------------------------------------------------------------------
@@ -502,7 +536,8 @@ def plot_drought_manuscript_figure(
     # ------------------------------------------------------------------
     if fname is None:
         rc_suffix = '_relative_change' if plot_relative_change else ''
-        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}{rc_suffix}.png"
+        metric_suffix = f"_{'_'.join(cdf_metrics)}" if cdf_metrics != ['severity', 'magnitude'] else ''
+        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}{metric_suffix}{rc_suffix}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
@@ -517,19 +552,36 @@ def main():
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
 
+    # --- Severity vs Magnitude (default) ---
     print(f"F2: Drought metric distribution (SSI-{ssi_window})")
-
-    # Absolute exceedance version
     plot_drought_manuscript_figure(ssi_window=ssi_window,
                                    log_magnitude=True,
                                    log_exceedance=False,
                                    plot_relative_change=False)
     plt.close('all')
 
-    # Relative-change version
     print(f"F2: Relative change in exceedance rates (SSI-{ssi_window})")
     plot_drought_manuscript_figure(ssi_window=ssi_window,
                                    log_magnitude=True,
+                                   log_exceedance=False,
+                                   plot_relative_change=True)
+    plt.close('all')
+
+    # --- Severity vs Duration variant ---
+    print(f"F2: Drought metric distribution - duration (SSI-{ssi_window})")
+    plot_drought_manuscript_figure(ssi_window=ssi_window,
+                                   cdf_metrics=['severity', 'duration'],
+                                   hexbin_y='duration',
+                                   log_magnitude=False,
+                                   log_exceedance=False,
+                                   plot_relative_change=False)
+    plt.close('all')
+
+    print(f"F2: Relative change - duration (SSI-{ssi_window})")
+    plot_drought_manuscript_figure(ssi_window=ssi_window,
+                                   cdf_metrics=['severity', 'duration'],
+                                   hexbin_y='duration',
+                                   log_magnitude=False,
                                    log_exceedance=False,
                                    plot_relative_change=True)
     plt.close('all')

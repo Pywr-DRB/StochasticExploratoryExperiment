@@ -62,8 +62,8 @@ Y_SCALE_FIXED = True  # True for 0-100%, False for auto-scale
 # Drought zone mapping (from SI6)
 ZONE_NAMES = {
     6: 'Drought Emergency',
-    5: 'Drought Watch',
-    4: 'Drought Warning',
+    5: 'Drought Warning',
+    4: 'Drought Watch',
     3: 'Normal',
     2: 'Flood Watch',
     1: 'Flood Warning',

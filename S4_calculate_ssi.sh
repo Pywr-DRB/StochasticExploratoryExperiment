@@ -40,3 +40,15 @@ if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
     mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
     mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
 fi
+
+
+CALCULATE_EVENT_METRICS=${CALCULATE_EVENT_METRICS:-true}
+
+if [ "$CALCULATE_EVENT_METRICS" = true ]; then
+    ################################################################################
+    echo "Calculating per-drought-event metrics..."
+    ################################################################################
+    mpirun -np $np python3 07_calculate_event_metrics.py stationary_ensemble --all
+    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_low --all
+    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_high --all
+fi

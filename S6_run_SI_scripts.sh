@@ -31,7 +31,7 @@ python3 SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
 
 ### Calculate and plot storage zone probabilites
-python3 SI3_calculate_reservoir_storage_zone_probabilities.py --all
+python3 SI3_calculate_storage_zone_probabilities.py --all
 python3 SI4_plot_reservoir_storage_zone_probabilities.py comparison
 
 ### NYC diversions relative to storage zone classification

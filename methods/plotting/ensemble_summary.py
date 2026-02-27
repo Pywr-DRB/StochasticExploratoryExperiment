@@ -915,7 +915,8 @@ def plot_ensemble_convergence(
     site: str = 'delMontague',
     axes=None,
     n_bootstrap_samples: int = 50,
-    step_size: int = 20,
+    step_size: int = None,
+    n_steps: int = 40,
     synthetic_color: str = None,
     fname: str = None,
     figsize: tuple = (12, 5),
@@ -939,8 +940,12 @@ def plot_ensemble_convergence(
         Two matplotlib axes to plot on.
     n_bootstrap_samples : int
         Number of bootstrap resamples per subset size (default 50).
-    step_size : int
-        Step size for the number-of-realizations sequence (default 20).
+    step_size : int, optional
+        Step size for the number-of-realizations sequence.
+        If None, automatically computed from n_steps.
+    n_steps : int
+        Approximate number of evaluation points along the x-axis (default 40).
+        Ignored if step_size is provided.
     synthetic_color : str, optional
         Color for the fill and line.
     fname : str, optional
@@ -957,6 +962,10 @@ def plot_ensemble_convergence(
         synthetic_color = DATASET_COLORS['stationary_ensemble']
 
     n_realizations = len(realization_ids)
+
+    # Auto-compute step_size to get ~n_steps evaluation points
+    if step_size is None:
+        step_size = max(1, n_realizations // n_steps)
 
     # Pre-compute annual sums once
     annual_sums = Q_syn_site[realization_ids].resample('YE').sum()
@@ -1009,7 +1018,7 @@ def plot_ensemble_convergence(
     ax_mean.set_xlabel('Number of Realizations')
     ax_mean.set_ylabel('Mean Annual Flow (MG)')
     ax_mean.set_title(f'Mean Convergence ({site})')
-    ax_mean.set_yscale('log')
+    ax_mean.set_xlim(0, n_realizations)
     ax_mean.legend(loc='upper right', frameon=True)
     ax_mean.grid(False)
 
@@ -1025,7 +1034,7 @@ def plot_ensemble_convergence(
     ax_var.set_xlabel('Number of Realizations')
     ax_var.set_ylabel('Variance of Annual Flow (MG$^2$)')
     ax_var.set_title(f'Variance Convergence ({site})')
-    ax_var.set_yscale('log')
+    ax_var.set_xlim(0, n_realizations)
     ax_var.legend(loc='upper right', frameon=True)
     ax_var.grid(False)
 
