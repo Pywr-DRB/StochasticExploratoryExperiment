@@ -1,5 +1,5 @@
 """
-F14: Sankey-Parallel Coordinate Hybrid Figure
+F6: Sankey-Parallel Coordinate Hybrid Figure
 
 Creates a hybrid Sankey-Parallel Coordinate figure showing how drought
 hazard characteristics cascade through system actions to outcomes.
@@ -18,10 +18,10 @@ Pre-calculated event metrics are loaded from pywrdrb/event_metrics/.
 Run 07_calculate_event_metrics.py first to generate these.
 
 Usage:
-    python F14_plot_sankey_parallel_coordinates.py
-    python F14_plot_sankey_parallel_coordinates.py --ssi_window 6
-    python F14_plot_sankey_parallel_coordinates.py --datasets stationary_ensemble
-    python F14_plot_sankey_parallel_coordinates.py --versions default quantile cart
+    python F6_plot_sankey_parallel_coordinates.py
+    python F6_plot_sankey_parallel_coordinates.py --ssi_window 6
+    python F6_plot_sankey_parallel_coordinates.py --datasets stationary_ensemble
+    python F6_plot_sankey_parallel_coordinates.py --versions default quantile cart
 """
 
 import os
@@ -45,7 +45,7 @@ from methods.metrics.cart_bin_selection import (
 # OUTPUT DIRECTORY
 # =============================================================================
 
-FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'F14_sankey_parallel')
+FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'F6_sankey_parallel')
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Input data directory (from 07_calculate_event_metrics.py)

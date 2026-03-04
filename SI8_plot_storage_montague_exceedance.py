@@ -9,12 +9,12 @@ Each CDF reflects a given percentile of the ensemble (e.g., median, 10th percent
 The x-axis ordering is determined by one metric (default: minimum storage).
 
 Usage:
-  python F_plot_storage_montague_exceedance.py [ensemble_percentile] [--sort-by montague]
+  python SI8_plot_storage_montague_exceedance.py [ensemble_percentile] [--sort-by montague]
 
 Examples:
-  python F_plot_storage_montague_exceedance.py 0.5  # Plot median across realizations
-  python F_plot_storage_montague_exceedance.py 0.1  # Plot 10th percentile (worst)
-  python F_plot_storage_montague_exceedance.py 0.5 --sort-by montague  # Sort by Montague instead of storage
+  python SI8_plot_storage_montague_exceedance.py 0.5  # Plot median across realizations
+  python SI8_plot_storage_montague_exceedance.py 0.1  # Plot 10th percentile (worst)
+  python SI8_plot_storage_montague_exceedance.py 0.5 --sort-by montague  # Sort by Montague instead of storage
 """
 
 import sys
@@ -39,7 +39,7 @@ from methods.plotting.styles import (
 )
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F_storage_montague_exceedance"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI8_storage_montague_exceedance"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # All datasets to compare

@@ -1,5 +1,5 @@
 """
-F10: Contribution-Storage Timeseries Figure.
+SI6: Contribution-Storage Timeseries Figure.
 
 Shows the temporal evolution of NYC contribution/inflow ratio with color
 encoding the aggregate NYC storage level.
@@ -13,8 +13,8 @@ Each water year is plotted as its own line, with color varying along the line
 based on storage level at each time point.
 
 Usage:
-    python F10_plot_contribution_storage_timeseries.py [dataset_id]
-    python F10_plot_contribution_storage_timeseries.py --multipanel
+    python SI6_plot_contribution_storage_timeseries.py [dataset_id]
+    python SI6_plot_contribution_storage_timeseries.py --multipanel
 """
 
 import os
@@ -34,7 +34,7 @@ from methods.config import (
 from methods.plotting.styles import DPI_HIGH, DATASET_LABELS
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F10_contribution_storage_timeseries"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI6_contribution_storage_timeseries"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # ============================================================================
@@ -336,7 +336,7 @@ def plot_contribution_storage_timeseries(
 
     # Save
     suffix = f"_minStorage{min_storage_threshold}" if min_storage_threshold else ""
-    fname_out = f"{FIG_OUTPUT_DIR}/F10_{dataset_id}_contribution_storage_ts{suffix}.png"
+    fname_out = f"{FIG_OUTPUT_DIR}/SI6_{dataset_id}_contribution_storage_ts{suffix}.png"
     plt.savefig(fname_out, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname_out}")
 
@@ -447,7 +447,7 @@ def plot_multipanel_comparison(figsize=(14, 12), max_years=MAX_YEARS_TO_PLOT,
     plt.tight_layout()
 
     suffix = f"_minStorage{min_storage_threshold}" if min_storage_threshold else ""
-    fname_out = f"{FIG_OUTPUT_DIR}/F10_multipanel_contribution_storage_ts{suffix}.png"
+    fname_out = f"{FIG_OUTPUT_DIR}/SI6_multipanel_contribution_storage_ts{suffix}.png"
     plt.savefig(fname_out, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname_out}")
 
