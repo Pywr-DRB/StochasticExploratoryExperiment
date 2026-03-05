@@ -20,22 +20,24 @@ mkdir -p logs figures
 python3 SI0_full_ensemble_diagnostics.py stationary_ensemble
 
 
-### NYC, Montague, Trenton Shortage occurence by day of the year 
-python3 SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
+# ### NYC, Montague, Trenton Shortage occurence by day of the year 
+# python3 SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
 
 
-### Diversion diagnostics/distributions
-python3 SI2_plot_diversion_diagnostics.py stationary_ensemble
-python3 SI2_plot_diversion_diagnostics.py climate_adjusted_low
-python3 SI2_plot_diversion_diagnostics.py climate_adjusted_high
+# ### Diversion diagnostics/distributions
+# python3 SI2_plot_diversion_diagnostics.py stationary_ensemble
+# python3 SI2_plot_diversion_diagnostics.py climate_adjusted_low
+# python3 SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
 
-### Calculate and plot storage zone probabilites
-python3 SI3_calculate_storage_zone_probabilities.py --all
-python3 SI4_plot_reservoir_storage_zone_probabilities.py comparison
+# ### Calculate and plot storage zone probabilites
+# python3 SI3_calculate_storage_zone_probabilities.py --all
+# python3 SI4_plot_reservoir_storage_zone_probabilities.py comparison
 
-### NYC diversions relative to storage zone classification
-python3 SI5_plot_nyc_diversion_shortage_by_zone.py stationary_ensemble
+# ### NYC diversions relative to storage zone classification
+# python3 SI5_plot_nyc_diversion_shortage_by_zone.py stationary_ensemble
+
+
 
 
 ### contribution ratio for years storage < 20
