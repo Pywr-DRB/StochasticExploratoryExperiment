@@ -39,18 +39,20 @@ python3 SI0_full_ensemble_diagnostics.py stationary_ensemble
 
 
 
+
+### contribution ratio for years storage < 20
+python3 SI6_plot_contribution_storage_timeseries.py --multipanel
+
+### Drought event scatter colored by satisficing outcomes
+python3 SI7_plot_drought_satisficing_scatter.py 3
+python3 SI7_plot_drought_satisficing_scatter.py 6
+python3 SI7_plot_drought_satisficing_scatter.py 12
+
+### Rank contributions and storage for percentile-based realizations 
+python3 SI8_plot_storage_montague_exceedance.py 0.5
+python3 SI8_plot_storage_montague_exceedance.py 0.1
+
+
+
+
 ### UNFINISHED #############
-
-# ### Performance satisfaction in drought vs non-drought events
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 12
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 6
-# python3 SI2_plot_satisficing_by_event.py stationary_ensemble 3
-
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 12
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 6
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_low 3
-
-# python3 SI1_plot_shortage_occurrence_by_day.py climate_adjusted_high
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 12
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 6
-# python3 SI2_plot_satisficing_by_event.py climate_adjusted_high 3

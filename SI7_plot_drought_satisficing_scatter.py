@@ -1,5 +1,5 @@
 """
-F11: Drought Event Satisficing Scatter Plot
+SI7: Drought Event Satisficing Scatter Plot
 
 Creates scatter plots showing satisficing outcomes for each SSI-defined drought event.
 - X-axis: Drought severity (minimum SSI)
@@ -14,7 +14,7 @@ Satisficing criteria:
 Pre-calculated satisficing data is loaded from pywrdrb/satisficing_analysis/.
 
 Usage:
-    python F11_plot_drought_satisficing_scatter.py [ssi_window]
+    python SI7_plot_drought_satisficing_scatter.py [ssi_window]
 """
 
 import sys
@@ -34,7 +34,7 @@ from methods.plotting.styles import (
 )
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F11_drought_satisficing"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI7_drought_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Pre-calculated satisficing data directory
@@ -298,7 +298,7 @@ def plot_multipanel_scatter(ssi_window=12, figsize=(16, 5)):
     plt.tight_layout(rect=[0, 0.08, 1, 1])
 
     # Save
-    fname = f"{FIG_OUTPUT_DIR}/F11_drought_satisficing_scatter_ssi{ssi_window}.png"
+    fname = f"{FIG_OUTPUT_DIR}/SI7_drought_satisficing_scatter_ssi{ssi_window}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
@@ -435,7 +435,7 @@ def plot_combined_hexbin_scatter(ssi_window=12, figsize=(14, 10)):
     plt.tight_layout()
 
     # Save
-    fname = f"{FIG_OUTPUT_DIR}/F11_drought_satisficing_combined_ssi{ssi_window}.png"
+    fname = f"{FIG_OUTPUT_DIR}/SI7_drought_satisficing_combined_ssi{ssi_window}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved: {fname}")
 
@@ -455,7 +455,7 @@ def main():
         sys.exit(1)
 
     print("=" * 70)
-    print(f"F11: Drought Satisficing Scatter Plot (SSI-{ssi_window})")
+    print(f"SI7: Drought Satisficing Scatter Plot (SSI-{ssi_window})")
     print("=" * 70)
 
     # Generate multi-panel comparison
