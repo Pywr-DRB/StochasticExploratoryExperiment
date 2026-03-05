@@ -45,10 +45,10 @@ HISTORIC_COLOR = '#000000'  # Black
 
 # Standard labels for datasets
 DATASET_LABELS = {
-    'stationary_ensemble': 'Stationary',
-    'climate_adjusted_low': 'Climate Low',
+    'stationary_ensemble': 'Baseline Climate',
+    'climate_adjusted_low': 'Mixed Future Climate',
     'climate_adjusted_medium': 'Climate Medium',
-    'climate_adjusted_high': 'Climate High',
+    'climate_adjusted_high': 'Wet Future Climate',
 }
 
 # Short labels (for tight layouts)
