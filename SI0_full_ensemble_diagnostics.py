@@ -71,7 +71,7 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
     ### Loading data
     ## Historic reconstruction data
     print("Loading historical data...")
-    Q = load_baseline_historical_flow(period='full', gage_flow=True, flowtype=BASELINE_DATASET)
+    Q = load_baseline_historical_flow(period='baseline', gage_flow=True, flowtype=BASELINE_DATASET)
     Q.replace(0, np.nan, inplace=True)
     Q.drop(columns=['delTrenton'], inplace=True, errors='ignore')
     Q_monthly = Q.resample('MS').sum()
