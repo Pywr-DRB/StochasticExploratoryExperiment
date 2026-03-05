@@ -220,6 +220,7 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
                 observed=obs,
                 realization=0,
                 timestep=freq,
+                cmap='Greys',
                 method='pearson',
                 show_difference=False,
                 filename=fname

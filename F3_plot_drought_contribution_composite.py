@@ -533,7 +533,7 @@ def plot_duration_boxplot(ax, panel_label='c)'):
         dataset_durations = {}
         for zone_num in zone_order:
             zone_events = events_df[events_df['max_zone'] == zone_num]
-            dataset_durations[zone_num] = zone_events['duration_days'].tolist()
+            dataset_durations[zone_num] = (zone_events['duration_days'] / 30.44).tolist()
 
         all_duration_data[dataset_id] = dataset_durations
 
@@ -575,7 +575,7 @@ def plot_duration_boxplot(ax, panel_label='c)'):
     # Format axes
     ax.set_xticks(range(n_zones))
     ax.set_xticklabels([zone_labels_map[z] for z in zone_order], fontsize=FONTSIZE_SMALL)
-    ax.set_ylabel('Episode duration (days)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Time in Storage Zone\n(months)', fontsize=FONTSIZE_LABEL)
     ax.set_ylim(bottom=0)
     ax.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -623,9 +623,8 @@ def add_boxplot_legend(fig):
     # Add legend at bottom center with simple styling
     fig.legend(handles=legend_elements, loc='lower center',
                ncol=5, fontsize=FONTSIZE_SMALL,
-               frameon=True, framealpha=1.0, edgecolor='black',
-               fancybox=False,
-               bbox_to_anchor=(0.5, -0.01))
+               frameon=False,
+               bbox_to_anchor=(0.5, -0.04))
 
 
 def plot_scatter_panel_simple(ax, metrics_df, dataset_id, ffmp_lines,
@@ -844,6 +843,11 @@ def create_figure_simplified(n_mo, all_categorized):
 
     # Panel B2: Duration box plot
     plot_duration_boxplot(ax_B2, panel_label='c)')
+
+    # Align y-axis labels for right-side panels
+    label_x = -0.2
+    for ax in [ax_B1, ax_B2]:
+        ax.yaxis.set_label_coords(label_x, 0.5)
 
     # Shared legend for box plots
     add_boxplot_legend(fig)

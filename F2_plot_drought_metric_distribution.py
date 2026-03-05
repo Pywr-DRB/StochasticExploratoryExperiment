@@ -12,6 +12,7 @@ Usage:
 import sys
 import os
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
@@ -28,13 +29,16 @@ from methods.plotting.styles import (
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
 )
 
+
+HISTORIC_LABEL += " Droughts"
+
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F2_drought_distributions"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Axis labels
 METRIC_AXIS_LABELS = {
-    'severity': 'Severity (min SSI)',
+    'severity': 'Severity (max deviation)',
     'magnitude': 'Magnitude (cumulative deficit)',
     'duration': 'Duration (months)',
 }
@@ -233,8 +237,8 @@ def plot_drought_manuscript_figure(
     n_cols = len(cdf_metrics)
 
     if figsize is None:
-        figsize = (11.5, 8)  # Taller to accommodate 3 rows
-
+        figsize = (11.5, 9) 
+    
     # ------------------------------------------------------------------
     # Load data
     # ------------------------------------------------------------------
@@ -260,7 +264,7 @@ def plot_drought_manuscript_figure(
         2, 2,
         width_ratios=[1.3, 1.0],
         height_ratios=[1, 0.04],
-        hspace=0.25, wspace=0.35,
+        hspace=0.55, wspace=0.35,
     )
 
     # Top-left: hexbin
@@ -307,10 +311,33 @@ def plot_drought_manuscript_figure(
         ax_hex.scatter(
             obs_droughts[hexbin_x].values,
             obs_droughts[hexbin_y].values,
-            s=40, marker='^', c=HISTORIC_COLOR, edgecolors='white',
+            s=80, marker='^', c=HISTORIC_COLOR, edgecolors='white',
             linewidths=0.6, alpha=0.9, zorder=10,
         )
 
+    # Identify & highlight the 1960s drought (event active during Dec 1964)
+    target_date = pd.Timestamp('1964-12-01')
+    drought_1960s = obs_droughts[
+        (pd.to_datetime(obs_droughts['start']) <= target_date) &
+        (pd.to_datetime(obs_droughts['end']) >= target_date)
+    ]
+    if len(drought_1960s) > 0:
+        row_1960s = drought_1960s.iloc[0]
+        drought_1960s_start = pd.to_datetime(row_1960s['start']).strftime('%b %Y')
+        drought_1960s_end = pd.to_datetime(row_1960s['end']).strftime('%b %Y')
+        drought_1960s_label = f"1960s Drought ({drought_1960s_start}\u2013{drought_1960s_end})"
+        ax_hex.scatter(
+            drought_1960s[hexbin_x].values,
+            drought_1960s[hexbin_y].values,
+            s=100, marker='^', c='red', edgecolors='white',
+            linewidths=0.6, alpha=0.9, zorder=11,
+        )
+
+    mag_lim = 100 if ssi_window == 3 else 200
+    if hexbin_x == 'magnitude':
+        ax_hex.set_xlim(right=mag_lim)
+    if hexbin_y == 'magnitude':
+        ax_hex.set_ylim(top=mag_lim)
     ax_hex.set_xlabel(METRIC_AXIS_LABELS[hexbin_x], fontsize=FONTSIZE_MEDIUM)
     ax_hex.set_ylabel(METRIC_AXIS_LABELS[hexbin_y], fontsize=FONTSIZE_MEDIUM)
     ax_hex.tick_params(labelsize=FONTSIZE_SMALL)
@@ -326,7 +353,7 @@ def plot_drought_manuscript_figure(
     # Colorbar in bottom-left cell
     # ------------------------------------------------------------------
     cb = fig.colorbar(hb, cax=ax_cbar, orientation='horizontal')
-    cb.set_label('Count', fontsize=FONTSIZE_SMALL)
+    cb.set_label('Number of Droughts in Ensemble', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
     if log_hexbin_counts:
         vmin, vmax = hb.get_clim()
@@ -418,8 +445,16 @@ def plot_drought_manuscript_figure(
                     vals = np.sort(obs_droughts[metric].values)[::-1]
                     exceedance = np.arange(1, len(vals) + 1) / HISTORIC_N_YEARS
                     ax.scatter(vals, exceedance,
-                               color=HISTORIC_COLOR, marker='^', s=25,
+                               color=HISTORIC_COLOR, marker='^', s=50,
                                edgecolors='white', linewidths=0.4, zorder=6)
+
+                    # Highlight 1960s drought on exceedance plot
+                    if len(drought_1960s) > 0:
+                        val_1960s = row_1960s[metric]
+                        exc_1960s = np.sum(obs_droughts[metric].values >= val_1960s) / HISTORIC_N_YEARS
+                        ax.scatter([val_1960s], [exc_1960s],
+                                   color='red', marker='^', s=70,
+                                   edgecolors='white', linewidths=0.4, zorder=7)
 
                 if c == 0:
                     ax.set_ylabel('Exceedance rate (yr$^{-1}$)',
@@ -441,6 +476,8 @@ def plot_drought_manuscript_figure(
 
             if log_magnitude and metric == 'magnitude':
                 ax.set_xscale('log')
+            if metric == 'magnitude':
+                ax.set_xlim(right=100 if ssi_window == 3 else 200)
 
             ax.tick_params(labelsize=FONTSIZE_SMALL)
             ax.grid(True, which='both', color='gray', alpha=0.15,
@@ -496,39 +533,51 @@ def plot_drought_manuscript_figure(
                 cdf_axes[r, c].set_ylim(shared_ymin, shared_ymax)
 
     # ------------------------------------------------------------------
+    # Align y-axis labels across right-panel rows
+    # ------------------------------------------------------------------
+    label_x = -0.3
+    for r in range(n_rows):
+        cdf_axes[r, 0].yaxis.set_label_coords(label_x, 0.5)
+
+    # ------------------------------------------------------------------
     # Shared legend below figure
     # ------------------------------------------------------------------
     legend_handles = [
         mlines.Line2D([], [], color=HISTORIC_COLOR, marker='^',
-                      linestyle='None', markersize=6, label=HISTORIC_LABEL),
+                      linestyle='None', markersize=8, label=HISTORIC_LABEL),
     ]
-    # Add all datasets (median line + range patch)
+    if len(drought_1960s) > 0:
+        legend_handles.append(
+            mlines.Line2D([], [], color='red', marker='^',
+                          linestyle='None', markersize=8, label=drought_1960s_label),
+        )
+    # Add all datasets (combined range + median as single entry)
+    from matplotlib.legend_handler import HandlerTuple
+    legend_labels = [h.get_label() for h in legend_handles]
     for dataset_id in ALL_DATASETS:
         color = DATASET_COLORS[dataset_id]
-        legend_handles.append(
-            mpatches.Patch(facecolor=color, alpha=0.2,
-                           label=f'{DATASET_LABELS.get(dataset_id, dataset_id)} (range)')
-        )
-        legend_handles.append(
-            mlines.Line2D([], [], color=color,
-                          linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
-                          linewidth=LINEWIDTH_MEDIUM,
-                          label=f'{DATASET_LABELS.get(dataset_id, dataset_id)} (median)')
-        )
+        patch = mpatches.Patch(facecolor=color, alpha=0.2)
+        line = mlines.Line2D([], [], color=color,
+                             linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                             linewidth=LINEWIDTH_MEDIUM)
+        legend_handles.append((patch, line))
+        legend_labels.append(f'{DATASET_LABELS.get(dataset_id, dataset_id)} (range and median)')
     if plot_relative_change:
-        legend_handles.append(
-            mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8,
-                          label='Baseline (stationary median)')
-        )
+        baseline_handle = mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8)
+        legend_handles.append(baseline_handle)
+        legend_labels.append('Baseline (stationary median)')
 
     # Place legend in the bottom-right cell
     ax_legend.legend(
         handles=legend_handles,
+        labels=legend_labels,
         loc='center',
         ncol=2,
         frameon=False,
         fontsize=FONTSIZE_SMALL,
         columnspacing=1.0,
+        handler_map={tuple: HandlerTuple(ndivide=1)},
+        handleheight=1.5,
     )
 
     # ------------------------------------------------------------------

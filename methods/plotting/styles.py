@@ -68,7 +68,7 @@ DATASET_LABELS_DESCRIPTIVE = {
 }
 
 # Historic/observed label
-HISTORIC_LABEL = 'Historic'
+HISTORIC_LABEL = 'Historical'
 
 # =============================================================================
 # DATASET ORDER

@@ -661,36 +661,46 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         ax_stat.set_ylim(0, 100)
     ax_stat.grid(axis='y', alpha=0.3, linestyle='--')
     ax_stat.set_axisbelow(True)
-    ax_stat.legend(loc='upper right', fontsize=8, frameon=True, fancybox=True)
+    stat_label = DATASET_LABELS.get('stationary_ensemble', 'Stationary')
+    ax_stat.text(0.02, 0.97, f'(a) {stat_label}', transform=ax_stat.transAxes, fontsize=12, va='top', ha='left')
 
     # Top right panel: Low climate difference
     _plot_difference_bands(ax_low, diff_low, color=DATASET_COLORS['climate_adjusted_low'], label_prefix='')
     ax_low.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
-    ax_low.set_ylabel('Change (% points)', fontsize=10)
+    ax_low.set_ylabel('Change in Distribution\nRelative to Baseline Ensemble', fontsize=10)
     ax_low.grid(axis='y', alpha=0.3, linestyle='--')
     ax_low.set_axisbelow(True)
-    ax_low.legend(loc='upper right', fontsize=7, frameon=True, fancybox=True)
+    low_label = DATASET_LABELS.get('climate_adjusted_low', 'Climate Low')
+    ax_low.text(0.02, 0.97, f'(b) {low_label}', transform=ax_low.transAxes, fontsize=12, va='top', ha='left')
 
     # Bottom right panel: High climate difference
     _plot_difference_bands(ax_high, diff_high, color=DATASET_COLORS['climate_adjusted_high'], label_prefix='')
     ax_high.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     _format_xaxis(ax_high)
     ax_high.set_xlabel('Month', fontsize=12)
-    ax_high.set_ylabel('Change (% points)', fontsize=10)
+    ax_high.set_ylabel('Change in Distribution\nRelative to Baseline Ensemble', fontsize=10)
     ax_high.grid(axis='y', alpha=0.3, linestyle='--')
     ax_high.set_axisbelow(True)
-    ax_high.legend(loc='upper right', fontsize=7, frameon=True, fancybox=True)
+    high_label = DATASET_LABELS.get('climate_adjusted_high', 'Climate High')
+    ax_high.text(0.02, 0.97, f'(c) {high_label}', transform=ax_high.transAxes, fontsize=12, va='top', ha='left')
+
+    # Shared grey-scale legend (generic band descriptions)
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Patch(facecolor='grey', alpha=0.2, label='Scenario 1st-99th %ile'),
+        Patch(facecolor='grey', alpha=0.4, label='Scenario 25th-75th %ile'),
+        Line2D([0], [0], color='grey', linewidth=2, label='Scenario Median'),
+    ]
+    fig.legend(handles=legend_elements, loc='lower center',
+               ncol=3, fontsize=9, frameon=False,
+               bbox_to_anchor=(0.5, -0.06))
 
     # Match y-axis limits for difference panels
     y_min = min(ax_high.get_ylim()[0], ax_low.get_ylim()[0])
     y_max = max(ax_high.get_ylim()[1], ax_low.get_ylim()[1])
     ax_high.set_ylim(y_min, y_max)
     ax_low.set_ylim(y_min, y_max)
-
-    # Annotation
-    zone_label = get_zone_filter_label(zone_filter) if zone_filter else "All Water Years"
-    fig.text(0.5, 0.02, zone_label, ha='center', va='bottom', fontsize=9,
-             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
 
     # Save
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
