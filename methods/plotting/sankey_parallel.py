@@ -74,7 +74,8 @@ class AxisConfig:
             Resolved numeric bin edges
         """
         if self.bin_edges == 'quantile':
-            q = series.quantile([0, 1/3, 2/3, 1.0]).values
+            # use every 10th percentile to get 10 bins
+            q = series.quantile(np.linspace(0, 1, 11)).values
             # Ensure unique edges by adding small epsilon
             edges = list(np.unique(q))
             if len(edges) < 3:

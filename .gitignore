@@ -211,3 +211,5 @@ archive/*
 JanStart_pywrdrb/
 figures/*
 manuscript/*
+pywrdrb_JanStart/*
+pywrdrb_RemoveZerosFalse/*
