@@ -28,15 +28,21 @@ from methods.config import (
     pywrdrb_nodes_to_regress
 )
 
+from methods.mpi_utils import (
+    MPI_AVAILABLE,
+    point_to_point_bcast,
+    point_to_point_gather,
+    point_to_point_barrier,
+)
+
 # Conditional MPI import
-try:
+if MPI_AVAILABLE:
     from mpi4py import MPI
-    MPI_AVAILABLE = True
-except ImportError:
-    MPI_AVAILABLE = False
 
 
-def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
+def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
+                          comm=None, local_rank=None, local_size=None,
+                          set_peer_ranks=None, preloaded_data=None):
     """
     Generate a single ensemble set with optional MPI distribution
 
@@ -48,6 +54,19 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
         Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
+    comm : MPI.Comm or None
+        MPI communicator (COMM_WORLD). Required when local_rank/local_size are provided.
+    local_rank : int or None
+        This rank's position within its ensemble set group.
+        If None, falls back to COMM_WORLD rank/size.
+    local_size : int or None
+        Number of ranks collaborating on this ensemble set.
+        If None, falls back to COMM_WORLD rank/size.
+    set_peer_ranks : list of int or None
+        Global MPI ranks assigned to the same ensemble set.
+        Used for point-to-point communication. If None, uses COMM_WORLD collectives.
+    preloaded_data : tuple or None
+        Pre-loaded (Q, Q_baseline, Q_inflow) DataFrames to skip redundant I/O.
 
     Returns:
     --------
@@ -55,16 +74,23 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
         True if successful, False otherwise
     """
 
-    # Get MPI info for this function call (now using sub-communicator)
-    if use_mpi and MPI_AVAILABLE:
+    # Determine MPI context
+    if use_mpi and MPI_AVAILABLE and local_rank is not None:
+        # Called from a script that already determined set assignments
+        rank = local_rank
+        size = local_size
+    elif use_mpi and MPI_AVAILABLE:
+        # Legacy / standalone mode: use COMM_WORLD directly
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
+        set_peer_ranks = None
     else:
-        # Serial mode: simulate single rank
+        # Serial mode
         comm = None
         rank = 0
         size = 1
+        set_peer_ranks = None
 
     # Get ensemble set specification
     set_spec = get_ensemble_set_spec(set_id, dataset_id)
@@ -83,47 +109,54 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
     if rank == 0:
         os.makedirs(output_dir, exist_ok=True)
     if use_mpi and comm:
-        comm.Barrier()
+        if set_peer_ranks is not None:
+            point_to_point_barrier(comm, rank, size, set_peer_ranks)
+        else:
+            comm.Barrier()
 
-    # Load and broadcast data (optimized: only rank 0 loads)
-    if rank == 0:
-        # Full Q is 1945-01-01 through 2023-12-31
-        Q = load_baseline_historical_flow(gage_flow=True, period='full',
-                                          flowtype=BASELINE_DATASET)
-        ## Baseline flows
-        # Baseline is 1980-01-01 through 2019-12-31
-        Q_baseline = load_baseline_historical_flow(gage_flow=True, period='baseline',
-                                                   flowtype=BASELINE_DATASET)
-
-
-        Q_inflow = load_baseline_historical_flow(gage_flow=False,
-                                                 period='full',
-                                                 flowtype=BASELINE_DATASET)
-        Q = Q.loc[:, pywrdrb_nodes_to_generate]
-        Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
-
-        # CRITICAL: Replace zeros with NaN before fitting
-        # Streamflow should never be exactly zero - zeros in historical data are artifacts
-        # that would otherwise propagate to synthetic ensembles via Nowak disaggregation
-        print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
-        n_zeros_before = (Q == 0.0).sum().sum()
-        if n_zeros_before > 0:
-            print(f"Set {set_id + 1}: Replacing {n_zeros_before} zero values with NaN (physically unrealistic)")
-            Q.replace(0, np.nan, inplace=True)
-            Q_inflow.replace(0, np.nan, inplace=True)
-            Q_baseline.replace(0, np.nan, inplace=True)
-
-
+    # Load data — use preloaded_data if provided (already broadcast by caller)
+    if preloaded_data is not None:
+        Q, Q_baseline, Q_inflow = preloaded_data
     else:
-        Q = None
-        Q_inflow = None
-        Q_baseline = None
+        # Load and broadcast data (optimized: only rank 0 loads)
+        if rank == 0:
+            # Full Q is 1945-01-01 through 2023-12-31
+            Q = load_baseline_historical_flow(gage_flow=True, period='full',
+                                              flowtype=BASELINE_DATASET)
+            # Baseline is 1980-01-01 through 2019-12-31
+            Q_baseline = load_baseline_historical_flow(gage_flow=True, period='baseline',
+                                                       flowtype=BASELINE_DATASET)
+            Q_inflow = load_baseline_historical_flow(gage_flow=False,
+                                                     period='full',
+                                                     flowtype=BASELINE_DATASET)
+            Q = Q.loc[:, pywrdrb_nodes_to_generate]
+            Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
 
-    # Broadcast data (only needed in MPI mode)
-    if use_mpi and comm:
-        Q = comm.bcast(Q, root=0)
-        Q_inflow = comm.bcast(Q_inflow, root=0)
-        Q_baseline = comm.bcast(Q_baseline, root=0)
+            # CRITICAL: Replace zeros with NaN before fitting
+            # Streamflow should never be exactly zero - zeros in historical data are artifacts
+            # that would otherwise propagate to synthetic ensembles via Nowak disaggregation
+            print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
+            n_zeros_before = (Q == 0.0).sum().sum()
+            if n_zeros_before > 0:
+                print(f"Set {set_id + 1}: Replacing {n_zeros_before} zero values with NaN (physically unrealistic)")
+                Q.replace(0, np.nan, inplace=True)
+                Q_inflow.replace(0, np.nan, inplace=True)
+                Q_baseline.replace(0, np.nan, inplace=True)
+        else:
+            Q = None
+            Q_inflow = None
+            Q_baseline = None
+
+        # Broadcast data (only needed in MPI mode)
+        if use_mpi and comm:
+            if set_peer_ranks is not None:
+                Q = point_to_point_bcast(comm, Q, rank, set_peer_ranks)
+                Q_inflow = point_to_point_bcast(comm, Q_inflow, rank, set_peer_ranks)
+                Q_baseline = point_to_point_bcast(comm, Q_baseline, rank, set_peer_ranks)
+            else:
+                Q = comm.bcast(Q, root=0)
+                Q_inflow = comm.bcast(Q_inflow, root=0)
+                Q_baseline = comm.bcast(Q_baseline, root=0)
 
     # Fit Kirsch generator (monthly) and Nowak disaggregator (monthly->daily)
     # (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
@@ -233,7 +266,10 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
 
     # Broadcast KDE parameters (only needed in MPI mode)
     if use_mpi and comm:
-        kde_params = comm.bcast(kde_params, root=0)
+        if set_peer_ranks is not None:
+            kde_params = point_to_point_bcast(comm, kde_params, rank, set_peer_ranks)
+        else:
+            kde_params = comm.bcast(kde_params, root=0)
 
     # Reconstruct KDEs from parameters on all ranks
     kdes = {}
@@ -300,8 +336,14 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True):
 
     # Gather data (only needed in MPI mode)
     if use_mpi and comm:
-        all_syn_ensembles = comm.gather(local_syn_ensemble, root=0)
-        all_inflow_ensembles = comm.gather(local_inflow_ensemble, root=0)
+        if set_peer_ranks is not None:
+            all_syn_ensembles = point_to_point_gather(
+                comm, local_syn_ensemble, rank, size, set_peer_ranks)
+            all_inflow_ensembles = point_to_point_gather(
+                comm, local_inflow_ensemble, rank, size, set_peer_ranks)
+        else:
+            all_syn_ensembles = comm.gather(local_syn_ensemble, root=0)
+            all_inflow_ensembles = comm.gather(local_inflow_ensemble, root=0)
     else:
         # Serial mode: just wrap in list
         all_syn_ensembles = [local_syn_ensemble]

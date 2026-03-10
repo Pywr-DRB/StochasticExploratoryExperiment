@@ -25,15 +25,19 @@ from methods.config import (
     WorkflowFlags
 )
 
+from methods.mpi_utils import (
+    MPI_AVAILABLE,
+    point_to_point_barrier,
+)
+
 # Conditional MPI import
-try:
+if MPI_AVAILABLE:
     from mpi4py import MPI
-    MPI_AVAILABLE = True
-except ImportError:
-    MPI_AVAILABLE = False
 
 
-def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
+def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
+                                  comm=None, local_rank=None, local_size=None,
+                                  set_peer_ranks=None):
     """
     Run Pywr-DRB simulations for a single ensemble set
 
@@ -45,6 +49,14 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
         Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
+    comm : MPI.Comm or None
+        MPI communicator (COMM_WORLD). Required when local_rank/local_size are provided.
+    local_rank : int or None
+        This rank's position within its ensemble set group.
+    local_size : int or None
+        Number of ranks collaborating on this ensemble set.
+    set_peer_ranks : list of int or None
+        Global MPI ranks assigned to the same ensemble set.
 
     Returns:
     --------
@@ -52,15 +64,20 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
         True if successful, False otherwise
     """
 
-    # Get MPI info for this function call
-    if use_mpi and MPI_AVAILABLE:
+    # Determine MPI context
+    if use_mpi and MPI_AVAILABLE and local_rank is not None:
+        rank = local_rank
+        size = local_size
+    elif use_mpi and MPI_AVAILABLE:
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
+        set_peer_ranks = None
     else:
         comm = None
         rank = 0
         size = 1
+        set_peer_ranks = None
 
     # Get ensemble set specification
     set_spec = get_ensemble_set_spec(set_id, dataset_id)
@@ -95,17 +112,18 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
                         os.remove(file)
 
         if use_mpi and comm:
-            comm.Barrier()  # Wait for cleanup
+            if set_peer_ranks is not None:
+                point_to_point_barrier(comm, rank, size, set_peer_ranks)
+            else:
+                comm.Barrier()  # Wait for cleanup
 
         # Get realization IDs for this ensemble set
-        if rank == 0:
-            realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
-            # Make sure they are all strings for consistency
-            realization_ids = [str(rid) for rid in realization_ids]
+        # All ranks read independently to avoid broadcast
+        realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
+        realization_ids = [str(rid) for rid in realization_ids]
 
+        if rank == 0:
             print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
-        else:
-            realization_ids = None
 
         # VALIDATION: Check if realization_ids match expected global IDs
         expected_realization_ids = set_spec.realizations
@@ -118,10 +136,6 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
                 print(f"  Expected: {expected_realization_ids}")
                 print(f"  Found in HDF5: {realization_ids}")
 
-        # Broadcast realization IDs (only needed in MPI mode)
-        if use_mpi and comm:
-            realization_ids = comm.bcast(realization_ids, root=0)
-
         # Optimized distribution: balance load across ranks
         # Use numpy array_split for better load balancing
         rank_realization_ids = np.array_split(realization_ids, size)[rank]
@@ -130,8 +144,17 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
 
         print(f"Set {set_id + 1}, Rank {rank}: Processing {n_rank_realizations} realizations")
 
+        # If this rank has no realizations, skip simulation but still
+        # participate in synchronization below to avoid deadlock.
         if n_rank_realizations == 0:
-            print(f"Set {set_id + 1}, Rank {rank}: No realizations assigned")
+            print(f"Set {set_id + 1}, Rank {rank}: No realizations assigned, waiting at barrier")
+            batch_filenames = []
+            # Jump directly to the barrier/combine section
+            if use_mpi and comm:
+                if set_peer_ranks is not None:
+                    point_to_point_barrier(comm, rank, size, set_peer_ranks)
+                else:
+                    comm.Barrier()
             return True
 
         # Split rank realizations into batches for memory management
@@ -208,7 +231,10 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True):
 
         # Wait for all ranks to complete their batches
         if use_mpi and comm:
-            comm.Barrier()
+            if set_peer_ranks is not None:
+                point_to_point_barrier(comm, rank, size, set_peer_ranks)
+            else:
+                comm.Barrier()
 
         # Combine all batched outputs for this ensemble set (rank 0 only)
         if rank == 0:
