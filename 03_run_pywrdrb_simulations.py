@@ -89,8 +89,10 @@ def parallel_run_all_sets(dataset_id):
             total_processed += 1
             success_count += 1 if success else 0
 
-    # No global collectives — each set completes independently.
-    # Rank 0 verifies output files exist after its own work finishes.
+    # Wait for all ranks to finish before verifying output files
+    if comm is not None:
+        comm.Barrier()
+
     if rank == 0:
         print("\n" + "=" * 60)
         print(f"PYWRDRB SIMULATIONS COMPLETED: {dataset_id}")

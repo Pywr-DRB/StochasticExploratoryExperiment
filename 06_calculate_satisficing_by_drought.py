@@ -145,6 +145,7 @@ def main(dataset_id, ssi_windows):
 
     # --- Process each SSI window ---
     local_all_years = None  # reuse across SSI windows
+    combined_all_years = None  # cache on rank 0 after first gather
 
     for ssi_window in ssi_windows:
         if rank == 0:
@@ -162,10 +163,11 @@ def main(dataset_id, ssi_windows):
             all_years_results=local_all_years,
         )
 
-        # Gather results to rank 0 via point-to-point (no collective gather)
-        gathered_all = global_point_to_point_gather(
-            comm, local_all_years, rank, size, tag=610
-        )
+        # Gather all-years results only on first SSI window (drought-independent)
+        if combined_all_years is None:
+            gathered_all = global_point_to_point_gather(
+                comm, local_all_years, rank, size, tag=610
+            )
         gathered_drought = global_point_to_point_gather(
             comm, local_drought, rank, size, tag=611
         )
@@ -175,7 +177,9 @@ def main(dataset_id, ssi_windows):
 
         # Rank 0: combine, summarize, save
         if rank == 0:
-            all_years_results = pd.concat(gathered_all, ignore_index=True)
+            if combined_all_years is None:
+                combined_all_years = pd.concat(gathered_all, ignore_index=True)
+            all_years_results = combined_all_years
             drought_results = pd.concat(gathered_drought, ignore_index=True)
             non_drought_results = pd.concat(gathered_non_drought, ignore_index=True)
 

@@ -127,38 +127,41 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
                 drought_chars['realization_id'] = real_id
                 local_drought_data.append(drought_chars)
 
-        # Gather results to rank 0 via point-to-point (no collective gather)
-        all_ssi_data = global_point_to_point_gather(
-            comm, local_ssi_data, rank, size, tag=601
-        )
+        # Gather SSI data only if exporting to HDF5 (expensive with many ranks)
+        if EXPORT_SSI_HDF5:
+            all_ssi_data = global_point_to_point_gather(
+                comm, local_ssi_data, rank, size, tag=601
+            )
+
+        # Gather drought results to rank 0 via point-to-point (no collective gather)
         all_drought_data = global_point_to_point_gather(
             comm, local_drought_data, rank, size, tag=602
         )
 
         # Combine and save on rank 0
         if rank == 0:
-            # Combine SSI data
-            combined_ssi = {}
-            for rank_data in all_ssi_data:
-                combined_ssi.update(rank_data)
-
-            # Create SSI DataFrame using rank 0's first realization for the index
-            first_real_id = my_realizations[0]
-            syn_ssi = pd.DataFrame(
-                index=local_syn_ensemble[first_real_id].resample('MS').sum().index,
-                columns=np.arange(0, n_realizations)
-            )
-
-            for real_id, ssi_values in combined_ssi.items():
-                syn_ssi.loc[:, int(real_id)] = ssi_values
-
-            # Put in dict with node name as key
-            syn_ssi_dict = {node: syn_ssi}
-            for key, df in syn_ssi_dict.items():
-                syn_ssi_dict[key].columns = df.columns.astype(str)
-
             # Save SSI values to hdf5 (optional)
             if EXPORT_SSI_HDF5:
+                # Combine SSI data
+                combined_ssi = {}
+                for rank_data in all_ssi_data:
+                    combined_ssi.update(rank_data)
+
+                # Create SSI DataFrame using rank 0's first realization for the index
+                first_real_id = my_realizations[0]
+                syn_ssi = pd.DataFrame(
+                    index=local_syn_ensemble[first_real_id].resample('MS').sum().index,
+                    columns=np.arange(0, n_realizations)
+                )
+
+                for real_id, ssi_values in combined_ssi.items():
+                    syn_ssi.loc[:, int(real_id)] = ssi_values
+
+                # Put in dict with node name as key
+                syn_ssi_dict = {node: syn_ssi}
+                for key, df in syn_ssi_dict.items():
+                    syn_ssi_dict[key].columns = df.columns.astype(str)
+
                 from synhydro.core.ensemble import Ensemble
                 ssi_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}.hdf5"
                 print(f"  Saving SSI values to hdf5: {ssi_fname}")
