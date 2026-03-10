@@ -4,7 +4,6 @@
 #SBATCH --error=./logs/CAE.err
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=30
-#SBATCH --mem-per-cpu=8G
 
 # Setup
 module load python/3.11.5

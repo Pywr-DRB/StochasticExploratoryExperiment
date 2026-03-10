@@ -4,7 +4,6 @@
 #SBATCH --error=./logs/post.err
 #SBATCH --nodes=2
 #SBATCH --ntasks-per-node=30
-#SBATCH --mem-per-cpu=8G
 
 # Load modules and environment
 module load python/3.11.5
