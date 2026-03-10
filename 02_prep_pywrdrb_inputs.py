@@ -1,13 +1,10 @@
 """
 Prepare Pywr-DRB inputs for all ensemble sets in parallel using MPI rank distribution.
 
-Uses comm.Split() to create per-set sub-communicators, then temporarily swaps
-MPI.COMM_WORLD so the pywrdrb preprocessors (which hardcode COMM_WORLD) operate
-within the sub-communicator scope. This allows all ranks to participate in
-preprocessing, with each set's ranks collaborating via MPI internally.
-
-With 240 ranks and 20 sets, each set gets 12 ranks working in parallel (~12x
-speedup per set vs the serial-per-set approach).
+Uses comm.Split() to create per-set sub-communicators, then passes the
+sub-communicator directly to the pywrdrb preprocessors via their `comm`
+parameter. All ranks participate — with 240 ranks and 20 sets, each set
+gets 12 ranks working in parallel.
 
 Usage:
   MPI:    mpirun -np N python 02_prep_pywrdrb_inputs.py <dataset_id>
@@ -66,18 +63,11 @@ def parallel_prep_all_sets(dataset_id):
         # Create sub-communicator scoped to this set
         local_comm = comm.Split(color=set_id, key=local_rank)
 
-        # Temporarily swap MPI.COMM_WORLD so pywrdrb preprocessors
-        # (which hardcode COMM_WORLD) operate within the sub-communicator
-        saved_comm_world = MPI.COMM_WORLD
-        MPI.COMM_WORLD = local_comm
-
         try:
             if local_rank == 0:
                 print(f"Set {set_id+1}: {local_size} ranks collaborating via sub-communicator")
-            success = prep_ensemble_set(set_id, dataset_id, use_mpi=True)
+            success = prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=local_comm)
         finally:
-            # Always restore original COMM_WORLD
-            MPI.COMM_WORLD = saved_comm_world
             local_comm.Free()
 
     else:
@@ -85,7 +75,7 @@ def parallel_prep_all_sets(dataset_id):
         for set_id, local_rank, local_size in assignments:
             success = prep_ensemble_set(set_id, dataset_id, use_mpi=False)
 
-    # Rank 0 verifies output files exist after global barrier
+    # Wait for all sets to finish before verification
     if comm is not None:
         comm.Barrier()
 

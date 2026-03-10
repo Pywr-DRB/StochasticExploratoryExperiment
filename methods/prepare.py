@@ -23,7 +23,7 @@ except ImportError:
     MPI_AVAILABLE = False
 
 
-def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
+def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
     """
     Prepare Pywr-DRB inputs for a single ensemble set
 
@@ -35,6 +35,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
         Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
+    comm : MPI communicator, optional
+        If None and use_mpi=True, uses MPI.COMM_WORLD.
 
     Returns:
     --------
@@ -44,7 +46,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
 
     # Get MPI info for this function call
     if use_mpi and MPI_AVAILABLE:
-        comm = MPI.COMM_WORLD
+        if comm is None:
+            comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
     else:
@@ -101,7 +104,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             use_log=True,
             remove_zeros=True,
             use_const=False,
-            use_mpi=use_mpi  # Enable MPI within the preprocessor
+            use_mpi=use_mpi,
+            comm=comm,
         )
 
         inflow_preprocessor.load()
@@ -128,7 +132,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             flow_type=f"{dataset_id}_set{set_id + 1}",
             ensemble_hdf5_file=gage_flow_file,
             realization_ids=realization_ids,
-            use_mpi=use_mpi
+            use_mpi=use_mpi,
+            comm=comm,
         )
         nj_extrapolator.load()
         nj_extrapolator.process()
@@ -148,7 +153,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             flow_type=f"{dataset_id}_set{set_id + 1}",
             ensemble_hdf5_file=gage_flow_file,
             realization_ids=realization_ids,
-            use_mpi=use_mpi
+            use_mpi=use_mpi,
+            comm=comm,
         )
 
         nyc_extrapolator.load()
@@ -183,7 +189,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True):
             use_log=True,
             remove_zeros=True,
             use_const=False,
-            use_mpi=use_mpi
+            use_mpi=use_mpi,
+            comm=comm,
         )
 
         diversion_predictor.load()
