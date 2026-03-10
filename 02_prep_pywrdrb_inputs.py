@@ -1,11 +1,13 @@
 """
 Prepare Pywr-DRB inputs for all ensemble sets in parallel using MPI rank distribution.
 
-The pywrdrb preprocessors hardcode MPI.COMM_WORLD internally, so we cannot
-run multiple preprocessors concurrently under the same MPI job. Instead,
-only one rank per ensemble set (local_rank == 0) calls the preprocessor
-in serial mode. With 20 sets and 240 ranks, 20 ranks work simultaneously
-(one per set) while the rest idle for this step.
+Uses comm.Split() to create per-set sub-communicators, then temporarily swaps
+MPI.COMM_WORLD so the pywrdrb preprocessors (which hardcode COMM_WORLD) operate
+within the sub-communicator scope. This allows all ranks to participate in
+preprocessing, with each set's ranks collaborating via MPI internally.
+
+With 240 ranks and 20 sets, each set gets 12 ranks working in parallel (~12x
+speedup per set vs the serial-per-set approach).
 
 Usage:
   MPI:    mpirun -np N python 02_prep_pywrdrb_inputs.py <dataset_id>
@@ -15,7 +17,7 @@ Usage:
 import os
 import sys
 
-from methods.mpi_utils import get_comm, get_set_assignments
+from methods.mpi_utils import get_comm, get_set_assignments, MPI_AVAILABLE
 from methods.prepare import prep_ensemble_set
 from methods.config import (
     DATASET_CONFIGS,
@@ -25,6 +27,9 @@ from methods.config import (
     get_existing_ensemble_sets,
 )
 from methods.print_summary import print_prep_status
+
+if MPI_AVAILABLE:
+    from mpi4py import MPI
 
 
 def parallel_prep_all_sets(dataset_id):
@@ -52,29 +57,38 @@ def parallel_prep_all_sets(dataset_id):
             print("Run ensemble generation first!")
         print("=" * 60)
 
-    # Track success/failure
-    success_count = 0
-    total_processed = 0
-
     assignments = get_set_assignments(rank, size, N_ENSEMBLE_SETS)
 
-    if size >= N_ENSEMBLE_SETS:
-        # Multiple ranks per set — only local_rank 0 does the work
+    if size >= N_ENSEMBLE_SETS and comm is not None:
+        # Multiple ranks per set — use comm.Split so ALL ranks participate
         set_id, local_rank, local_size = assignments[0]
 
-        if local_rank == 0:
-            success = prep_ensemble_set(set_id, dataset_id, use_mpi=False)
-            total_processed = 1
-            success_count = 1 if success else 0
+        # Create sub-communicator scoped to this set
+        local_comm = comm.Split(color=set_id, key=local_rank)
+
+        # Temporarily swap MPI.COMM_WORLD so pywrdrb preprocessors
+        # (which hardcode COMM_WORLD) operate within the sub-communicator
+        saved_comm_world = MPI.COMM_WORLD
+        MPI.COMM_WORLD = local_comm
+
+        try:
+            if local_rank == 0:
+                print(f"Set {set_id+1}: {local_size} ranks collaborating via sub-communicator")
+            success = prep_ensemble_set(set_id, dataset_id, use_mpi=True)
+        finally:
+            # Always restore original COMM_WORLD
+            MPI.COMM_WORLD = saved_comm_world
+            local_comm.Free()
+
     else:
-        # More sets than ranks — each rank processes its assigned sets serially
+        # Serial or more sets than ranks — each rank processes sets serially
         for set_id, local_rank, local_size in assignments:
             success = prep_ensemble_set(set_id, dataset_id, use_mpi=False)
-            total_processed += 1
-            success_count += 1 if success else 0
 
-    # No global collectives — each set completes independently.
-    # Rank 0 verifies output files exist after its own work finishes.
+    # Rank 0 verifies output files exist after global barrier
+    if comm is not None:
+        comm.Barrier()
+
     if rank == 0:
         print("\n" + "=" * 60)
         print(f"PYWRDRB INPUT PREPARATION COMPLETED: {dataset_id}")
