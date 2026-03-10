@@ -4,10 +4,17 @@
 #SBATCH --error=./logs/ssi.err
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=40
+#SBATCH --mem-per-cpu=8G
 
 # Load modules and environment
 module load python/3.11.5
 source venv/bin/activate
+
+# MPI transport configuration for OpenMPI 4.0.5 + libfabric stability
+export OMPI_MCA_pml=ob1
+export OMPI_MCA_btl=self,vader,tcp
+export OMPI_MCA_mtl=^ofi
+
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Workflow control flags 
@@ -26,9 +33,9 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     echo "Calculating SSI based drought metrics..."
     ################################################################################
     python3 05_calculate_ssi_drought_metrics.py historic
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py stationary_ensemble
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_low
-    mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_high
+    srun python3 05_calculate_ssi_drought_metrics.py stationary_ensemble
+    srun python3 05_calculate_ssi_drought_metrics.py climate_adjusted_low
+    srun python3 05_calculate_ssi_drought_metrics.py climate_adjusted_high
     
 
 fi
@@ -37,9 +44,9 @@ if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
     ################################################################################
     echo "Calculating satisficing during droughts..."
     ################################################################################
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py stationary_ensemble --all
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
+    srun python3 06_calculate_satisficing_by_drought.py stationary_ensemble --all
+    srun python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
+    srun python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
 fi
 
 
@@ -48,7 +55,7 @@ if [ "$CALCULATE_EVENT_METRICS" = true ]; then
     ################################################################################
     echo "Calculating per-drought-event metrics..."
     ################################################################################
-    mpirun -np $np python3 07_calculate_event_metrics.py stationary_ensemble --all
-    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_low --all
-    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_high --all
+    srun python3 07_calculate_event_metrics.py stationary_ensemble --all
+    srun python3 07_calculate_event_metrics.py climate_adjusted_low --all
+    srun python3 07_calculate_event_metrics.py climate_adjusted_high --all
 fi

@@ -10,6 +10,11 @@
 module load python/3.11.5
 source venv/bin/activate
 
+# MPI transport configuration for OpenMPI 4.0.5 + libfabric stability
+export OMPI_MCA_pml=ob1
+export OMPI_MCA_btl=self,vader,tcp
+export OMPI_MCA_mtl=^ofi
+
 # Calculate number of MPI ranks
 # Optimal: N_RANKS = N_ENSEMBLE_SETS (currently 20 for 2000 realizations)
 # Adjust --nodes and --ntasks-per-node above to match your N_ENSEMBLE_SETS
@@ -43,9 +48,9 @@ if [ "$RUN_POSTPROCESSING" = true ]; then
         echo "========================================"
 
         if [ "$USE_LOW_MEMORY" = true ]; then
-            mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
+            srun python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
         else
-            mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID"
+            srun python3 04_postprocess_data_mpi.py "$DATASET_ID"
         fi
 
         # Check exit status
