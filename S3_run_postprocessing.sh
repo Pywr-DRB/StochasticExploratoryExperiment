@@ -10,10 +10,11 @@
 module load python/3.11.5
 source venv/bin/activate
 
-# MPI transport configuration for OpenMPI 4.0.5 + libfabric stability
-export OMPI_MCA_pml=ob1
-export OMPI_MCA_btl=self,vader,tcp
-export OMPI_MCA_mtl=^ofi
+# MPI transport: use UCX (bypasses buggy OFI/libfabric RDMA path entirely)
+export OMPI_MCA_pml=ucx
+export OMPI_MCA_btl=self,vader
+export OMPI_MCA_osc=ucx
+export OMPI_MCA_mtl=^ofi,^psm2
 
 # Calculate number of MPI ranks
 # Optimal: N_RANKS = N_ENSEMBLE_SETS (currently 20 for 2000 realizations)
@@ -48,9 +49,9 @@ if [ "$RUN_POSTPROCESSING" = true ]; then
         echo "========================================"
 
         if [ "$USE_LOW_MEMORY" = true ]; then
-            srun python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
+            mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
         else
-            srun python3 04_postprocess_data_mpi.py "$DATASET_ID"
+            mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID"
         fi
 
         # Check exit status
