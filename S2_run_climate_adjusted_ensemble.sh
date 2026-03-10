@@ -30,22 +30,13 @@ for dataset in "${DATASETS[@]}"; do
     echo "========================================"
     echo "Starting: $dataset"
     echo "========================================"
-[ "$GENERATE" = true ] && {
-    echo "Generating ensemble sets for $dataset..."
-    mpirun -np $np python3 01_generate_ensemble_sets.py "$dataset"
-}
 
-[ "$PREP" = true ] && {
-    echo "Preparing inputs for $dataset..."
-    mpirun -np $np python3 02_prep_pywrdrb_inputs.py "$dataset"
-}
-
-[ "$SIMULATE" = true ] && {
-    echo "Running simulations for $dataset..."
-    mpirun -np $np python3 03_run_pywrdrb_simulations.py "$dataset"
-}
-
-echo "Completed: $dataset"
+    # Execute workflow
+    [ "$GENERATE" = true ] && mpirun -np $np python3 01_generate_ensemble_sets.py "$dataset"
+    [ "$PREP" = true ] && mpirun -np $np python3 02_prep_pywrdrb_inputs.py "$dataset"
+    [ "$SIMULATE" = true ] && mpirun -np $np python3 03_run_pywrdrb_simulations.py "$dataset"
+    
+echo "Completed generation->simulation for: $dataset"
 done    
 
 echo ""
