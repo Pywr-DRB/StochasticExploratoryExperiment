@@ -45,36 +45,7 @@ warnings.filterwarnings("ignore")
 # =============================================================================
 # MPI CONFIGURATION
 # =============================================================================
-# Set USE_MPI=False to run without MPI (single-process, for small local batches)
-
-try:
-    from mpi4py import MPI
-    MPI_AVAILABLE = True
-    USE_MPI = True
-except ImportError:
-    MPI_AVAILABLE = False
-    USE_MPI = False
-    print("mpi4py not found - running in single-process mode (USE_MPI=False)")
-
-if not USE_MPI:
-    # Mock MPI communicator for single-process execution
-    class MockComm:
-        def Get_rank(self):
-            return 0
-        def Get_size(self):
-            return 1
-        def Barrier(self):
-            pass
-        def gather(self, data, root=0):
-            return [data]
-        def reduce(self, data, op=None, root=0):
-            return data
-
-    class MockMPI:
-        COMM_WORLD = MockComm()
-        SUM = None
-
-    MPI = MockMPI()
+from methods.mpi_utils import get_comm, MPI_AVAILABLE, global_point_to_point_gather
 
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
@@ -803,9 +774,7 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
     keep_data : pywrdrb.Data
         Combined data object (only on rank 0, None on other ranks)
     """
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print(f"\n{'='*80}")
@@ -839,19 +808,13 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
     else:
         print(f"Rank {rank}: No ensemble sets assigned (idle)")
 
-    # Synchronize before processing
-    comm.Barrier()
-
-    # Each rank processes its assigned ensemble sets
+    # Each rank processes its assigned ensemble sets independently (no barrier)
     if len(rank_sets) > 0:
         rank_results = process_ensemble_sets_on_rank(
             dataset_id, ensemble_set_specs, rank_sets, rank
         )
     else:
         rank_results = []
-
-    # Synchronize before gathering/saving
-    comm.Barrier()
 
     keep_data = None
 
@@ -866,8 +829,10 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
         del rank_results
         gc.collect()
 
-        # Gather only the file paths (small data)
-        all_temp_files = comm.gather(temp_fname, root=0)
+        # Gather file paths via point-to-point (no collective gather)
+        all_temp_files = global_point_to_point_gather(
+            comm, temp_fname, rank, size, tag=700
+        )
 
         # Rank 0 combines temp files
         if rank == 0:
@@ -876,11 +841,13 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
             keep_data = combine_temp_files_to_final(dataset_id, valid_temp_files, ensemble_set_specs)
 
     else:
-        # STANDARD MODE: Gather all results in memory
+        # STANDARD MODE: Gather all results via point-to-point
         if rank == 0:
             print(f"\nGathering results from all ranks...")
 
-        all_results = comm.gather(rank_results, root=0)
+        all_results = global_point_to_point_gather(
+            comm, rank_results, rank, size, tag=701
+        )
 
         # Rank 0 combines and exports
         if rank == 0:
@@ -908,8 +875,7 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
     success : bool
         True if processing completed successfully
     """
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print(f"\n{'='*80}")
@@ -1017,8 +983,7 @@ def main_mpi(dataset_id, recombine_sets=True, low_memory=False):
     low_memory : bool
         If True, use file-based intermediate storage instead of MPI gather
     """
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print("=" * 80)

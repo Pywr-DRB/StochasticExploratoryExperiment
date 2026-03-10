@@ -15,7 +15,7 @@ Usage:
 import os
 import sys
 
-from methods.mpi_utils import get_comm, get_set_assignments, get_set_peer_ranks, MPI_AVAILABLE
+from methods.mpi_utils import get_comm, get_set_assignments, get_set_peer_ranks
 from methods.simulate import run_ensemble_set_simulations
 from methods.config import (
     DATASET_CONFIGS,
@@ -25,9 +25,6 @@ from methods.config import (
     get_ensemble_set_spec,
 )
 from methods.print_summary import print_simulation_status
-
-if MPI_AVAILABLE:
-    from mpi4py import MPI
 
 
 def parallel_run_all_sets(dataset_id):
@@ -92,34 +89,27 @@ def parallel_run_all_sets(dataset_id):
             total_processed += 1
             success_count += 1 if success else 0
 
-    # Collect results from all ranks
-    if comm:
-        comm.Barrier()
-        total_success = comm.reduce(success_count, op=MPI.SUM, root=0)
-        total_attempts = comm.reduce(total_processed, op=MPI.SUM, root=0)
-    else:
-        total_success = success_count
-        total_attempts = total_processed
-
+    # No global collectives — each set completes independently.
+    # Rank 0 verifies output files exist after its own work finishes.
     if rank == 0:
         print("\n" + "=" * 60)
         print(f"PYWRDRB SIMULATIONS COMPLETED: {dataset_id}")
         print("=" * 60)
-        print(f"Successfully processed: {total_success}/{total_attempts} sets")
 
-        if total_success == N_ENSEMBLE_SETS:
+        success_sets = []
+        failed_sets = []
+        for sid in range(N_ENSEMBLE_SETS):
+            set_spec = get_ensemble_set_spec(sid, dataset_id)
+            if os.path.exists(set_spec.output_file):
+                success_sets.append(sid)
+            else:
+                failed_sets.append(sid + 1)
+
+        print(f"Verified: {len(success_sets)}/{N_ENSEMBLE_SETS} sets have output files")
+        if not failed_sets:
             print("SUCCESS: All ensemble sets simulated successfully!")
         else:
-            failed_count = N_ENSEMBLE_SETS - total_success
-            print(f"WARNING: {failed_count} sets failed or were skipped")
-
-            failed_sets = []
-            for set_id in range(N_ENSEMBLE_SETS):
-                set_spec = get_ensemble_set_spec(set_id, dataset_id)
-                if not os.path.exists(set_spec.output_file):
-                    failed_sets.append(set_id + 1)
-            if failed_sets:
-                print(f"  Failed sets: {failed_sets}")
+            print(f"WARNING: Missing output for sets: {failed_sets}")
 
         print("=" * 60)
         print(f"Done with Pywr-DRB simulations for {dataset_id}!")

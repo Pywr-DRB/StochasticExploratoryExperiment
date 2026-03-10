@@ -4,11 +4,13 @@
 Calculate per-drought-event metrics from raw HDF5 timeseries for the
 Sankey-Parallel Coordinate figure.
 
-Uses MPI parallelization to distribute realizations across ranks,
-following the same pattern as 06_calculate_satisficing_by_drought.py.
+Each rank independently:
+  1. Reads realization IDs from HDF5 metadata (no data loaded)
+  2. Loads ONLY its assigned realizations (selective HDF5 reading)
+  3. Computes event metrics over drought windows
+  4. Sends results to rank 0 via point-to-point send/recv
 
-Each SSI-defined drought event becomes one sample with hazard characteristics,
-system action metrics, and outcome metrics computed over the exact event window.
+No global MPI collectives (bcast, gather, barrier, reduce) are used.
 
 Usage:
     mpirun -np N python 07_calculate_event_metrics.py <dataset_id> [--all | ssi_windows...]
@@ -26,12 +28,14 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from mpi4py import MPI
-
-import pywrdrb
-from methods.config import *
-from methods.load import load_drought_events
+from methods.mpi_utils import get_comm, global_point_to_point_gather
 from methods.utils import distribute_realizations_across_ranks
+from methods.load import (
+    get_realization_ids_from_export,
+    load_rank_subset_from_export,
+    load_drought_events,
+)
+from methods.config import *
 from methods.verification import verify_postprocessing_output
 from methods.metrics.event_metrics import calculate_all_event_metrics
 
@@ -40,54 +44,13 @@ from methods.metrics.event_metrics import calculate_all_event_metrics
 EVENT_METRICS_DIR = os.path.join(ROOT_DIR, 'pywrdrb', 'event_metrics')
 
 
-class _LocalData:
-    """Lightweight data wrapper holding a realization subset.
-
-    Mimics the pywrdrb.Data interface used by event_metrics functions:
-        data.res_storage[dataset_id][realization_id]
-        data.shortage[dataset_id][realization_id]
-        data.inflow[dataset_id][realization_id]
-        data.contribution[dataset_id][realization_id]
-        data.ibt_diversions[dataset_id][realization_id]
-        data.ibt_demands[dataset_id][realization_id]
-    """
-
-    def __init__(self, dataset_id, res_storage, shortage, inflow,
-                 contribution, ibt_diversions, ibt_demands):
-        self.res_storage = {dataset_id: res_storage}
-        self.shortage = {dataset_id: shortage}
-        self.inflow = {dataset_id: inflow}
-        self.contribution = {dataset_id: contribution}
-        self.ibt_diversions = {dataset_id: ibt_diversions}
-        self.ibt_demands = {dataset_id: ibt_demands}
-
-
-def _build_local_data(full_data, dataset_id, realization_ids):
-    """Extract a subset of realizations from the full data object."""
-    return _LocalData(
-        dataset_id,
-        res_storage={r: full_data.res_storage[dataset_id][r]
-                     for r in realization_ids},
-        shortage={r: full_data.shortage[dataset_id][r]
-                  for r in realization_ids},
-        inflow={r: full_data.inflow[dataset_id][r]
-                for r in realization_ids},
-        contribution={r: full_data.contribution[dataset_id][r]
-                      for r in realization_ids},
-        ibt_diversions={r: full_data.ibt_diversions[dataset_id][r]
-                        for r in realization_ids},
-        ibt_demands={r: full_data.ibt_demands[dataset_id][r]
-                     for r in realization_ids},
-    )
-
-
-def process_ssi_window_mpi(local_data, dataset_id, ssi_window,
-                            drought_events_df, my_realizations):
+def process_ssi_window(local_data, dataset_id, ssi_window,
+                        drought_events_df, my_realizations):
     """Process a single SSI window on the local rank's realizations.
 
     Parameters
     ----------
-    local_data : _LocalData
+    local_data : pywrdrb.Data
         Data object containing only this rank's realizations.
     dataset_id : str
         Dataset identifier.
@@ -131,74 +94,43 @@ def save_metrics(metrics_df, dataset_id, ssi_window):
 
 
 def main(dataset_id, ssi_windows):
-    """MPI-parallelized event metric calculation."""
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+    """MPI-parallelized event metric calculation with rank-specific loading."""
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print("=" * 80)
         print(f"EVENT METRICS CALCULATION (MPI): {dataset_id}")
         print(f"SSI Windows: {ssi_windows}")
-        print(f"Using {size} MPI ranks")
+        print(f"Using {size} MPI rank(s)")
         print("=" * 80)
 
-    # Verify postprocessed data exists (rank 0 only, broadcast result)
-    verification_ok = False
-    if rank == 0:
-        try:
-            verify_postprocessing_output(dataset_id)
-            verification_ok = True
-        except FileNotFoundError as e:
-            print(f"ERROR: {e}")
-    verification_ok = comm.bcast(verification_ok, root=0)
-    if not verification_ok:
+    # Each rank checks file existence independently
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    if not os.path.exists(fname):
+        print(f"Rank {rank} ERROR: Postprocessed data not found: {fname}")
         return
 
-    # --- Rank 0 loads full data and distributes subsets ---
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    # Each rank reads realization IDs from HDF5 metadata (fast, no data loaded)
+    realization_ids = get_realization_ids_from_export(fname, dataset_id)
+    n_realizations = len(realization_ids)
 
-    if rank == 0:
-        print(f"\nLoading postprocessed data from: {fname}")
-        data = pywrdrb.Data()
-        data.load_from_export(
-            fname,
-            results_sets=['res_storage', 'inflow', 'shortage',
-                          'contribution', 'ibt_diversions', 'ibt_demands']
-        )
-        realization_ids = sorted(data.shortage[dataset_id].keys())
-        n_realizations = len(realization_ids)
-        print(f"  Loaded {n_realizations} realizations")
-    else:
-        realization_ids = None
-        n_realizations = None
-
-    # Broadcast metadata
-    n_realizations = comm.bcast(n_realizations, root=0)
-    realization_ids = comm.bcast(realization_ids, root=0)
-
-    # Determine each rank's assigned realizations
+    # Determine this rank's assigned realizations
     my_realizations = distribute_realizations_across_ranks(
         realization_ids, rank, size
     )
 
-    # Distribute per-rank data subsets via send/recv
     if rank == 0:
-        for r in range(size):
-            r_ids = distribute_realizations_across_ranks(
-                realization_ids, r, size
-            )
-            subset = _build_local_data(data, dataset_id, r_ids)
-            if r == 0:
-                local_data = subset
-            else:
-                comm.send(subset, dest=r, tag=200)
-        del data  # free full data on rank 0
-        print(f"  Distributed data to {size} ranks")
-    else:
-        local_data = comm.recv(source=0, tag=200)
+        print(f"  Total realizations: {n_realizations}")
+        print(f"  Realizations per rank: ~{n_realizations // size}")
 
-    print(f"Rank {rank}: received {len(my_realizations)} realizations")
+    # Each rank loads ONLY its assigned realizations (staggered I/O)
+    results_sets = ['res_storage', 'inflow', 'shortage', 'contribution',
+                    'ibt_diversions', 'ibt_demands']
+    print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
+    local_data = load_rank_subset_from_export(
+        fname, my_realizations, results_sets, rank, size
+    )
+    print(f"Rank {rank}: loaded {len(my_realizations)} realizations")
 
     # --- Process each SSI window ---
     for ssi_window in ssi_windows:
@@ -211,13 +143,15 @@ def main(dataset_id, ssi_windows):
         drought_events_df = load_drought_events(dataset_id, ssi_window)
 
         # Process on local realizations
-        local_metrics = process_ssi_window_mpi(
+        local_metrics = process_ssi_window(
             local_data, dataset_id, ssi_window,
             drought_events_df, my_realizations,
         )
 
-        # Gather results to rank 0
-        gathered = comm.gather(local_metrics, root=0)
+        # Gather results to rank 0 via point-to-point (no collective gather)
+        gathered = global_point_to_point_gather(
+            comm, local_metrics, rank, size, tag=620
+        )
 
         # Rank 0: combine and save
         if rank == 0:
@@ -277,8 +211,8 @@ if __name__ == "__main__":
     # Validate dataset
     verify_dataset_id(dataset_id)
 
-    comm = MPI.COMM_WORLD
-    if comm.Get_rank() == 0:
+    comm, rank, _ = get_comm()
+    if rank == 0:
         print(f"\nProcessing dataset: {dataset_id}")
         print(f"SSI windows: {ssi_windows}")
 

@@ -1,6 +1,14 @@
 """
 Calculate SSI-based drought metrics for ensembles using MPI parallelization.
 
+Each rank independently:
+  1. Reads realization IDs from HDF5 metadata (no data loaded)
+  2. Loads ONLY its assigned realizations (selective HDF5 reading)
+  3. Computes SSI and drought metrics
+  4. Sends results to rank 0 via point-to-point send/recv
+
+No global MPI collectives (bcast, gather, barrier, reduce) are used.
+
 Modes:
   Historic (no MPI):
     python 05_calculate_ssi_drought_metrics.py historic
@@ -8,25 +16,22 @@ Modes:
   Synthetic ensemble (MPI):
     mpirun -np N python 05_calculate_ssi_drought_metrics.py <dataset_id>
 
-The historic observed drought calculation uses the shared function from
-methods.drought_analysis. The MPI-parallelized ensemble calculation is
-implemented here because it requires MPI send/recv for distributing
-realizations across ranks.
+  Serial fallback:
+    python 05_calculate_ssi_drought_metrics.py <dataset_id>
 """
 
 import sys
 import os
 import numpy as np
 import pandas as pd
-from mpi4py import MPI
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from synhydro.droughts.ssi import SSIDroughtMetrics
 
+from methods.mpi_utils import get_comm, global_point_to_point_gather
 from methods.utils import distribute_realizations_across_ranks
-from methods.verification import verify_postprocessing_output
+from methods.load import get_realization_ids_from_export, load_rank_subset_from_export
 from methods.drought_analysis import calculate_historic_observed_droughts, fit_ssi_calculator
 from methods.config import *
 
@@ -36,12 +41,9 @@ EXPORT_SSI_HDF5 = False
 def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     """
     Calculate SSI-based drought metrics for a dataset using MPI parallelization.
-    Note: Historic observed droughts are NOT calculated here - run with 'historic' argument separately.
+    Each rank loads only its assigned realizations directly from HDF5.
     """
-    # MPI setup
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+    comm, rank, size = get_comm()
 
     # Verify dataset
     verify_dataset_id(dataset_id)
@@ -51,68 +53,43 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Calculating SSI drought metrics for: {dataset_id}")
         print(f"Dataset type: {dataset_config['type']}")
         print(f"SSI windows: {ssi_windows}")
-        print(f"Using {size} MPI ranks")
+        print(f"Using {size} MPI rank(s)")
 
-    # Verify postprocessed data exists (rank 0 checks, broadcasts result)
-    verification_ok = False
-    if rank == 0:
-        try:
-            verify_postprocessing_output(dataset_id)
-            verification_ok = True
-        except FileNotFoundError as e:
-            print(f"ERROR: {e}")
-    verification_ok = comm.bcast(verification_ok, root=0)
-    if not verification_ok:
+    # Each rank checks file existence independently
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    if not os.path.exists(fname):
+        print(f"Rank {rank} ERROR: File not found: {fname}")
         return False
 
-    # Load synthetic ensemble (on disk)
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    # Each rank reads realization IDs from HDF5 metadata (fast, no data loaded)
+    realization_ids = get_realization_ids_from_export(fname, dataset_id,
+                                                      results_set='inflow')
+    n_realizations = len(realization_ids)
 
-    # --- Only rank 0 loads the export; others wait for metadata ---
+    # Determine this rank's assigned realizations
+    my_realizations = distribute_realizations_across_ranks(
+        realization_ids, rank, size
+    )
+
     if rank == 0:
-        data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=['inflow'])
+        print(f"  Total realizations: {n_realizations}")
+        print(f"  Realizations per rank: ~{n_realizations // size}")
 
-        # Keep just the combined ensemble dict
-        syn_ensemble = data.inflow[dataset_id]  # no copy: avoid doubling memory
-        del data  # free wrapper memory
+    # Each rank loads ONLY its assigned realizations (staggered I/O)
+    print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
+    local_data = load_rank_subset_from_export(
+        fname, my_realizations, ['inflow'], rank, size
+    )
 
-        realization_ids = list(syn_ensemble.keys())
-        n_realizations = len(realization_ids)
+    # Extract local ensemble dict
+    local_syn_ensemble = local_data.inflow[dataset_id]
+    del local_data  # free wrapper
 
-        ## Calculate the nyc_aggregate inflow
-        for real_id, df in syn_ensemble.items():
-            df['nyc_aggregate'] = df[NYC_RESERVOIRS].sum(axis=1)
-            
-            # add it back to the dict
-            syn_ensemble[real_id] = df
-        
-    else:
-        syn_ensemble = None
-        realization_ids = None
-        n_realizations = None
+    # Add NYC aggregate inflow for each realization
+    for real_id, df in local_syn_ensemble.items():
+        df['nyc_aggregate'] = df[NYC_RESERVOIRS].sum(axis=1)
 
-    # Broadcast small metadata only
-    n_realizations = comm.bcast(n_realizations, root=0)
-    realization_ids = comm.bcast(realization_ids, root=0)
-
-    # Determine each rank's slice
-    my_realizations = distribute_realizations_across_ranks(realization_ids, rank, size)
-
-    # --- Distribute only the needed realizations per rank (send/recv) ---
-    if rank == 0:
-        for r in range(size):
-            r_ids = distribute_realizations_across_ranks(realization_ids, r, size)
-            small = {real_id: syn_ensemble[real_id] for real_id in r_ids}
-            if r == 0:
-                local_syn_ensemble = small
-            else:
-                comm.send(small, dest=r, tag=101)
-        print(f"Rank 0 prepared and distributed per-rank subsets.")
-    else:
-        local_syn_ensemble = comm.recv(source=0, tag=101)
-
-    print(f"Rank {rank} received {len(local_syn_ensemble)} realizations.")
+    print(f"Rank {rank}: loaded {len(local_syn_ensemble)} realizations.")
 
     if rank == 0:
         print(f"Loaded synthetic {dataset_id} ensemble with {n_realizations} realizations.")
@@ -125,6 +102,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         node = 'nyc_aggregate'
 
+        # Each rank fits SSI calculator independently (uses historical obs data)
         ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
         drought_calculator = SSIDroughtMetrics()
 
@@ -134,7 +112,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         # Process assigned realizations
         local_ssi_data = {}
         local_drought_data = []
-        
+
         for i, real_id in enumerate(my_realizations):
             Qsi = local_syn_ensemble[real_id].loc[:, node]
             Qsi_monthly = Qsi.resample('MS').sum()
@@ -149,9 +127,13 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
                 drought_chars['realization_id'] = real_id
                 local_drought_data.append(drought_chars)
 
-        # Gather results from all ranks
-        all_ssi_data = comm.gather(local_ssi_data, root=0)
-        all_drought_data = comm.gather(local_drought_data, root=0)
+        # Gather results to rank 0 via point-to-point (no collective gather)
+        all_ssi_data = global_point_to_point_gather(
+            comm, local_ssi_data, rank, size, tag=601
+        )
+        all_drought_data = global_point_to_point_gather(
+            comm, local_drought_data, rank, size, tag=602
+        )
 
         # Combine and save on rank 0
         if rank == 0:
@@ -160,9 +142,10 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
             for rank_data in all_ssi_data:
                 combined_ssi.update(rank_data)
 
-            # Create SSI DataFrame (use index from any realization)
+            # Create SSI DataFrame using rank 0's first realization for the index
+            first_real_id = my_realizations[0]
             syn_ssi = pd.DataFrame(
-                index=syn_ensemble[realization_ids[0]].resample('MS').sum().index,
+                index=local_syn_ensemble[first_real_id].resample('MS').sum().index,
                 columns=np.arange(0, n_realizations)
             )
 
@@ -179,7 +162,6 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
                 from synhydro.core.ensemble import Ensemble
                 ssi_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}.hdf5"
                 print(f"  Saving SSI values to hdf5: {ssi_fname}")
-                # Convert syn_ssi_dict to Ensemble format
                 ssi_ensemble = Ensemble(syn_ssi_dict)
                 ssi_ensemble.to_hdf5(ssi_fname)
 
@@ -205,8 +187,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 def main(dataset_id):
     """Main function for calculating synthetic drought metrics"""
 
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print("=" * 60)
@@ -234,7 +215,6 @@ if __name__ == "__main__":
     # Check for 'historic' mode
     if len(sys.argv) == 2 and sys.argv[1].lower() == 'historic':
         # Calculate historic observed droughts only (no MPI needed)
-        # Uses the shared function from methods.drought_analysis
         print("Running in HISTORIC mode - calculating observed droughts only")
         output_dir = "./pywrdrb/drought_metrics"
         success = calculate_historic_observed_droughts(
@@ -254,5 +234,6 @@ if __name__ == "__main__":
         print()
         print("  For synthetic ensemble droughts:")
         print("    mpirun -np N python 05_calculate_ssi_drought_metrics.py <dataset_id>")
+        print("    python 05_calculate_ssi_drought_metrics.py <dataset_id>  (serial fallback)")
         print(f"    Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)

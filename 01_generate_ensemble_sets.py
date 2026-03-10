@@ -1,6 +1,12 @@
 """
 Generate all ensemble sets in parallel using MPI rank distribution.
 
+IMPORTANT: This script avoids ALL collective MPI operations (bcast, barrier,
+gather, reduce) on the global communicator. The OpenMPI 4.0.5 + libfabric
+1.12.1 stack on Hopper HPC segfaults during global collectives with 240 ranks
+across 8 nodes. Instead, each rank loads data independently from disk, and
+only point-to-point send/recv is used within small set peer groups.
+
 Supports three execution modes:
   - MPI with more ranks than sets: multiple ranks collaborate per set
   - MPI with fewer ranks than sets: each rank processes sets serially
@@ -28,6 +34,34 @@ from methods.config import (
     ensure_ensemble_set_dirs,
     get_existing_ensemble_sets,
 )
+
+
+def _load_and_prepare_data(rank):
+    """Load baseline historical flow data independently on this rank.
+
+    Every rank reads from disk to avoid global MPI collectives (bcast)
+    which crash on the Hopper HPC libfabric/RDMA stack at scale.
+    """
+    Q = load_baseline_historical_flow(gage_flow=True, period='full',
+                                      flowtype=BASELINE_DATASET)
+    Q_baseline = load_baseline_historical_flow(gage_flow=True, period='baseline',
+                                               flowtype=BASELINE_DATASET)
+    Q_inflow = load_baseline_historical_flow(gage_flow=False,
+                                             period='full',
+                                             flowtype=BASELINE_DATASET)
+    Q = Q.loc[:, pywrdrb_nodes_to_generate]
+    Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
+
+    # Replace zeros with NaN (physically unrealistic)
+    n_zeros = (Q == 0.0).sum().sum()
+    if n_zeros > 0:
+        if rank == 0:
+            print(f"Replacing {n_zeros} zero values with NaN")
+        Q.replace(0, np.nan, inplace=True)
+        Q_inflow.replace(0, np.nan, inplace=True)
+        Q_baseline.replace(0, np.nan, inplace=True)
+
+    return Q, Q_baseline, Q_inflow
 
 
 def parallel_generate_all_sets(dataset_id):
@@ -60,37 +94,13 @@ def parallel_generate_all_sets(dataset_id):
 
     if size >= N_ENSEMBLE_SETS:
         # ------------------------------------------------------------------
-        # Multi-rank-per-set regime: broadcast data once, then each rank
-        # works on its assigned set using point-to-point communication.
+        # Multi-rank-per-set regime: each rank loads data independently,
+        # then works on its assigned set using point-to-point communication.
+        # NO global collectives (bcast/barrier) — they crash on Hopper.
         # ------------------------------------------------------------------
 
-        # Load data on rank 0, broadcast to all via global comm
-        if rank == 0:
-            Q = load_baseline_historical_flow(gage_flow=True, period='full',
-                                              flowtype=BASELINE_DATASET)
-            Q_baseline = load_baseline_historical_flow(gage_flow=True, period='baseline',
-                                                       flowtype=BASELINE_DATASET)
-            Q_inflow = load_baseline_historical_flow(gage_flow=False,
-                                                     period='full',
-                                                     flowtype=BASELINE_DATASET)
-            Q = Q.loc[:, pywrdrb_nodes_to_generate]
-            Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
-
-            # Replace zeros with NaN (physically unrealistic)
-            n_zeros = (Q == 0.0).sum().sum()
-            if n_zeros > 0:
-                print(f"Replacing {n_zeros} zero values with NaN")
-                Q.replace(0, np.nan, inplace=True)
-                Q_inflow.replace(0, np.nan, inplace=True)
-                Q_baseline.replace(0, np.nan, inplace=True)
-        else:
-            Q = None
-            Q_baseline = None
-            Q_inflow = None
-
-        Q = comm.bcast(Q, root=0)
-        Q_baseline = comm.bcast(Q_baseline, root=0)
-        Q_inflow = comm.bcast(Q_inflow, root=0)
+        # Each rank loads data from disk independently
+        Q, Q_baseline, Q_inflow = _load_and_prepare_data(rank)
 
         # Determine this rank's set assignment
         assignments = get_set_assignments(rank, size, N_ENSEMBLE_SETS)
@@ -115,10 +125,8 @@ def parallel_generate_all_sets(dataset_id):
             success = generate_ensemble_set(set_id, dataset_id, use_mpi=False)
             assert success, f"Set {set_id + 1} generation failed on rank {rank}"
 
-    # Global sync
-    if comm:
-        comm.Barrier()
-
+    # No global barrier — each set completes independently.
+    # Rank 0 verifies output files exist after its own set finishes.
     if rank == 0:
         print("\n" + "=" * 60)
         print(f"GENERATION COMPLETED: {dataset_id}")
@@ -134,7 +142,7 @@ def parallel_generate_all_sets(dataset_id):
 
 
 def main(dataset_id):
-    comm, rank, _ = get_comm()
+    _, rank, _ = get_comm()
 
     parallel_generate_all_sets(dataset_id)
 

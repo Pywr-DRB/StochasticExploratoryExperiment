@@ -1,10 +1,13 @@
 """
 Calculate satisficing conditions during drought vs non-drought years.
 
-Uses MPI parallelization to distribute realizations across ranks.
+Each rank independently:
+  1. Reads realization IDs from HDF5 metadata (no data loaded)
+  2. Loads ONLY its assigned realizations (selective HDF5 reading)
+  3. Computes satisficing metrics
+  4. Sends results to rank 0 via point-to-point send/recv
 
-This script addresses the question: Is there a meaningful difference between
-performance outcomes during years with droughts vs years without droughts?
+No global MPI collectives (bcast, gather, barrier, reduce) are used.
 
 Analysis includes:
 1. Satisficing during ALL simulation years (baseline)
@@ -18,23 +21,23 @@ Satisficing conditions:
 Usage:
     mpirun -np N python 06_calculate_satisficing_by_drought.py <dataset_id> [ssi_windows...]
     mpirun -np N python 06_calculate_satisficing_by_drought.py <dataset_id> --all
-
-Examples:
-    mpirun -np 80 python 06_calculate_satisficing_by_drought.py stationary_ensemble --all
-    python 06_calculate_satisficing_by_drought.py stationary_ensemble --all  # serial fallback
+    python 06_calculate_satisficing_by_drought.py <dataset_id> --all  (serial fallback)
 """
 
 import sys
+import os
 import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from mpi4py import MPI
-
-import pywrdrb
-from methods.config import *
-from methods.load import load_drought_events
+from methods.mpi_utils import get_comm, global_point_to_point_gather
 from methods.utils import distribute_realizations_across_ranks
+from methods.load import (
+    get_realization_ids_from_export,
+    load_rank_subset_from_export,
+    load_drought_events,
+)
+from methods.config import *
 from methods.verification import verify_postprocessing_output
 from methods.print_summary import print_satisficing_summary
 from methods.drought_analysis import calculate_statistical_significance
@@ -46,42 +49,14 @@ from methods.metrics.satisficing import (
 )
 
 
-class _LocalData:
-    """Lightweight data wrapper holding a realization subset.
-
-    Mimics the pywrdrb.Data interface used by the satisficing functions:
-        data.res_storage[dataset_id][realization_id]
-        data.shortage[dataset_id][realization_id]
-        data.inflow[dataset_id][realization_id]
-        data.contribution[dataset_id][realization_id]
-    """
-
-    def __init__(self, dataset_id, res_storage, shortage, inflow, contribution):
-        self.res_storage = {dataset_id: res_storage}
-        self.shortage = {dataset_id: shortage}
-        self.inflow = {dataset_id: inflow}
-        self.contribution = {dataset_id: contribution}
-
-
-def _build_local_data(full_data, dataset_id, realization_ids):
-    """Extract a subset of realizations from the full data object."""
-    return _LocalData(
-        dataset_id,
-        res_storage={r: full_data.res_storage[dataset_id][r] for r in realization_ids},
-        shortage={r: full_data.shortage[dataset_id][r] for r in realization_ids},
-        inflow={r: full_data.inflow[dataset_id][r] for r in realization_ids},
-        contribution={r: full_data.contribution[dataset_id][r] for r in realization_ids},
-    )
-
-
-def process_ssi_window_mpi(local_data, dataset_id, ssi_window,
-                           drought_events_df, my_realizations,
-                           all_years_results=None):
+def process_ssi_window(local_data, dataset_id, ssi_window,
+                        drought_events_df, my_realizations,
+                        all_years_results=None):
     """Process a single SSI window on the local rank's realizations.
 
     Parameters
     ----------
-    local_data : _LocalData
+    local_data : pywrdrb.Data
         Data object containing only this rank's realizations.
     dataset_id : str
         Dataset identifier.
@@ -131,69 +106,42 @@ def process_ssi_window_mpi(local_data, dataset_id, ssi_window,
 
 
 def main(dataset_id, ssi_windows):
-    """MPI-parallelized satisficing analysis."""
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+    """MPI-parallelized satisficing analysis with rank-specific loading."""
+    comm, rank, size = get_comm()
 
     if rank == 0:
         print("=" * 80)
         print(f"SATISFICING ANALYSIS (MPI): {dataset_id}")
         print(f"SSI Windows: {ssi_windows}")
-        print(f"Using {size} MPI ranks")
+        print(f"Using {size} MPI rank(s)")
         print("=" * 80)
 
-    # Verify postprocessed data exists (rank 0 only, broadcast result)
-    verification_ok = False
-    if rank == 0:
-        try:
-            verify_postprocessing_output(dataset_id)
-            verification_ok = True
-        except FileNotFoundError as e:
-            print(f"ERROR: {e}")
-    verification_ok = comm.bcast(verification_ok, root=0)
-    if not verification_ok:
+    # Each rank checks file existence independently
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    if not os.path.exists(fname):
+        print(f"Rank {rank} ERROR: Postprocessed data not found: {fname}")
         return
 
-    # --- Rank 0 loads full data and distributes subsets ---
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    # Each rank reads realization IDs from HDF5 metadata (fast, no data loaded)
+    realization_ids = get_realization_ids_from_export(fname, dataset_id)
+    n_realizations = len(realization_ids)
+
+    # Determine this rank's assigned realizations
+    my_realizations = distribute_realizations_across_ranks(
+        realization_ids, rank, size
+    )
 
     if rank == 0:
-        print(f"\nLoading postprocessed data from: {fname}")
-        data = pywrdrb.Data()
-        data.load_from_export(
-            fname,
-            results_sets=['res_storage', 'inflow', 'shortage', 'contribution']
-        )
-        realization_ids = sorted(data.shortage[dataset_id].keys())
-        n_realizations = len(realization_ids)
-        print(f"  Loaded {n_realizations} realizations")
-    else:
-        realization_ids = None
-        n_realizations = None
+        print(f"  Total realizations: {n_realizations}")
+        print(f"  Realizations per rank: ~{n_realizations // size}")
 
-    # Broadcast metadata
-    n_realizations = comm.bcast(n_realizations, root=0)
-    realization_ids = comm.bcast(realization_ids, root=0)
-
-    # Determine each rank's assigned realizations
-    my_realizations = distribute_realizations_across_ranks(realization_ids, rank, size)
-
-    # Distribute per-rank data subsets via send/recv
-    if rank == 0:
-        for r in range(size):
-            r_ids = distribute_realizations_across_ranks(realization_ids, r, size)
-            subset = _build_local_data(data, dataset_id, r_ids)
-            if r == 0:
-                local_data = subset
-            else:
-                comm.send(subset, dest=r, tag=200)
-        del data  # free full data on rank 0
-        print(f"  Distributed data to {size} ranks")
-    else:
-        local_data = comm.recv(source=0, tag=200)
-
-    print(f"Rank {rank}: received {len(my_realizations)} realizations")
+    # Each rank loads ONLY its assigned realizations (staggered I/O)
+    results_sets = ['res_storage', 'inflow', 'shortage', 'contribution']
+    print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
+    local_data = load_rank_subset_from_export(
+        fname, my_realizations, results_sets, rank, size
+    )
+    print(f"Rank {rank}: loaded {len(my_realizations)} realizations")
 
     # --- Process each SSI window ---
     local_all_years = None  # reuse across SSI windows
@@ -208,16 +156,22 @@ def main(dataset_id, ssi_windows):
         drought_events_df = load_drought_events(dataset_id, ssi_window)
 
         # Process on local realizations
-        local_all_years, local_drought, local_non_drought = process_ssi_window_mpi(
+        local_all_years, local_drought, local_non_drought = process_ssi_window(
             local_data, dataset_id, ssi_window,
             drought_events_df, my_realizations,
             all_years_results=local_all_years,
         )
 
-        # Gather results to rank 0
-        gathered_all = comm.gather(local_all_years, root=0)
-        gathered_drought = comm.gather(local_drought, root=0)
-        gathered_non_drought = comm.gather(local_non_drought, root=0)
+        # Gather results to rank 0 via point-to-point (no collective gather)
+        gathered_all = global_point_to_point_gather(
+            comm, local_all_years, rank, size, tag=610
+        )
+        gathered_drought = global_point_to_point_gather(
+            comm, local_drought, rank, size, tag=611
+        )
+        gathered_non_drought = global_point_to_point_gather(
+            comm, local_non_drought, rank, size, tag=612
+        )
 
         # Rank 0: combine, summarize, save
         if rank == 0:
@@ -280,8 +234,8 @@ if __name__ == "__main__":
     # Validate dataset
     verify_dataset_id(dataset_id)
 
-    comm = MPI.COMM_WORLD
-    if comm.Get_rank() == 0:
+    comm, rank, _ = get_comm()
+    if rank == 0:
         print(f"\nProcessing dataset: {dataset_id}")
         print(f"SSI windows: {ssi_windows}")
 

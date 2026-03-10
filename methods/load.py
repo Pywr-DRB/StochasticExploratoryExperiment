@@ -14,8 +14,81 @@ from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS, ROOT_DIR
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
 
-
 DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
+
+
+def get_realization_ids_from_export(fname, dataset_id, results_set='shortage'):
+    """Read realization IDs from a postprocessed HDF5 export without loading data.
+
+    Opens the HDF5 store, scans keys matching /{results_set}/{dataset_id}/*,
+    and returns sorted integer realization IDs. This is a fast metadata-only
+    operation — no DataFrames are deserialized.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the postprocessed HDF5 file.
+    dataset_id : str
+        Dataset identifier (e.g., 'stationary_ensemble').
+    results_set : str
+        Which results set to scan keys from (default 'shortage').
+
+    Returns
+    -------
+    list
+        Sorted list of realization IDs (integers where possible).
+    """
+    ids = []
+    with pd.HDFStore(fname, mode='r') as store:
+        prefix = f'/{results_set}/{dataset_id}/'
+        for key in store.keys():
+            if key.startswith(prefix):
+                scenario_id = key.split('/')[-1]
+                try:
+                    ids.append(int(scenario_id))
+                except ValueError:
+                    ids.append(scenario_id)
+    return sorted(ids)
+
+
+def load_rank_subset_from_export(fname, realization_ids, results_sets,
+                                  rank=0, size=1, stagger_seconds=0.01):
+    """Load specific realizations from a postprocessed HDF5 export.
+
+    Each rank loads only its assigned realizations directly from HDF5,
+    with a small I/O stagger to avoid overwhelming the parallel filesystem
+    when hundreds of ranks open the same file simultaneously.
+
+    Parameters
+    ----------
+    fname : str
+        Path to the postprocessed HDF5 file.
+    realization_ids : list
+        Realization IDs this rank should load.
+    results_sets : list
+        Which results sets to load (e.g., ['inflow', 'res_storage']).
+    rank : int
+        MPI rank (used for stagger timing and logging).
+    size : int
+        Total MPI ranks (stagger disabled when size <= 1).
+    stagger_seconds : float
+        Delay per rank in seconds (default 0.01s = 3.2s total for 320 ranks).
+
+    Returns
+    -------
+    pywrdrb.Data
+        Data object containing only the requested realizations.
+    """
+    import time
+
+    # Stagger file access to avoid I/O contention on parallel filesystem
+    if size > 1 and rank > 0:
+        time.sleep(stagger_seconds * rank)
+
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=results_sets,
+                          realizations=realization_ids)
+    return data
 
 def load_performance_metrics(dataset_id):
     """

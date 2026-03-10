@@ -15,7 +15,7 @@ Usage:
 import os
 import sys
 
-from methods.mpi_utils import get_comm, get_set_assignments, MPI_AVAILABLE
+from methods.mpi_utils import get_comm, get_set_assignments
 from methods.prepare import prep_ensemble_set
 from methods.config import (
     DATASET_CONFIGS,
@@ -25,9 +25,6 @@ from methods.config import (
     get_existing_ensemble_sets,
 )
 from methods.print_summary import print_prep_status
-
-if MPI_AVAILABLE:
-    from mpi4py import MPI
 
 
 def parallel_prep_all_sets(dataset_id):
@@ -76,43 +73,33 @@ def parallel_prep_all_sets(dataset_id):
             total_processed += 1
             success_count += 1 if success else 0
 
-    # Collect results from all ranks
-    if comm:
-        comm.Barrier()
-        total_success = comm.reduce(success_count, op=MPI.SUM, root=0)
-        total_attempts = comm.reduce(total_processed, op=MPI.SUM, root=0)
-    else:
-        total_success = success_count
-        total_attempts = total_processed
-
+    # No global collectives — each set completes independently.
+    # Rank 0 verifies output files exist after its own work finishes.
     if rank == 0:
         print("\n" + "=" * 60)
         print(f"PYWRDRB INPUT PREPARATION COMPLETED: {dataset_id}")
         print("=" * 60)
-        print(f"Successfully processed: {total_success}/{total_attempts} sets")
 
-        if total_success == total_attempts and total_attempts == N_ENSEMBLE_SETS:
+        required_files = [
+            'predicted_inflow',
+            'diversion_nyc',
+            'diversion_nj',
+            'predicted_diversions'
+        ]
+        success_sets = []
+        failed_sets = []
+        for sid in range(N_ENSEMBLE_SETS):
+            set_spec = get_ensemble_set_spec(sid, dataset_id)
+            if all(os.path.exists(set_spec.files[f]) for f in required_files):
+                success_sets.append(sid)
+            else:
+                failed_sets.append(sid + 1)
+
+        print(f"Verified: {len(success_sets)}/{N_ENSEMBLE_SETS} sets have all required files")
+        if not failed_sets:
             print("SUCCESS: All ensemble sets prepared successfully!")
         else:
-            failed_count = total_attempts - total_success if total_attempts else N_ENSEMBLE_SETS
-            print(f"WARNING: {failed_count} sets failed or were skipped")
-
-            failed_sets = []
-            required_files = [
-                'predicted_inflow',
-                'diversion_nyc',
-                'diversion_nj',
-                'predicted_diversions'
-            ]
-            for set_id in range(N_ENSEMBLE_SETS):
-                set_spec = get_ensemble_set_spec(set_id, dataset_id)
-                for file_key in required_files:
-                    if not os.path.exists(set_spec.files[file_key]):
-                        if set_id + 1 not in failed_sets:
-                            failed_sets.append(set_id + 1)
-                        break
-            if failed_sets:
-                print(f"  Potentially failed sets: {failed_sets}")
+            print(f"WARNING: Missing files for sets: {failed_sets}")
 
         print("=" * 60)
 

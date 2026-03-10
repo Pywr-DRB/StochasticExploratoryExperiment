@@ -158,3 +158,27 @@ def point_to_point_barrier(comm, local_rank, local_size, set_peer_ranks):
     else:
         comm.send(True, dest=root_global, tag=400 + local_rank)
         comm.recv(source=root_global, tag=500 + local_rank)
+
+
+def global_point_to_point_gather(comm, data, rank, size, tag=600):
+    """Gather data from all ranks to rank 0 using point-to-point send/recv.
+
+    Replacement for comm.gather() that avoids collective operations on
+    COMM_WORLD, which crash on some OpenMPI + libfabric installations.
+
+    Returns:
+        On rank 0: list of data from all ranks (ordered by rank).
+        On other ranks: None.
+    """
+    if comm is None or size <= 1:
+        return [data]
+
+    if rank == 0:
+        gathered = [None] * size
+        gathered[0] = data
+        for r in range(1, size):
+            gathered[r] = comm.recv(source=r, tag=tag)
+        return gathered
+    else:
+        comm.send(data, dest=0, tag=tag)
+        return None
