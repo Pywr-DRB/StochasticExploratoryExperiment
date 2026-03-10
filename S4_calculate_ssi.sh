@@ -10,11 +10,8 @@
 module load python/3.11.5
 source venv/bin/activate
 
-# MPI transport: use UCX (bypasses buggy OFI/libfabric RDMA path entirely)
-export OMPI_MCA_pml=ucx
-export OMPI_MCA_btl=self,vader
-export OMPI_MCA_osc=ucx
-export OMPI_MCA_mtl=^ofi,^psm2
+# MPI transport: force libfabric TCP provider instead of RDMA verbs
+export FI_PROVIDER=tcp
 
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
