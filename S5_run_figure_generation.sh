@@ -15,15 +15,13 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
 PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-true}
-PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
-PLOT_PERFORMANCE_BARS=${PLOT_PERFORMANCE_BARS:-false}
+PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-true}
+PLOT_PERFORMANCE_OUTCOMES=${PLOT_PERFORMANCE_OUTCOMES:-true}
 
-
-PLOT_EXAMPLE_YEARS=${PLOT_EXAMPLE_YEARS:-false}
-PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS=${PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS:-false}
+# Under development still...
 PLOT_SANKEY_PARALLEL=${PLOT_SANKEY_PARALLEL:-true}
 
 
@@ -62,27 +60,13 @@ if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
 fi
 
 
-if [ "$PLOT_PERFORMANCE_BARS" = true ]; then
+if [ "$PLOT_PERFORMANCE_OUTCOMES" = true ]; then
     echo "========================================"
     echo "Generating performance bar figures..."
     echo "========================================"
-    python3 F5_plot_performance_outcome_boxplots.py
+    python3 F5_plot_performance_outcomes.py
 fi
 
-
-if [ "$PLOT_EXAMPLE_YEARS" = true ]; then
-    echo "========================================"
-    echo "Generating example year figures..."
-    echo "========================================"
-    ## TO BE DEVELOPED!
-fi   
-
-if [ "$PLOT_CONTRIBUTION_RATIO_STORAGE_YEARS" = true ]; then
-    echo "========================================"
-    echo "Generating contribution ratio storage figures..."
-    echo "========================================"
-    python3 F10_plot_contribution_storage_timeseries.py stationary_ensemble
-fi
 
 
 
@@ -90,10 +74,10 @@ if [ "$PLOT_SANKEY_PARALLEL" = true ]; then
     echo "========================================"
     echo "Running CART diagnostics for bin selection..."
     echo "========================================"
-    python3 diagnostics_cart_bin_selection.py --ssi_window 3 --datasets stationary_ensemble
+    # python3 diagnostics_cart_bin_selection.py --ssi_window 3 --datasets stationary_ensemble
 
     echo "========================================"
     echo "Generating Sankey-Parallel Coordinate figures..."
     echo "========================================"
-    python3 F14_plot_sankey_parallel_coordinates.py --versions default quantile cart --ssi_window 3 --datasets stationary_ensemble
+    python3 F6_plot_sankey_parallel_coordinates.py --versions default quantile cart --ssi_window 3 --datasets stationary_ensemble
 fi
