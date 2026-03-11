@@ -9,7 +9,16 @@ import pywrdrb
 from pywrdrb.path_manager import get_pn_object
 from pywrdrb.utils.constants import cfs_to_mgd
 from synhydro.core.ensemble import Ensemble
-from methods.config import RECONSTRUCTION_OUTPUT_FNAME, ENSEMBLE_SETS, ROOT_DIR
+from methods.config import (
+    RECONSTRUCTION_OUTPUT_FNAME, WRFAORC_OUTPUT_FNAME, WRF1960s_OUTPUT_FNAME,
+    ENSEMBLE_SETS, ROOT_DIR,
+    N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET,
+    get_ensemble_set_spec,
+)
+from methods.metrics.shortfall import (
+    get_flow_and_target_values, add_trenton_equiv_flow,
+    calculate_shortage_series,
+)
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
@@ -325,6 +334,219 @@ def load_and_combine_ensemble_sets(ensemble_sets,
 
     return all_data
 
+
+def load_ensemble_set_data(dataset_id, set_idx, ensemble_set_specs):
+    """
+    Load pywrdrb simulation data for a single ensemble set.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    set_idx : int
+        Ensemble set index (0-based)
+    ensemble_set_specs : list
+        List of EnsembleSetSpec objects
+
+    Returns
+    -------
+    data : pywrdrb.Data
+        Data object with this ensemble set loaded
+    """
+    spec = ensemble_set_specs[set_idx]
+
+    # Setup pathnavigator for this specific set
+    pn_config = pywrdrb.get_pn_config()
+    dataset_dir = spec.directory
+    dataset_name = spec.directory.split('/')[-1]
+    pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
+    pywrdrb.load_pn_config(pn_config)
+
+    # Load simulation outputs for this ensemble set
+    output_filenames = [spec.output_file]
+
+    results_sets = [
+        "major_flow",
+        "inflow",
+        "res_storage",
+        "res_release",
+        "mrf_target",
+        "ibt_diversions",
+        "ibt_demands",
+        "nyc_release_components",
+        "res_level"
+    ]
+
+    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
+    data.load_output(output_filenames=output_filenames)
+
+    return data
+
+
+def load_and_process_historical_models(dataset_id):
+    """
+    Load and process historical/reference models (reconstruction, wrfaorc, wrf1960s).
+
+    Computes shortage and contribution for each historical model using the
+    same central ``calculate_shortage_series`` function as ensemble postprocessing.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+
+    Returns
+    -------
+    historical_data : dict
+        Dictionary containing processed data for historical models, with keys:
+        shortage, contribution, inflow, major_flow, res_storage,
+        ibt_diversions, ibt_demands, mrf_target, res_level.
+    """
+    print("\nLoading and processing historical models...")
+
+    # Load historical model outputs
+    output_filenames = [
+        RECONSTRUCTION_OUTPUT_FNAME,
+        WRFAORC_OUTPUT_FNAME,
+        WRF1960s_OUTPUT_FNAME
+    ]
+
+    results_sets = [
+        "major_flow",
+        "inflow",
+        "res_storage",
+        "res_release",
+        "mrf_target",
+        "ibt_diversions",
+        "ibt_demands",
+        "nyc_release_components",
+        "res_level"
+    ]
+
+    data = pywrdrb.Data(results_sets=results_sets, print_status=False)
+    data.load_output(output_filenames=output_filenames)
+
+    # Load observations
+    data.load_observations(results_sets=['res_storage', 'major_flow', 'reservoir_downstream_gage'])
+    data.res_release['obs'] = {}
+    data.res_release['obs'][0] = data.reservoir_downstream_gage['obs'][0]
+
+    # Add Trenton equivalent flow
+    data = add_trenton_equiv_flow(data)
+
+    # Process historical models
+    historical_models = ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016']
+    nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
+    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
+
+    historical_data = {
+        'shortage': {},
+        'contribution': {},
+        'inflow': {},
+        'major_flow': {},
+        'res_storage': {},
+        'ibt_diversions': {},
+        'ibt_demands': {},
+        'mrf_target': {},
+        'res_level': {}
+    }
+
+    for model in historical_models:
+        if model not in data.major_flow:
+            print(f"  WARNING: {model} not found in loaded data")
+            continue
+
+        realizations = list(data.major_flow[model].keys())
+        print(f"  Processing {model} ({len(realizations)} realizations)...")
+
+        shortage_dict = {}
+        contribution_dict = {}
+
+        for r in realizations:
+            # Calculate shortages for each node
+            node_shortages = {}
+            for node in nodes:
+                flow_series, target_series = get_flow_and_target_values(
+                    data, node, model, r, start_date=None, end_date=None
+                )
+                node_shortages[node] = calculate_shortage_series(target_series, flow_series)
+
+            shortage_dict[r] = pd.DataFrame(node_shortages)
+
+            # Contribution calculations
+            contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
+            total_nyc_contribution = data.nyc_release_components[model][r].loc[:, contribution_columns].sum(axis=1)
+            contribution_dict[r] = total_nyc_contribution.to_frame(name='mrf_montagueTrenton_nyc')
+
+            # Add NYC aggregate inflow
+            data.inflow[model][r].loc[:, 'nyc'] = data.inflow[model][r].loc[:, nyc_reservoirs].sum(axis=1)
+
+        historical_data['shortage'][model] = shortage_dict
+        historical_data['contribution'][model] = contribution_dict
+        historical_data['inflow'][model] = data.inflow[model]
+        historical_data['major_flow'][model] = data.major_flow[model]
+        historical_data['res_storage'][model] = data.res_storage[model]
+        historical_data['ibt_diversions'][model] = data.ibt_diversions[model]
+        historical_data['ibt_demands'][model] = data.ibt_demands[model]
+        historical_data['mrf_target'][model] = data.mrf_target[model]
+        historical_data['res_level'][model] = data.res_level[model]
+
+    print("  Historical model processing complete")
+    return historical_data
+
+
+def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
+    """
+    Load and combine gage flow data from all ensemble sets.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier
+    ensemble_set_specs : list or None
+        List of EnsembleSetSpec objects.  If None, built from config.
+
+    Returns
+    -------
+    combined_gage_flow : dict
+        Combined gage flow data with global realization IDs
+    """
+    if ensemble_set_specs is None:
+        ensemble_set_specs = [get_ensemble_set_spec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
+
+    print("\nLoading gage flow data...")
+
+    # Setup pathnavigator
+    pn_config = pywrdrb.get_pn_config()
+    for spec in ensemble_set_specs:
+        dataset_dir = spec.directory
+        dataset_name = spec.directory.split('/')[-1]
+        pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
+    pywrdrb.load_pn_config(pn_config)
+
+    # Load hydrologic flow data
+    ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
+    data = pywrdrb.Data(results_sets=['major_flow'], print_status=False)
+    data.load_hydrologic_model_flow(ensemble_set_names)
+
+    # Combine all sets into single dataset key
+    combined_gage_flow = {}
+    for set_name in ensemble_set_names:
+        if set_name not in data.major_flow:
+            continue
+        set_data = data.major_flow[set_name]
+        set_idx = int(set_name.split('_set')[-1]) - 1
+
+        local_ids = list(set_data.keys())
+        min_local_id = min(local_ids) if local_ids else 0
+
+        for local_id, df in set_data.items():
+            local_id_normalized = local_id - min_local_id
+            global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
+            combined_gage_flow[global_id] = df
+
+    print(f"  Loaded gage flow for {len(combined_gage_flow)} realizations")
+    return combined_gage_flow
 
 
 def load_shortage_data(dataset_id):

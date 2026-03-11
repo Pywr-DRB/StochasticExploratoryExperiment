@@ -698,39 +698,8 @@ def _compute_contribution(data, dataset_id):
 
 def _load_gage_flow(data, dataset_id):
     """Load gage flow from hydrologic model flow files and combine with global realization IDs."""
-    ensemble_set_specs = [get_ensemble_set_spec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
-
-    # Setup pathnavigator for all ensemble sets
-    pn_config = pywrdrb.get_pn_config()
-    for spec in ensemble_set_specs:
-        dataset_dir = spec.directory
-        dataset_name = dataset_dir.split('/')[-1]
-        pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
-    pywrdrb.load_pn_config(pn_config)
-
-    # Load hydrologic flow data
-    ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
-    temp_data = pywrdrb.Data(results_sets=['major_flow'], print_status=False)
-    temp_data.load_hydrologic_model_flow(ensemble_set_names)
-
-    # Combine all sets into single dataset key with global realization IDs
-    combined_gage_flow = {}
-    for set_name in ensemble_set_names:
-        if set_name not in temp_data.major_flow:
-            continue
-        set_data = temp_data.major_flow[set_name]
-        set_idx = int(set_name.split('_set')[-1]) - 1
-
-        local_ids = list(set_data.keys())
-        min_local_id = min(local_ids) if local_ids else 0
-
-        for local_id, df in set_data.items():
-            local_id_normalized = local_id - min_local_id
-            global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
-            combined_gage_flow[global_id] = df
-
-    data.gage_flow = {dataset_id: combined_gage_flow}
-    print(f"      Loaded gage flow for {len(combined_gage_flow)} realizations")
+    from methods.load import load_gage_flow_data
+    data.gage_flow = {dataset_id: load_gage_flow_data(dataset_id)}
 
 
 def combine_ensemble_sets(dataset_id, recombine=True):
