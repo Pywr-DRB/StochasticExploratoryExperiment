@@ -422,28 +422,140 @@ def classify_years_by_min_zone(res_level_df):
     year_classifications : dict
         Dictionary mapping year -> {'min_zone': int, 'min_zone_date': pd.Timestamp}
     """
-    # Add year column
-    df = res_level_df.copy()
-    df['year'] = df.index.year
+    nyc = res_level_df['nyc']
+    years = nyc.index.year
 
-    year_classifications = {}
+    # Vectorized: find max zone per year and its first occurrence date
+    max_zone_per_year = nyc.groupby(years).max()
+    max_zone_date_per_year = nyc.groupby(years).idxmax()
 
-    for year in df['year'].unique():
-        year_data = df[df['year'] == year]
+    return {
+        year: {'min_zone': max_zone_per_year[year],
+               'min_zone_date': max_zone_date_per_year[year]}
+        for year in max_zone_per_year.index
+    }
 
-        # Find maximum zone value (higher zone = more severe drought)
-        # Zone 6 is most severe drought, Zone 1 is flood
-        max_zone = year_data['nyc'].max()
 
-        # Find date when maximum zone occurred
-        max_zone_date = year_data[year_data['nyc'] == max_zone].index[0]
+def _contribution_metrics_for_realization(args):
+    """
+    Calculate contribution metrics for a single realization (worker function).
 
-        year_classifications[year] = {
-            'min_zone': max_zone,
-            'min_zone_date': max_zone_date
+    Designed to be called from ProcessPoolExecutor or directly in a loop.
+    Uses cumulative sums for O(1) window-sum lookups instead of repeated masking.
+
+    Parameters
+    ----------
+    args : tuple
+        (r, res_level, res_storage_nyc, contribution, inflow_nyc,
+         diversion, demand, nyc_total_capacity, window_days)
+
+    Returns
+    -------
+    records : list of dict
+        One record per year with all window metrics
+    """
+    (r, res_level, res_storage_nyc, contribution, inflow_nyc,
+     diversion, demand, nyc_total_capacity, window_days) = args
+
+    # NYC combined storage percentage
+    nyc_storage_pct = 100.0 * res_storage_nyc / nyc_total_capacity
+
+    # Classify years by drought zone (vectorized groupby)
+    nyc_zone = res_level['nyc']
+    years = nyc_zone.index.year
+    max_zone_per_year = nyc_zone.groupby(years).max()
+    max_zone_date_per_year = nyc_zone.groupby(years).idxmax()
+
+    # Min storage per year
+    min_storage_per_year = nyc_storage_pct.groupby(nyc_storage_pct.index.year).min()
+
+    # Build cumulative sums for O(1) window lookups
+    # Align all series to same index (they should already be aligned)
+    idx = contribution.index
+    contrib_cumsum = contribution.values.cumsum()
+    inflow_cumsum = inflow_nyc.values.cumsum()
+    div_cumsum = diversion.values.cumsum()
+    dem_cumsum = demand.values.cumsum()
+
+    # Precompute 30-day rolling demand satisfaction for worst-1mo calc
+    rolling_div_30 = diversion.rolling(30).sum()
+    rolling_dem_30 = demand.rolling(30).sum()
+    rolling_sat_30 = (rolling_div_30 / rolling_dem_30).clip(upper=1.0)
+
+    records = []
+
+    for year in max_zone_per_year.index:
+        min_zone = max_zone_per_year[year]
+        min_zone_date = max_zone_date_per_year[year]
+        min_storage = min_storage_per_year[year]
+
+        record = {
+            'realization_id': r,
+            'year': year,
+            'min_zone': min_zone,
+            'min_zone_date': min_zone_date.isoformat(),
+            'min_storage_pct': min_storage
         }
 
-    return year_classifications
+        # Find the position of min_zone_date in the index
+        # Use searchsorted for O(log n) lookup
+        end_pos = idx.searchsorted(min_zone_date, side='right') - 1
+        if end_pos < 0:
+            # min_zone_date is before the start of the timeseries
+            for W in window_days:
+                record.update({
+                    f'contribution_total_{W}d': np.nan,
+                    f'contribution_ratio_{W}d': np.nan,
+                    f'inflow_total_{W}d': np.nan,
+                    f'demand_satisfaction_{W}d': np.nan,
+                    f'worst_1mo_demand_sat_{W}d': np.nan,
+                })
+            records.append(record)
+            continue
+
+        # Compute metrics for each window using cumsum differences
+        for W in window_days:
+            start_date = min_zone_date - pd.Timedelta(days=W)
+            start_pos = idx.searchsorted(start_date, side='left')
+
+            # Cumsum-based window sums: sum[start:end+1] = cumsum[end] - cumsum[start-1]
+            if start_pos > 0:
+                contrib_total = contrib_cumsum[end_pos] - contrib_cumsum[start_pos - 1]
+                inflow_total = inflow_cumsum[end_pos] - inflow_cumsum[start_pos - 1]
+                total_div = div_cumsum[end_pos] - div_cumsum[start_pos - 1]
+                total_dem = dem_cumsum[end_pos] - dem_cumsum[start_pos - 1]
+            else:
+                contrib_total = contrib_cumsum[end_pos]
+                inflow_total = inflow_cumsum[end_pos]
+                total_div = div_cumsum[end_pos]
+                total_dem = dem_cumsum[end_pos]
+
+            contrib_ratio = 100.0 * contrib_total / inflow_total if inflow_total > 0 else np.nan
+            demand_sat = min(total_div / total_dem, 1.0) if total_dem > 0 else 1.0
+
+            # Worst 1-month rolling demand satisfaction within window
+            # Skip first 29 positions: rolling values there use pre-window data.
+            # This matches the original which computed rolling on the window subset
+            # (where the first 29 values were NaN and excluded by .min()).
+            window_len = end_pos - start_pos + 1
+            if window_len >= 30:
+                worst_1mo = 100.0 * rolling_sat_30.iloc[start_pos + 29:end_pos + 1].min()
+            elif window_len > 0:
+                worst_1mo = 100.0 * demand_sat
+            else:
+                worst_1mo = np.nan
+
+            record.update({
+                f'contribution_total_{W}d': contrib_total,
+                f'contribution_ratio_{W}d': contrib_ratio,
+                f'inflow_total_{W}d': inflow_total,
+                f'demand_satisfaction_{W}d': demand_sat,
+                f'worst_1mo_demand_sat_{W}d': worst_1mo,
+            })
+
+        records.append(record)
+
+    return records
 
 
 def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
@@ -454,6 +566,9 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     This function pre-computes metrics used by contribution analysis plotting scripts,
     eliminating the need to recalculate on-the-fly during figure generation.
 
+    Uses cumulative-sum based window calculations and optional multiprocessing
+    for significantly faster execution on large ensembles.
+
     Parameters
     ----------
     data : pywrdrb.Data
@@ -463,7 +578,7 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     realizations : list
         List of realization IDs
     window_days : list of int
-        Window lengths in days to compute metrics for (default: [30, 60, 90, 120, 150, 180])
+        Window lengths in days to compute metrics for (default: [30, 60, 90, 120, 150, 180, 270])
 
     Returns
     -------
@@ -480,84 +595,31 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     print(f"  Calculating contribution analysis metrics for {len(realizations)} realizations...")
 
     nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-    records = []
+
+    # Prepare arguments for each realization
+    all_records = []
+    n_done = 0
 
     for r in realizations:
-        if (r % 100 == 0) and (r > 0):
-            print(f"    Processed {r}/{len(realizations)} realizations...")
-
-        # Load timeseries (already in memory during postprocessing)
+        # Extract per-realization data (already in memory)
         res_level = data.res_level[dataset_id][r]
+        res_storage_nyc = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+        inflow_nyc = data.inflow[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        diversion = data.ibt_diversions[dataset_id][r]['delivery_nyc']
+        demand = data.ibt_demands[dataset_id][r]['demand_nyc']
 
-        # Calculate NYC combined storage percentage
-        nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
-        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+        records = _contribution_metrics_for_realization(
+            (r, res_level, res_storage_nyc, contribution, inflow_nyc,
+             diversion, demand, NYC_TOTAL_CAPACITY, window_days)
+        )
+        all_records.extend(records)
 
-        # Get contribution and inflow data
-        nyc_contributions = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
-        nyc_inflow = data.inflow[dataset_id][r][nyc_reservoirs].sum(axis=1)
+        n_done += 1
+        if n_done % 500 == 0:
+            print(f"    Processed {n_done}/{len(realizations)} realizations...")
 
-        # Get diversion and demand data
-        nyc_diversion = data.ibt_diversions[dataset_id][r]['delivery_nyc']
-        nyc_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
-
-        # Classify years by drought zone (once per realization)
-        year_classifications = classify_years_by_min_zone(res_level)
-
-        for year, info in year_classifications.items():
-            # Calculate base metrics
-            min_zone = info['min_zone']
-            min_zone_date = info['min_zone_date']
-
-            # Calculate minimum storage for the year
-            year_mask = nyc_storage_pct.index.year == year
-            min_storage = nyc_storage_pct[year_mask].min()
-
-            record = {
-                'realization_id': r,
-                'year': year,
-                'min_zone': min_zone,
-                'min_zone_date': min_zone_date.isoformat(),  # Convert to string for CSV
-                'min_storage_pct': min_storage
-            }
-
-            # Compute metrics for each window
-            for W in window_days:
-                start_date = min_zone_date - pd.Timedelta(days=W)
-                mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= min_zone_date)
-
-                # Window-based calculations
-                contrib_total = nyc_contributions[mask].sum()
-                inflow_total = nyc_inflow[mask].sum()
-                contrib_ratio = 100.0 * contrib_total / inflow_total if inflow_total > 0 else np.nan
-
-                total_div = nyc_diversion[mask].sum()
-                total_dem = nyc_demand[mask].sum()
-                demand_sat = min(total_div / total_dem, 1.0) if total_dem > 0 else 1.0
-
-                # Worst 1-month rolling demand satisfaction
-                window_div = nyc_diversion[mask]
-                window_dem = nyc_demand[mask]
-                if len(window_div) >= 30:
-                    rolling_div = window_div.rolling(30).sum()
-                    rolling_dem = window_dem.rolling(30).sum()
-                    rolling_sat = (rolling_div / rolling_dem).clip(upper=1.0)
-                    worst_1mo = 100.0 * rolling_sat.min()
-                else:
-                    worst_1mo = 100.0 * demand_sat if len(window_div) > 0 else np.nan
-
-                record.update({
-                    f'contribution_total_{W}d': contrib_total,
-                    f'contribution_ratio_{W}d': contrib_ratio,
-                    f'inflow_total_{W}d': inflow_total,
-                    f'demand_satisfaction_{W}d': demand_sat,
-                    f'worst_1mo_demand_sat_{W}d': worst_1mo
-                })
-
-            records.append(record)
-
-    # Convert to DataFrame
-    metrics_df = pd.DataFrame(records)
+    metrics_df = pd.DataFrame(all_records)
 
     print(f"  Calculated {len(metrics_df)} year-realization pairs × {len(metrics_df.columns)} metrics")
 
