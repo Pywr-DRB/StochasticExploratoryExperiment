@@ -214,40 +214,6 @@ def get_dataset_label(dataset_id, style='standard'):
     return labels.get(dataset_id, dataset_id)
 
 
-def get_all_dataset_colors(alternative=False):
-    """
-    Get colors for all datasets in standard order.
-
-    Parameters
-    ----------
-    alternative : bool, optional
-        If True, use alternative color scheme (default: False)
-
-    Returns
-    -------
-    list
-        List of colors in standard dataset order
-    """
-    return [get_dataset_color(did, alternative) for did in DATASET_ORDER]
-
-
-def get_all_dataset_labels(style='standard'):
-    """
-    Get labels for all datasets in standard order.
-
-    Parameters
-    ----------
-    style : str, optional
-        Label style: 'standard', 'short', or 'descriptive' (default: 'standard')
-
-    Returns
-    -------
-    list
-        List of labels in standard dataset order
-    """
-    return [get_dataset_label(did, style) for did in DATASET_ORDER]
-
-
 def apply_publication_style():
     """
     Apply publication-quality style settings to matplotlib.
@@ -288,85 +254,6 @@ def apply_publication_style():
         'legend.shadow': True,
         'figure.constrained_layout.use': False,
     })
-
-
-def create_dataset_legend_handles():
-    """
-    Create legend handles for all datasets with consistent styling.
-
-    Returns
-    -------
-    list of matplotlib.lines.Line2D
-        Legend handles for all datasets in standard order
-
-    Example:
-    --------
-    >>> from methods.plotting.styles import create_dataset_legend_handles
-    >>> handles = create_dataset_legend_handles()
-    >>> labels = get_all_dataset_labels()
-    >>> ax.legend(handles, labels, loc='best')
-    """
-    from matplotlib.lines import Line2D
-
-    handles = []
-    for dataset_id in DATASET_ORDER:
-        handle = Line2D([0], [0],
-                       color=DATASET_COLORS[dataset_id],
-                       marker=DATASET_MARKERS[dataset_id],
-                       linestyle=DATASET_LINESTYLES[dataset_id],
-                       linewidth=LINEWIDTH_MEDIUM,
-                       markersize=8,
-                       label=DATASET_LABELS[dataset_id])
-        handles.append(handle)
-
-    return handles
-
-
-# =============================================================================
-# SCENARIO-SPECIFIC STYLING
-# =============================================================================
-
-def get_scenario_style(dataset_id, include_historic=False):
-    """
-    Get a complete style dictionary for a dataset.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    include_historic : bool, optional
-        If True and dataset_id is 'historic', return historic styling
-
-    Returns
-    -------
-    dict
-        Style dictionary with keys: color, label, marker, linestyle, alpha
-
-    Example:
-    --------
-    >>> style = get_scenario_style('stationary_ensemble')
-    >>> ax.plot(x, y, **style)  # Unpack style dict directly
-    """
-    if dataset_id == 'historic' or dataset_id == 'observed':
-        return {
-            'color': HISTORIC_COLOR,
-            'label': HISTORIC_LABEL,
-            'marker': HISTORIC_MARKER,
-            'linestyle': HISTORIC_LINESTYLE,
-            'linewidth': LINEWIDTH_THICK,
-            'alpha': 1.0,
-            'zorder': 10,  # Draw on top
-        }
-
-    return {
-        'color': DATASET_COLORS.get(dataset_id, '#808080'),
-        'label': DATASET_LABELS.get(dataset_id, dataset_id),
-        'marker': DATASET_MARKERS.get(dataset_id, 'o'),
-        'linestyle': DATASET_LINESTYLES.get(dataset_id, '-'),
-        'linewidth': LINEWIDTH_MEDIUM,
-        'alpha': ALPHA_LINE,
-        'zorder': 5,
-    }
 
 
 # =============================================================================

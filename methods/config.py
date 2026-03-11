@@ -208,9 +208,6 @@ class EnsembleSetSpec:
         """Get list of global realization IDs for this set"""
         return list(range(self.start_realization, self.end_realization))
     
-    def get_local_realization_ids(self):
-        """Get list of local realization IDs for this set (0-based)"""
-        return list(range(self.n_realizations))
 
 # Create ensemble set specifications for all datasets
 ENSEMBLE_SETS = {
@@ -282,18 +279,6 @@ DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
 
 
 
-def get_dataset_type(dataset_id):
-    """Return 'stationary' or 'climate_adjusted' for a dataset"""
-    verify_dataset_id(dataset_id)
-    return DATASET_CONFIGS[dataset_id]['type']
-
-def get_all_datasets_of_type(dataset_type):
-    """Get all dataset_ids of a given type"""
-    if dataset_type not in ['stationary', 'climate_adjusted']:
-        raise ValueError(f"Invalid dataset_type: {dataset_type}. Must be 'stationary' or 'climate_adjusted'")
-    return [did for did, cfg in DATASET_CONFIGS.items() 
-            if cfg['type'] == dataset_type]
-
 def get_ensemble_set_spec(set_id, dataset_id):
     """Get ensemble set specification by ID and dataset"""
     if dataset_id not in ENSEMBLE_SETS:
@@ -301,13 +286,6 @@ def get_ensemble_set_spec(set_id, dataset_id):
     if set_id < 0 or set_id >= N_ENSEMBLE_SETS:
         raise ValueError(f"set_id must be between 0 and {N_ENSEMBLE_SETS-1}")
     return ENSEMBLE_SETS[dataset_id][set_id]
-
-def get_target_ensemble_sets():
-    """Get list of ensemble set IDs to process"""
-    if WorkflowFlags.TARGET_ENSEMBLE_SETS is None:
-        return list(range(N_ENSEMBLE_SETS))
-    else:
-        return WorkflowFlags.TARGET_ENSEMBLE_SETS
 
 def ensure_ensemble_set_dirs(dataset_id=None):
     """Create all necessary ensemble set directories"""
@@ -328,11 +306,6 @@ def ensure_ensemble_set_dirs(dataset_id=None):
         # Create directories for each ensemble set
         for ensemble_set in ENSEMBLE_SETS[did]:
             os.makedirs(ensemble_set.directory, exist_ok=True)
-
-def get_all_ensemble_output_files(dataset_id):
-    """Get list of all ensemble set output files for a dataset"""
-    verify_dataset_id(dataset_id)
-    return [spec.output_file for spec in ENSEMBLE_SETS[dataset_id]]
 
 def get_existing_ensemble_sets(dataset_id):
     """Get list of ensemble set specs that have been generated for a dataset"""

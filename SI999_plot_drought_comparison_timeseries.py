@@ -418,16 +418,6 @@ def load_drought_timeseries(realization_id, start_date, end_date):
     return result
 
 
-def calculate_consecutive_violations(shortage_series):
-    """
-    Calculate rolling count of consecutive days with shortage > 0.
-    """
-    is_violation = (shortage_series > 0).astype(int)
-    groups = (~is_violation.astype(bool)).cumsum()
-    consecutive = is_violation.groupby(groups).cumsum()
-    return consecutive
-
-
 def calculate_satisfaction_pct(shortage_series):
     """
     Calculate rolling 30-day satisfaction percentage (0-100%).

@@ -28,7 +28,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
-from matplotlib.ticker import MaxNLocator
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -324,107 +323,6 @@ def plot_panel_A(ax, categorized_data, n_months_prior=None):
 # PANEL B: Scatter with regression + FFMP bands
 # ============================================================================
 
-def plot_panel_B(ax, metrics_df, ffmp_lines, x_key, x_label,
-                 vmin=None, vmax=None, panel_label='b)', show_xlabel=True):
-    """
-    Scatter of x_key vs min_storage_pct, colored by demand_satisfaction.
-
-    Returns the scatter PathCollection (for colorbar).
-    """
-    df = metrics_df.dropna(subset=[x_key, 'min_storage_pct', 'worst_1mo_demand_sat'])
-    if len(df) == 0:
-        ax.text(0.5, 0.5, 'No data', transform=ax.transAxes, ha='center')
-        return None
-
-    x = df[x_key].values
-    y = df['min_storage_pct'].values
-    c = df['worst_1mo_demand_sat'].values
-
-    if vmin is None:
-        vmin = np.nanpercentile(c, 5)
-    if vmax is None:
-        vmax = np.nanpercentile(c, 95)
-
-    sc = ax.scatter(x, y, c=c, cmap='viridis', s=12, alpha=0.5,
-                    edgecolors='none', vmin=vmin, vmax=vmax, rasterized=True)
-
-    # Regression line
-    valid = np.isfinite(x) & np.isfinite(y)
-    if valid.sum() > 10:
-        z = np.polyfit(x[valid], y[valid], 1)
-        p = np.poly1d(z)
-        x_line = np.linspace(np.nanmin(x), np.nanmax(x), 100)
-        ax.plot(x_line, p(x_line), 'k--', linewidth=1.5, alpha=0.6)
-        r = np.corrcoef(x[valid], y[valid])[0, 1]
-        ax.text(0.05, 0.95, f'r = {r:.2f}', transform=ax.transAxes,
-                fontsize=FONTSIZE_LABEL, va='top')
-
-    # FFMP zone median lines
-    for line_info in ffmp_lines:
-        ax.axhline(line_info['median'], color=line_info['color'],
-                   linestyle='--', linewidth=1.0, alpha=0.7)
-
-    ax.set_ylim(0, 100)
-    ax.set_ylabel('Min NYC storage (%)', fontsize=FONTSIZE_LABEL)
-    if show_xlabel:
-        ax.set_xlabel(x_label, fontsize=FONTSIZE_LABEL)
-    ax.grid(True, alpha=0.3, linestyle='--')
-    ax.set_axisbelow(True)
-
-    # Clean up x-axis ticks
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=False))
-    ax.tick_params(axis='x', labelsize=FONTSIZE_MEDIUM, rotation=0)
-
-    # Panel label
-    ax.text(-0.08, 1.02, panel_label, transform=ax.transAxes,
-            fontsize=14, va='bottom', ha='right')
-
-    return sc
-
-
-# ============================================================================
-# PANEL C: Bar chart of drought zone frequency (DEPRECATED - replaced by B1/B2)
-# ============================================================================
-
-def plot_panel_C(ax):
-    """Grouped bar chart of drought zone frequency across scenarios (deprecated)."""
-    zone_keys = ['years_exactly_warning', 'years_exactly_watch', 'years_exactly_emergency']
-    zone_labels = ['Warning', 'Watch', 'Emergency']
-
-    x = np.arange(len(zone_keys))
-    width = 0.25
-    n_scenarios = len(SCENARIOS)
-
-    for i, dataset_id in enumerate(SCENARIOS):
-        metrics = load_performance_metrics(dataset_id)
-        freqs = []
-        err_lo = []
-        err_hi = []
-        for zk in zone_keys:
-            vals = metrics[zk] / N_YEARS
-            mean_val = vals.mean()
-            freqs.append(mean_val)
-            err_lo.append(mean_val - vals.quantile(0.1))
-            err_hi.append(vals.quantile(0.9) - mean_val)
-
-        offset = (i - (n_scenarios - 1) / 2) * width
-        ax.bar(x + offset, freqs, width,
-               color=DATASET_COLORS[dataset_id], alpha=0.8,
-               label=DATASET_LABELS.get(dataset_id, dataset_id))
-        ax.errorbar(x + offset, freqs,
-                    yerr=[err_lo, err_hi],
-                    fmt='none', color='black', capsize=3, linewidth=0.8)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_LABEL)
-    ax.set_ylabel('Fraction of years', fontsize=FONTSIZE_LABEL)
-    ax.grid(True, axis='y', alpha=0.3, linestyle='--')
-    ax.set_axisbelow(True)
-
-    # Panel label
-    ax.text(-0.08, 1.02, 'd)', transform=ax.transAxes, fontsize=14, va='bottom', ha='right')
-
-
 # ============================================================================
 # PANEL B1/B2: New bar charts with stacked percentiles
 # ============================================================================
@@ -711,138 +609,8 @@ def plot_scatter_panel_simple(ax, metrics_df, dataset_id, ffmp_lines,
 
 
 # ============================================================================
-# SHARED LEGEND
-# ============================================================================
-
-def create_shared_legend(ax_legend, kde_handles, kde_labels):
-    """
-    Assemble a clean shared legend from all panels.
-    """
-    ax_legend.axis('off')
-
-    elements = []
-    labels = []
-
-    # (1) Drought zone KDE lines (from Panel A)
-    # Reorder: Normal, Warning, Watch, Emergency
-    desired_order = ['Normal or Above', 'Drought Warning', 'Drought Watch', 'Drought Emergency']
-    for keyword in desired_order:
-        for idx, lbl in enumerate(kde_labels):
-            if keyword in lbl:
-                elements.append(kde_handles[idx])
-                labels.append(lbl)
-                break
-
-    # (2) Mean line and 1964 Drought
-    for keyword in ['Mean', '1964']:
-        for idx, lbl in enumerate(kde_labels):
-            if keyword in lbl:
-                elements.append(kde_handles[idx])
-                labels.append(lbl)
-                break
-
-    # (3) Scenario colors (from Panel C)
-    for dataset_id in SCENARIOS:
-        elements.append(Patch(facecolor=DATASET_COLORS[dataset_id], alpha=0.8))
-        labels.append(DATASET_LABELS.get(dataset_id, dataset_id))
-
-    # (4) FFMP zone median line indicator
-    elements.append(Line2D([0], [0], color='gray', linestyle='--', linewidth=1.0, alpha=0.7))
-    labels.append('FFMP zone boundary (median)')
-
-    ax_legend.legend(elements, labels, loc='center', ncol=2,
-                     fontsize=11, frameon=False,
-                     handlelength=2.5, columnspacing=1.5)
-
-
-# ============================================================================
 # MAIN
 # ============================================================================
-
-def create_figure_full(n_mo, all_categorized, metrics_stat, 
-                       metrics_low, metrics_high,
-                       ffmp_lines, ds_vmin, ds_vmax,
-                       show_historic=False):
-    """
-    Create full figure with all panels (A, B1, B2, C1, C2, C3).
-
-    Layout:
-      Top row: A (KDE) | B1/B2 (frequency and duration bar charts)
-      Bottom row: C1, C2, C3 (scatter plots)
-    """
-    x_key = 'contribution_ratio'
-    x_label = f'NYC contribution / inflow\n({n_mo}-mo prior, %)'
-
-    fig = plt.figure(figsize=(14, 10))
-    gs = fig.add_gridspec(
-        3, 4,
-        height_ratios=[1.2, 1.2, 1],
-        width_ratios=[1, 1, 0.8, 0.8],
-        hspace=0.35, wspace=0.35,
-        left=0.08, right=0.95, top=0.95, bottom=0.12,  # Increased bottom margin for legend
-    )
-
-    # Top row
-    ax_A = fig.add_subplot(gs[0:2, 0:2])  # KDE spans left
-    ax_B1 = fig.add_subplot(gs[0, 2:4])    # Frequency bar chart (top right)
-    ax_B2 = fig.add_subplot(gs[1, 2:4])    # Duration bar chart (bottom right)
-
-    # Bottom row - scatter plots
-    ax_C1 = fig.add_subplot(gs[2, 0])
-    ax_C2 = fig.add_subplot(gs[2, 1])
-    ax_C3 = fig.add_subplot(gs[2, 2])
-
-    # Panel A: KDE
-    kde_handles, kde_labels = plot_panel_A(ax_A, all_categorized['stationary_ensemble'],
-                                           n_months_prior=n_mo)
-
-    # Panel B1: Frequency box plot
-    plot_frequency_boxplot(ax_B1, panel_label='b)',
-                           show_historic=show_historic)
-
-    # Panel B2: Duration box plot
-    plot_duration_boxplot(ax_B2, panel_label='c)',
-                          show_historic=show_historic)
-
-    # Panel C1-C3: Scatter plots
-    metrics_dict = {
-        'stationary_ensemble': metrics_stat,
-        'climate_adjusted_low': metrics_low,
-        'climate_adjusted_high': metrics_high,
-    }
-    panel_labels = ['d)', 'e)', 'f)']
-
-    scatter_axes = [ax_C1, ax_C2, ax_C3]
-    scatter_objs = []
-
-    for idx, (ax_c, dataset_id) in enumerate(zip(scatter_axes, SCENARIOS)):
-        sc = plot_scatter_panel_simple(
-            ax_c, metrics_dict[dataset_id], dataset_id, ffmp_lines,
-            x_key, x_label, panel_labels[idx],
-            vmin=ds_vmin, vmax=ds_vmax,
-            show_xlabel=(idx == 1)  # Only middle plot shows xlabel
-        )
-        scatter_objs.append(sc)
-
-    # Sync x-limits across C1-C3
-    xlim_lo = min(ax.get_xlim()[0] for ax in scatter_axes)
-    xlim_hi = max(ax.get_xlim()[1] for ax in scatter_axes)
-    for ax in scatter_axes:
-        ax.set_xlim(xlim_lo, xlim_hi)
-
-    # Shared colorbar for scatter plots
-    sc_ref = next((s for s in scatter_objs if s is not None), None)
-    if sc_ref is not None:
-        cbar_ax = fig.add_axes([0.08, 0.02, 0.5, 0.015])
-        cbar = fig.colorbar(sc_ref, cax=cbar_ax, orientation='horizontal')
-        cbar.set_label('Worst 1-mo demand satisfaction (%)', fontsize=FONTSIZE_SMALL)
-        cbar.ax.tick_params(labelsize=FONTSIZE_SMALL-1)
-
-    # Shared legend for box plots
-    add_boxplot_legend(fig)
-
-    return fig
-
 
 def create_figure_simplified(n_mo, all_categorized,
                              show_historic=False):
@@ -987,15 +755,6 @@ def main():
         fig_simple.savefig(fname_simple, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"    Saved: {fname_simple}")
         plt.close(fig_simple)
-
-        # Full version with scatter plots (DEPRECATED - uncomment if needed)
-        # print(f"  Creating full version (A + B1 + B2 + C1 + C2 + C3)...")
-        # fig_full = create_figure_full(n_mo, all_categorized, metrics_stat, metrics_low,
-        #                               metrics_high, ffmp_lines, ds_vmin, ds_vmax)
-        # fname_full = f"{FIG_OUTPUT_DIR}/F3_composite_full_{suffix}.png"
-        # fig_full.savefig(fname_full, dpi=DPI_HIGH, bbox_inches='tight')
-        # print(f"    Saved: {fname_full}")
-        # plt.close(fig_full)
 
     print("\n" + "=" * 70)
     print("All F3 figures generated successfully!")

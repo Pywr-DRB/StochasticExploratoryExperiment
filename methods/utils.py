@@ -119,37 +119,6 @@ def calculate_water_year_period_index(dates, period='daily', origin='june1'):
         return ((day_of_year - 1) // 7) + 1
 
 
-def get_nyc_storage_capacities():
-    """
-    Get NYC reservoir storage capacities.
-
-    Returns
-    -------
-    dict
-        Storage capacities in million gallons for each NYC reservoir
-    dict
-        Contains 'capacities' (dict) and 'total' (float)
-
-    Examples
-    --------
-    >>> caps = get_nyc_storage_capacities()
-    >>> caps['capacities']['cannonsville']
-    95706
-    >>> caps['total']
-    270837
-    """
-    capacities = {
-        'cannonsville': 95706,
-        'pepacton': 140190,
-        'neversink': 34941
-    }
-
-    return {
-        'capacities': capacities,
-        'total': sum(capacities.values())
-    }
-
-
 def get_parameter_subset_to_export(all_parameter_names, results_set_subset):
     output_loader = pywrdrb.load.Output(output_filenames=[]) # empty dataloader to use methods
     keep_keys = []
@@ -163,61 +132,3 @@ def get_parameter_subset_to_export(all_parameter_names, results_set_subset):
         keep_keys.extend(keys_subset)
     return keep_keys
 
-def combine_multiple_ensemble_sets_in_data(data, 
-                                           results_sets,
-                                           ensemble_type):
-    
-    for results_set in results_sets:
-        all_set_results_data = {}
-        full_results_set_dict = getattr(data, results_set)
-        for i in range(1, 11):
-            set_name = f'{ensemble_type}_ensemble_set{i}'
-            set_data = full_results_set_dict[set_name]
-            
-            # If the keys of the set data are NOT starting at (100 * (set_number -1))
-            # then we need to update the keys to be starting at (100*(set_number-1))
-            
-            start_realization = list(set_data.keys())[0]
-            if start_realization != 100*(i-1):
-                print(f'Set number {i} has realization ids starting at {start_realization}.\n Modifying to start at {100*(i-1)}.')
-                # Update keys to be starting at 100*(i-1)
-                # This is to ensure that the realization ids are consistent across sets
-                set_data_with_reals = {100*(i-1) + k: v for k, v in set_data.items()}
-            else:
-                set_data_with_reals = set_data
-            all_set_results_data.update(set_data_with_reals)
-
-        full_results_set_dict[f'{ensemble_type}_ensemble'] = all_set_results_data
-        setattr(data, results_set, full_results_set_dict)
-    return data
-
-
-def calculate_annual_metrics(df, 
-                             agg_func='sum',
-                             start_month=6, 
-                             end_month=12):
-    """
-    Applies aggregation function to a pd.DataFrame, for a specific period.
-    
-    Assumes that the index is a daily datetime index.
-    Assumes columns are realizations.
-    """
-    
-    realizations = df.columns
-    years = df.index.year.unique()
-    annual_metrics = pd.DataFrame(index=years, columns=realizations)
-    for year in years:
-        # Filter for the specific year and period
-        mask = (df.index.year == year) & (df.index.month >= start_month) & (df.index.month <= end_month)
-        filtered_df = df[mask]
-        
-        # Apply aggregation function
-        if agg_func == 'sum':
-            annual_metrics.loc[year] = filtered_df.sum()
-        elif agg_func == 'min':
-            annual_metrics.loc[year] = filtered_df.min()
-        elif agg_func == 'max':
-            annual_metrics.loc[year] = filtered_df.max()
-        else:
-            raise ValueError("Unsupported aggregation function. Use 'sum', 'min', or 'max'.")
-    return annual_metrics
