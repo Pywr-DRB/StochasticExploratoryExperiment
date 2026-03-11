@@ -11,6 +11,11 @@ mpi4py is unavailable.
 try:
     from mpi4py import MPI
     MPI_AVAILABLE = True
+
+    # Auto-finalize MPI at interpreter exit to avoid
+    # "exited without calling finalize" errors from mpirun
+    import atexit
+    atexit.register(MPI.Finalize)
 except ImportError:
     MPI_AVAILABLE = False
 

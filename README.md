@@ -49,20 +49,40 @@ A serial workflow (`serial_workflow.py`) is available for debugging or small-sca
 | `S4_calculate_ssi.sh` | Calculate SSI drought metrics, satisficing, and event metrics | 8 nodes, 40 tasks/node |
 | `S5_run_figure_generation.sh` | Generate manuscript figures | 1 node |
 | `S6_run_SI_scripts.sh` | Generate supplementary information figures | 1 node |
+| `S99_run_entire_workflow.sh` | Submit full pipeline with SLURM dependency chains | All of the above |
 
 Usage:
 ```bash
-# Full pipeline
+# Run the entire pipeline (jobs are chained with SLURM dependencies):
+bash S99_run_entire_workflow.sh
+
+# Or submit individual steps:
 sbatch S0_run_baseline_historic.sh
 sbatch S1_run_stationary_ensemble.sh
 sbatch S2_run_climate_adjusted_ensemble.sh
 bash S3_postprocess_all.sh                              # submits 3 parallel jobs
+sbatch S3_postprocess_dataset.sh stationary_ensemble    # or a single dataset
 sbatch S4_calculate_ssi.sh
 sbatch S5_run_figure_generation.sh
 sbatch S6_run_SI_scripts.sh
+```
 
-# Or postprocess a single dataset
-sbatch S3_postprocess_dataset.sh stationary_ensemble
+`S99_run_entire_workflow.sh` uses `--dependency=afterok` to chain jobs, maximizing parallelism:
+
+```
+S0 (baseline)
+ |
+ ├── S1 (stationary)
+ └── S2 (climate-adjusted)
+      |
+      ├── S3 post stationary_ensemble
+      ├── S3 post climate_adjusted_low
+      └── S3 post climate_adjusted_high
+           |
+           S4 (SSI metrics)
+           |
+           ├── S5 (figures)
+           └── S6 (SI figures)
 ```
 
 ## File naming conventions
