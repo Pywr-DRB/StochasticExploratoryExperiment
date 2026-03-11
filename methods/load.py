@@ -866,3 +866,47 @@ def compute_event_exceedances(df, metric='severity', n_years=70):
         exceedances[i] = n_exceedances / total_years
 
     return exceedances
+
+
+# =============================================================================
+# CONTRIBUTION METRICS
+# =============================================================================
+
+
+def load_contribution_metrics(dataset_id):
+    """
+    Load pre-computed contribution metrics CSV.
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
+
+    Returns
+    -------
+    pd.DataFrame
+        Contribution metrics with columns:
+        - realization_id, year, min_zone, min_zone_date, min_storage_pct
+        - contribution_total_{W}d, contribution_ratio_{W}d, inflow_total_{W}d,
+          demand_satisfaction_{W}d, worst_1mo_demand_sat_{W}d
+          for W in [30, 60, 90, 120, 150, 180, 270]
+
+    Raises
+    ------
+    FileNotFoundError
+        If pre-computed metrics file does not exist.
+    """
+    fname = f'./pywrdrb/performance_metrics/{dataset_id}_contribution_metrics.csv'
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Pre-computed metrics not found: {fname}\n"
+            "Run postprocessing (04_postprocess_data_mpi.py) to generate these files."
+        )
+
+    df = pd.read_csv(fname)
+
+    if 'min_zone_date' in df.columns:
+        df['min_zone_date'] = pd.to_datetime(df['min_zone_date'])
+
+    return df

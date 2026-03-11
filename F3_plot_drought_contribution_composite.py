@@ -905,9 +905,8 @@ def main():
     # Try loading pre-computed metrics first (FAST PATH)
     use_cached = True
     try:
-        from methods.load_contribution_metrics import (
-            load_contribution_metrics, get_metrics_for_window, categorize_by_zone
-        )
+        from methods.load import load_contribution_metrics
+        from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
 
         metrics_cache = {}
         for scenario in SCENARIOS:

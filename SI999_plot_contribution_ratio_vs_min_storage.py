@@ -485,9 +485,9 @@ def main():
         # Try loading pre-computed metrics first (FAST PATH)
         use_cached = False
         try:
-            from methods.load_contribution_metrics import (
-                load_contribution_metrics, find_optimal_window_for_correlation,
-                get_metrics_for_window
+            from methods.load import load_contribution_metrics
+            from methods.metrics.contribution import (
+                find_optimal_window_for_correlation, get_metrics_for_window
             )
 
             print("\nAttempting to load pre-computed metrics...")

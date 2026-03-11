@@ -23,7 +23,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pywrdrb
-from methods.load_contribution_metrics import load_contribution_metrics
+from methods.load import load_contribution_metrics
 from methods.postprocess import calculate_contribution_analysis_metrics
 from methods.config import DATASET_CONFIGS
 
