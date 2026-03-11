@@ -560,9 +560,9 @@ def load_reservoir_storage(dataset_id):
     return data.res_storage[dataset_id]
 
 
-def load_satisficing_results(dataset_id, ssi_window):
+def load_annual_satisficing(dataset_id, ssi_window):
     """
-    Load satisficing results from 06_calculate_satisficing_by_drought.py.
+    Load annual satisficing results from 06_calculate_drought_analysis.py.
 
     Parameters
     ----------
@@ -573,41 +573,23 @@ def load_satisficing_results(dataset_id, ssi_window):
 
     Returns
     -------
-    dict
-        Dictionary with keys 'all_years', 'drought', 'non_drought' containing
-        corresponding DataFrames
+    pd.DataFrame
+        Annual satisficing DataFrame with columns: year, realization,
+        satisficing, min_storage_pct, max_violation_days, nyc_inflow,
+        montague_contrib, n_droughts_in_year.
     """
     data_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
+    fname = f"{data_dir}/{dataset_id}_ssi{ssi_window}_annual_satisficing.csv"
 
-    files = {
-        'all_years': f"{data_dir}/{dataset_id}_ssi{ssi_window}_all_years.csv",
-        'drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_during_droughts.csv",
-        'non_drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_non_drought.csv"
-    }
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Annual satisficing file not found: {fname}\n"
+            "Run 06_calculate_drought_analysis.py first!"
+        )
 
-    # Check for alternative naming convention
-    alt_files = {
-        'drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv",
-        'non_drought': f"{data_dir}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
-    }
-
-    results = {}
-
-    for condition, fname in files.items():
-        # Try primary filename first, then alternative
-        if not os.path.exists(fname) and condition in alt_files:
-            fname = alt_files[condition]
-
-        if not os.path.exists(fname):
-            raise FileNotFoundError(
-                f"Results file not found: {fname}\n"
-                "Run 06_calculate_satisficing_by_drought.py first!"
-            )
-
-        print(f"Loading {condition}: {fname}")
-        results[condition] = pd.read_csv(fname)
-
-    return results
+    df = pd.read_csv(fname)
+    print(f"Loaded annual satisficing: {fname} ({len(df)} rows)")
+    return df
 
 
 def compute_event_exceedances(df, metric='severity', n_years=70):

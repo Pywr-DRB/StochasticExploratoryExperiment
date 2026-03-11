@@ -15,11 +15,9 @@ export FI_PROVIDER=tcp
 
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
-# Workflow control flags 
+# Workflow control flags
 CALCULATE_DROUGHT_METRICS=${CALCULATE_DROUGHT_METRICS:-false}
-CALCULATE_SATISFICING_DURING_DROUGHTS=${CALCULATE_SATISFICING_DURING_DROUGHTS:-false}
-CALCULATE_EVENT_METRICS=${CALCULATE_EVENT_METRICS:-true}
-
+CALCULATE_DROUGHT_ANALYSIS=${CALCULATE_DROUGHT_ANALYSIS:-true}
 
 # make directories
 mkdir -p logs figures
@@ -34,26 +32,14 @@ if [ "$CALCULATE_DROUGHT_METRICS" = true ]; then
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py stationary_ensemble
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_low
     mpirun -np $np python3 05_calculate_ssi_drought_metrics.py climate_adjusted_high
-    
 
 fi
 
-if [ "$CALCULATE_SATISFICING_DURING_DROUGHTS" = true ]; then
+if [ "$CALCULATE_DROUGHT_ANALYSIS" = true ]; then
     ################################################################################
-    echo "Calculating satisficing during droughts..."
+    echo "Calculating annual satisficing & per-event metrics..."
     ################################################################################
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py stationary_ensemble --all
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_low --all
-    mpirun -np $np python3 06_calculate_satisficing_by_drought.py climate_adjusted_high --all
-fi
-
-
-
-if [ "$CALCULATE_EVENT_METRICS" = true ]; then
-    ################################################################################
-    echo "Calculating per-drought-event metrics..."
-    ################################################################################
-    mpirun -np $np python3 07_calculate_event_metrics.py stationary_ensemble --all
-    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_low --all
-    mpirun -np $np python3 07_calculate_event_metrics.py climate_adjusted_high --all
+    mpirun -np $np python3 06_calculate_drought_analysis.py stationary_ensemble --all
+    mpirun -np $np python3 06_calculate_drought_analysis.py climate_adjusted_low --all
+    mpirun -np $np python3 06_calculate_drought_analysis.py climate_adjusted_high --all
 fi

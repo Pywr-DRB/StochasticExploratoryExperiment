@@ -117,13 +117,18 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
         return None
 
 
-def _max_consecutive_positive(series):
+def _max_consecutive_positive(series, tolerance=1.0):
     """
-    Count maximum consecutive days where series > 0.
+    Count maximum consecutive days where series exceeds tolerance.
 
     Same logic as satisficing._evaluate_period() violation counting.
+
+    Parameters
+    ----------
+    tolerance : float
+        Minimum shortage (MGD) to count as a violation (default: 1.0).
     """
-    violations = series > 0
+    violations = series > tolerance
     if not violations.any():
         return 0
     groups = (violations != violations.shift()).cumsum()

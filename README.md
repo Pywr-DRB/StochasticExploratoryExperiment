@@ -27,8 +27,7 @@ The pipeline is executed through numbered scripts. Each step accepts a `dataset_
 | `03_run_pywrdrb_simulations.py` | Run Pywr-DRB simulations across ensemble sets |
 | `04_postprocess_data_mpi.py` | Calculate shortage and contribution metrics |
 | `05_calculate_ssi_drought_metrics.py` | Calculate SSI-based drought metrics (3, 6, 12-month windows) |
-| `06_calculate_satisficing_by_drought.py` | Evaluate satisficing conditions during drought/non-drought periods |
-| `07_calculate_storage_zone_probabilities.py` | Calculate reservoir storage zone probabilities and percentiles |
+| `06_calculate_drought_analysis.py` | Annual satisficing + per-event metrics (combined) |
 
 Example usage:
 ```bash

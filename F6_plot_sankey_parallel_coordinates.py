@@ -15,7 +15,7 @@ Generates THREE versions per dataset:
   3. CART-based bins (data-driven thresholds separating satisficing outcomes)
 
 Pre-calculated event metrics are loaded from pywrdrb/event_metrics/.
-Run 07_calculate_event_metrics.py first to generate these.
+Run 06_calculate_drought_analysis.py first to generate these.
 
 Usage:
     python F6_plot_sankey_parallel_coordinates.py
@@ -48,7 +48,7 @@ from methods.metrics.cart_bin_selection import (
 FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'F6_sankey_parallel')
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Input data directory (from 07_calculate_event_metrics.py)
+# Input data directory (from 06_calculate_drought_analysis.py)
 EVENT_METRICS_DIR = os.path.join(ROOT_DIR, 'pywrdrb', 'event_metrics')
 
 
@@ -248,7 +248,7 @@ def load_event_metrics(dataset_id, ssi_window):
     if not os.path.exists(fname):
         raise FileNotFoundError(
             f"Event metrics not found: {fname}\n"
-            "Run 07_calculate_event_metrics.py first!"
+            "Run 06_calculate_drought_analysis.py first!"
         )
     df = pd.read_csv(fname)
     print(f"  Loaded {len(df)} events from {os.path.basename(fname)}")

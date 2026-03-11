@@ -7,7 +7,7 @@ conditions:
 - SSI Drought Periods
 - Non-Drought Years
 
-The script loads results from 06_calculate_satisficing_by_drought.py and creates
+The script loads results from 06_calculate_drought_analysis.py and creates
 comparison visualizations showing how performance differs during drought vs
 non-drought conditions.
 
@@ -28,7 +28,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
-from methods.load import load_satisficing_results
+from methods.load import load_annual_satisficing
 
 # Output directory
 FIG_DIR_SATISFICING = f"{FIG_DIR}/SI2_satisficing_by_event"
@@ -452,7 +452,12 @@ def main(dataset_id, ssi_window):
     # Load results
     print("\nLoading satisficing results:")
     print("-" * 80)
-    results = load_satisficing_results(dataset_id, ssi_window)
+    df = load_annual_satisficing(dataset_id, ssi_window)
+    results = {
+        'all_years': df,
+        'drought': df[df['n_droughts_in_year'] > 0],
+        'non_drought': df[df['n_droughts_in_year'] == 0],
+    }
 
     # Print summary
     print("\nSummary:")

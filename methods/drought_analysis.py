@@ -20,13 +20,9 @@ from scipy.stats import chi2_contingency, mannwhitneyu
 
 from .config import BASELINE_DATASET, NYC_RESERVOIRS
 from .load import load_baseline_historical_flow, load_wrf1960s_historical_flow
-from .metrics.satisficing import (
-    calculate_satisficing_conditions,
-    calculate_satisficing_during_droughts,
-    calculate_satisficing_non_drought_periods
-)
+from .metrics.satisficing import calculate_annual_satisficing
 from .print_summary import print_satisficing_summary
-from .save import save_satisficing_results
+from .save import save_annual_satisficing
 
 
 def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
@@ -338,8 +334,8 @@ def calculate_satisficing_by_drought(dataset_id, ssi_window, output_dir):
     """
     Calculate satisficing conditions for drought/non-drought years.
 
-    Matches the analysis in 06_calculate_satisficing_by_drought.py:
-    includes statistical significance tests (Chi-square, Mann-Whitney U)
+    Serial fallback for the MPI analysis in 06_calculate_drought_analysis.py.
+    Includes statistical significance tests (Chi-square, Mann-Whitney U)
     and uses the dedicated save/print summary functions.
 
     Parameters
@@ -387,46 +383,25 @@ def calculate_satisficing_by_drought(dataset_id, ssi_window, output_dir):
 
     print(f"  Loaded {len(drought_events_df)} drought events")
 
-    # Calculate satisficing for all years
-    print("\nCalculating: All Years...")
-    all_years_results = calculate_satisficing_conditions(
-        data, dataset_id,
-        period_type='year',
-        evaluate_all_years=True,
-        storage_threshold=20.0,
-        violation_days=3
-    )
-    print(f"  Evaluated {len(all_years_results)} year-realization pairs")
-
-    # Calculate satisficing for years with droughts
-    print("\nCalculating: Years with Droughts...")
-    drought_results = calculate_satisficing_during_droughts(
+    # Calculate annual satisficing with drought annotation
+    print("\nCalculating annual satisficing...")
+    df = calculate_annual_satisficing(
         data, dataset_id, drought_events_df,
         storage_threshold=20.0,
         violation_days=3
     )
-    print(f"  Evaluated {len(drought_results)} year-realization pairs with droughts")
+    print(f"  Evaluated {len(df)} year-realization pairs")
 
-    # Calculate satisficing for years without droughts
-    print("\nCalculating: Years without Droughts...")
-    non_drought_results = calculate_satisficing_non_drought_periods(
-        data, dataset_id, drought_events_df,
-        storage_threshold=20.0,
-        violation_days=3
-    )
-    print(f"  Evaluated {len(non_drought_results)} year-realization pairs without droughts")
+    # Print summary and statistical significance
+    print_satisficing_summary(df, dataset_id, ssi_window)
 
-    # Print summary statistics (matches 06)
-    print_satisficing_summary(all_years_results, drought_results, non_drought_results,
-                              dataset_id, ssi_window)
+    drought_subset = df[df['n_droughts_in_year'] > 0]
+    non_drought_subset = df[df['n_droughts_in_year'] == 0]
+    if len(drought_subset) > 0 and len(non_drought_subset) > 0:
+        calculate_statistical_significance(drought_subset, non_drought_subset)
 
-    # Statistical significance tests (matches 06)
-    if len(drought_results) > 0 and len(non_drought_results) > 0:
-        calculate_statistical_significance(drought_results, non_drought_results)
-
-    # Save results using dedicated save function (matches 06)
-    save_satisficing_results(all_years_results, drought_results, non_drought_results,
-                             dataset_id, ssi_window, output_dir=output_dir)
+    # Save results
+    save_annual_satisficing(df, dataset_id, ssi_window, output_dir=output_dir)
 
     print("\n" + "=" * 80)
     print(f"SATISFICING ANALYSIS COMPLETE: {dataset_id}, SSI-{ssi_window}")

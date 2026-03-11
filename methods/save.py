@@ -1,9 +1,6 @@
 """
 Save utilities for writing analysis results to files.
 
-This module provides functions for saving various analysis outputs
-including zone probabilities and satisficing results.
-
 All save_*() functions should be imported from this module.
 
 Note: Performance metrics saving is in methods.postprocess since it's
@@ -51,77 +48,39 @@ def save_zone_probabilities(df, dataset_id, period='weekly', output_dir=None):
     return output_file
 
 
-def save_satisficing_results(all_years_results, drought_results, non_drought_results,
-                             dataset_id, ssi_window, output_dir=None):
+def save_annual_satisficing(df, dataset_id, ssi_window, output_dir=None):
     """
-    Save satisficing analysis results to CSV files.
+    Save annual satisficing results to a single CSV.
 
     Parameters
     ----------
-    all_years_results : pd.DataFrame
-        All years results
-    drought_results : pd.DataFrame
-        Years with drought events results
-    non_drought_results : pd.DataFrame
-        Years without drought events results
+    df : pd.DataFrame
+        Annual satisficing DataFrame with columns: year, realization,
+        satisficing, min_storage_pct, max_violation_days, nyc_inflow,
+        montague_contrib, n_droughts_in_year.
     dataset_id : str
-        Dataset identifier
+        Dataset identifier.
     ssi_window : int
-        SSI window
+        SSI window (3, 6, or 12).
     output_dir : str, optional
-        Output directory path. Defaults to SATISFICING_ANALYSIS_DIR.
+        Output directory. Defaults to SATISFICING_ANALYSIS_DIR.
 
     Returns
     -------
-    list
-        List of saved file paths
+    str
+        Path to the saved file.
     """
     if output_dir is None:
         output_dir = SATISFICING_ANALYSIS_DIR
 
     os.makedirs(output_dir, exist_ok=True)
+    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_annual_satisficing.csv"
+    df.to_csv(fname, index=False)
 
-    print("\n" + "=" * 80)
-    print(f"SAVING RESULTS TO CSV (SSI-{ssi_window})")
-    print("=" * 80)
+    n_drought = (df['n_droughts_in_year'] > 0).sum()
+    n_non_drought = (df['n_droughts_in_year'] == 0).sum()
+    print(f"  Saved: {fname}")
+    print(f"    {len(df)} total year-realization pairs "
+          f"({n_drought} drought, {n_non_drought} non-drought)")
 
-    fnames = []
-
-    # Save all years
-    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_all_years.csv"
-    all_years_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    # Save drought years
-    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
-    drought_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    # Save non-drought years
-    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_years_without_droughts.csv"
-    non_drought_results.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved: {fname}")
-
-    # Create combined dataset with condition label
-    all_years_labeled = all_years_results.copy()
-    all_years_labeled['condition'] = 'all_years'
-
-    drought_labeled = drought_results.copy()
-    drought_labeled['condition'] = 'drought'
-
-    non_drought_labeled = non_drought_results.copy()
-    non_drought_labeled['condition'] = 'non_drought'
-
-    combined = pd.concat([all_years_labeled, drought_labeled, non_drought_labeled],
-                         ignore_index=True)
-
-    fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_combined.csv"
-    combined.to_csv(fname, index=False)
-    fnames.append(fname)
-    print(f"Saved combined: {fname}")
-
-    print("=" * 80)
-    return fnames
+    return fname

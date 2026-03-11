@@ -48,7 +48,6 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/drought_storage_analysis"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Satisficing analysis directory
-SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
 
 # NYC reservoir parameters
 NYC_RESERVOIRS = ['cannonsville', 'pepacton', 'neversink']
@@ -424,16 +423,18 @@ def load_satisficing_data(dataset_id, ssi_window):
     pd.DataFrame
         Satisficing results for years with droughts
     """
-    fname = f"{SATISFICING_ANALYSIS_DIR}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
+    from methods.load import load_annual_satisficing
 
-    if not os.path.exists(fname):
-        print(f"  WARNING: Satisficing data not found: {fname}")
-        print(f"  Run 06_calculate_satisficing_by_drought.py first!")
+    try:
+        df = load_annual_satisficing(dataset_id, ssi_window)
+    except FileNotFoundError as e:
+        print(f"  WARNING: {e}")
         return None
 
-    satisficing_data = pd.read_csv(fname)
-    print(f"  Loaded satisficing data for {len(satisficing_data):,} year-realization pairs")
-    return satisficing_data
+    # Filter to drought years only
+    drought_df = df[df['n_droughts_in_year'] > 0].copy()
+    print(f"  Loaded satisficing data for {len(drought_df):,} drought year-realization pairs")
+    return drought_df
 
 
 def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):

@@ -49,14 +49,9 @@ def get_percentile_realization_years(dataset_id, percentiles=[10, 50, 90], metri
     dict
         Dictionary mapping percentile -> (realization_id, year)
     """
-    # Load satisficing results which have per-(realization, year) data
-    satisficing_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
-    fname = f"{satisficing_dir}/{dataset_id}_ssi6_all_years.csv"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(f"Satisficing results not found: {fname}")
-
-    df = pd.read_csv(fname)
+    # Load annual satisficing results which have per-year min_storage_pct
+    from methods.load import load_annual_satisficing
+    df = load_annual_satisficing(dataset_id, ssi_window=6)
 
     result = {}
     for p in percentiles:

@@ -85,77 +85,68 @@ def print_ensemble_set_summary(set_id, dataset_id):
     print(f"  Output File: {spec.output_file}")
 
 
-def print_satisficing_summary(all_years_results, drought_results, non_drought_results,
-                              dataset_id, ssi_window):
+def print_satisficing_summary(df, dataset_id, ssi_window):
     """
     Print comprehensive summary statistics comparing satisficing across conditions.
 
     Parameters
     ----------
-    all_years_results : pd.DataFrame
-        Satisficing results for all years
-    drought_results : pd.DataFrame
-        Satisficing results for years with drought events
-    non_drought_results : pd.DataFrame
-        Satisficing results for years without drought events
+    df : pd.DataFrame
+        Annual satisficing DataFrame with n_droughts_in_year column.
     dataset_id : str
         Dataset identifier
     ssi_window : int
         SSI window
     """
+    import pandas as pd
+
+    drought_years = df[df['n_droughts_in_year'] > 0]
+    non_drought_years = df[df['n_droughts_in_year'] == 0]
+
     print("\n" + "=" * 80)
     print(f"SATISFICING ANALYSIS SUMMARY: {dataset_id}, SSI-{ssi_window}")
     print("=" * 80)
 
-    # Calculate satisficing percentages
-    n_all = len(all_years_results)
-    n_sat_all = all_years_results['satisficing'].sum()
-    pct_sat_all = 100 * n_sat_all / n_all if n_all > 0 else 0
+    subsets = [
+        (df, "All Years"),
+        (drought_years, "Years with Droughts"),
+        (non_drought_years, "Years without Droughts"),
+    ]
 
-    n_drought = len(drought_results)
-    n_sat_drought = drought_results['satisficing'].sum()
-    pct_sat_drought = 100 * n_sat_drought / n_drought if n_drought > 0 else 0
-
-    n_non_drought = len(non_drought_results)
-    n_sat_non_drought = non_drought_results['satisficing'].sum()
-    pct_sat_non_drought = 100 * n_sat_non_drought / n_non_drought if n_non_drought > 0 else 0
-
+    # Satisficing rates
     print("\nOVERALL SATISFICING RATES:")
     print("-" * 80)
     print(f"{'Condition':<30} {'Total Years':>15} {'Satisficing':>15} {'%':>10}")
     print("-" * 80)
-    print(f"{'All Years (Jun-Dec)':<30} {n_all:>15,} {n_sat_all:>15,} {pct_sat_all:>9.1f}%")
-    print(f"{'Years with Droughts':<30} {n_drought:>15,} {n_sat_drought:>15,} {pct_sat_drought:>9.1f}%")
-    print(f"{'Years without Droughts':<30} {n_non_drought:>15,} {n_sat_non_drought:>15,} {pct_sat_non_drought:>9.1f}%")
+
+    pcts = {}
+    for subset, label in subsets:
+        n = len(subset)
+        n_sat = subset['satisficing'].sum() if n > 0 else 0
+        pct = 100 * n_sat / n if n > 0 else 0
+        pcts[label] = pct
+        print(f"{label:<30} {n:>15,} {n_sat:>15,} {pct:>9.1f}%")
     print("-" * 80)
 
-    # Calculate difference
-    diff_drought_vs_all = pct_sat_drought - pct_sat_all
-    diff_non_vs_all = pct_sat_non_drought - pct_sat_all
-    diff_non_vs_drought = pct_sat_non_drought - pct_sat_drought
-
+    # Comparisons
     print("\nCOMPARISONS:")
     print("-" * 80)
-    print(f"Years with Droughts vs All Years:       {diff_drought_vs_all:+.1f} percentage points")
-    print(f"Years without Droughts vs All Years:    {diff_non_vs_all:+.1f} percentage points")
-    print(f"Years without vs with Droughts:         {diff_non_vs_drought:+.1f} percentage points")
+    print(f"Years with Droughts vs All Years:       {pcts['Years with Droughts'] - pcts['All Years']:+.1f} percentage points")
+    print(f"Years without Droughts vs All Years:    {pcts['Years without Droughts'] - pcts['All Years']:+.1f} percentage points")
+    print(f"Years without vs with Droughts:         {pcts['Years without Droughts'] - pcts['Years with Droughts']:+.1f} percentage points")
     print("-" * 80)
 
     # Failure breakdown
     print("\nFAILURE BREAKDOWN BY CONDITION:")
     print("-" * 80)
 
-    for results, label in [
-        (all_years_results, "All Years"),
-        (drought_results, "Years with Droughts"),
-        (non_drought_results, "Years without Droughts")
-    ]:
-        if len(results) == 0:
+    for subset, label in subsets:
+        if len(subset) == 0:
             continue
 
-        n_total = len(results)
-        storage_fail = results['min_storage_pct'] < 20
-        montague_fail = results['max_violation_days'] > 3
+        n_total = len(subset)
+        storage_fail = subset['min_storage_pct'] < 20
+        montague_fail = subset['max_violation_days'] > 3
 
         print(f"\n{label}:")
         print(f"  Storage < 20% only:        {(storage_fail & ~montague_fail).sum():>6,} "
@@ -167,29 +158,23 @@ def print_satisficing_summary(all_years_results, drought_results, non_drought_re
         print(f"  Satisficing:               {(~storage_fail & ~montague_fail).sum():>6,} "
               f"({100 * (~storage_fail & ~montague_fail).sum() / n_total:>5.1f}%)")
 
-    # Detailed metrics section
-    import pandas as pd
+    # Detailed metrics
     print("\n" + "=" * 80)
     print("DETAILED METRICS:")
     print("=" * 80)
 
     metrics_summary = []
-    for results, label in [
-        (all_years_results, "All Years"),
-        (drought_results, "Years with Droughts"),
-        (non_drought_results, "Years without Droughts")
-    ]:
-        if len(results) == 0:
+    for subset, label in subsets:
+        if len(subset) == 0:
             continue
-
         metrics_summary.append({
             'Condition': label,
-            'Mean Min Storage (%)': results['min_storage_pct'].mean(),
-            'Median Min Storage (%)': results['min_storage_pct'].median(),
-            'Mean Max Violations (days)': results['max_violation_days'].mean(),
-            'Median Max Violations (days)': results['max_violation_days'].median(),
-            'Mean NYC Inflow (MG)': results['nyc_inflow'].mean(),
-            'Mean Montague Contrib (MG)': results['montague_contrib'].mean()
+            'Mean Min Storage (%)': subset['min_storage_pct'].mean(),
+            'Median Min Storage (%)': subset['min_storage_pct'].median(),
+            'Mean Max Violations (days)': subset['max_violation_days'].mean(),
+            'Median Max Violations (days)': subset['max_violation_days'].median(),
+            'Mean NYC Inflow (MG)': subset['nyc_inflow'].mean(),
+            'Mean Montague Contrib (MG)': subset['montague_contrib'].mean()
         })
 
     metrics_df = pd.DataFrame(metrics_summary)

@@ -32,13 +32,12 @@ from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LABEL,
 )
+from methods.load import load_annual_satisficing, load_drought_events
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/SI7_drought_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Pre-calculated satisficing data directory
-SATISFICING_DATA_DIR = "./pywrdrb/satisficing_analysis"
 
 # ============================================================================
 # CONFIGURATION
@@ -76,9 +75,6 @@ SATISFICING_LABELS = {
 # DATA LOADING
 # ============================================================================
 
-# Drought metrics directory
-DROUGHT_METRICS_DIR = "./pywrdrb/drought_metrics"
-
 
 def _add_satisficing_category(df):
     """Add satisficing category based on storage and montague thresholds."""
@@ -107,10 +103,11 @@ def _add_satisficing_category(df):
 
 def load_satisficing_data(dataset_id, ssi_window):
     """
-    Load pre-calculated satisficing data for drought events.
+    Load drought events merged with annual satisficing data.
 
-    First tries to load the detailed _during_droughts.csv file.
-    If not available, loads drought events and merges with annual satisficing.
+    Loads drought events CSV and annual satisficing CSV, merges on
+    (year, realization_id) to annotate each drought event with the
+    annual satisficing outcome for the year it started.
 
     Parameters
     ----------
@@ -121,44 +118,22 @@ def load_satisficing_data(dataset_id, ssi_window):
 
     Returns
     -------
-    pd.DataFrame
-        Drought events with satisficing columns
+    pd.DataFrame or None
+        Drought events with satisficing columns, or None if files missing.
     """
-    # Try detailed drought-level satisficing first
-    fname_during = f"{SATISFICING_DATA_DIR}/{dataset_id}_ssi{ssi_window}_during_droughts.csv"
-
-    if os.path.exists(fname_during):
-        print(f"  Loading: {fname_during}")
-        df = pd.read_csv(fname_during)
-        df = _add_satisficing_category(df)
-        print(f"    Loaded {len(df)} drought events")
-        return df
-
-    # Fall back to merging drought events with annual satisficing
-    fname_events = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
-    fname_annual = f"{SATISFICING_DATA_DIR}/{dataset_id}_ssi{ssi_window}_years_with_droughts.csv"
-
-    if not os.path.exists(fname_events):
-        print(f"  Drought events not found: {fname_events}")
+    try:
+        events_df = load_drought_events(dataset_id, ssi_window)
+        annual_df = load_annual_satisficing(dataset_id, ssi_window)
+    except FileNotFoundError as e:
+        print(f"  {e}")
         return None
 
-    if not os.path.exists(fname_annual):
-        print(f"  Annual satisficing not found: {fname_annual}")
-        return None
-
-    print(f"  Loading drought events: {fname_events}")
-    events_df = pd.read_csv(fname_events)
-
-    # Extract start year from drought events
+    # Extract start year for merge
     events_df['start'] = pd.to_datetime(events_df['start'])
     events_df['year'] = events_df['start'].dt.year
 
-    print(f"  Loading annual satisficing: {fname_annual}")
-    annual_df = pd.read_csv(fname_annual)
-
     # Rename realization column for merge
-    if 'realization' in annual_df.columns:
-        annual_df = annual_df.rename(columns={'realization': 'realization_id'})
+    annual_df = annual_df.rename(columns={'realization': 'realization_id'})
 
     # Merge on year and realization
     merged = events_df.merge(
@@ -166,10 +141,7 @@ def load_satisficing_data(dataset_id, ssi_window):
         on=['year', 'realization_id'],
         how='left'
     )
-
-    # Fill missing values (droughts in years not in satisficing data)
     merged = merged.dropna(subset=['min_storage_pct'])
-
     merged = _add_satisficing_category(merged)
     print(f"    Merged {len(merged)} drought events with annual satisficing")
 

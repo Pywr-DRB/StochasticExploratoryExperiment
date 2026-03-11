@@ -34,7 +34,7 @@ from methods.plotting.styles import (
     DATASET_LINESTYLES,
     apply_publication_style,
 )
-from methods.load import load_performance_metrics, load_satisficing_results
+from methods.load import load_performance_metrics, load_annual_satisficing
 
 # ============================================================================
 # CONFIG
@@ -57,10 +57,9 @@ def load_all_data():
     for did in DATASETS:
         perf[did] = load_performance_metrics(did)
 
-        # Load satisficing all-years results
+        # Load annual satisficing results
         try:
-            satis_results = load_satisficing_results(did, SSI_WINDOW)
-            satis[did] = satis_results['all_years']
+            satis[did] = load_annual_satisficing(did, SSI_WINDOW)
         except (FileNotFoundError, KeyError) as e:
             print(f"  Warning: satisficing results not found for {did}: {e}")
             satis[did] = None
