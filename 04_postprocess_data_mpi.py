@@ -257,37 +257,17 @@ def save_results_to_temp_file(results_list, dataset_id, rank):
     os.makedirs(TEMP_DIR, exist_ok=True)
     temp_fname = f"{TEMP_DIR}/{dataset_id}_rank{rank}_temp.hdf5"
 
-    # Combine all results from this rank into single dictionaries
-    combined = {
-        'shortage': {},
-        'contribution': {},
-        'major_flow': {},
-        'inflow': {},
-        'res_storage': {},
-        'ibt_diversions': {},
-        'ibt_demands': {},
-        'mrf_target': {},
-        'res_level': {}
-    }
-
+    combined = {key: {} for key in RESULTS_SET_KEYS}
     for set_results in results_list:
         if set_results is None:
             continue
-        for key in combined.keys():
+        for key in RESULTS_SET_KEYS:
             if key in set_results:
                 combined[key].update(set_results[key])
 
-    # Create a temporary pywrdrb.Data object and export
     temp_data = pywrdrb.Data()
-    temp_data.shortage = {dataset_id: combined['shortage']}
-    temp_data.contribution = {dataset_id: combined['contribution']}
-    temp_data.major_flow = {dataset_id: combined['major_flow']}
-    temp_data.inflow = {dataset_id: combined['inflow']}
-    temp_data.res_storage = {dataset_id: combined['res_storage']}
-    temp_data.ibt_diversions = {dataset_id: combined['ibt_diversions']}
-    temp_data.ibt_demands = {dataset_id: combined['ibt_demands']}
-    temp_data.mrf_target = {dataset_id: combined['mrf_target']}
-    temp_data.res_level = {dataset_id: combined['res_level']}
+    for key in RESULTS_SET_KEYS:
+        setattr(temp_data, key, {dataset_id: combined[key]})
 
     temp_data.export(temp_fname)
     print(f"  Rank {rank}: Saved {len(combined['shortage'])} realizations to {temp_fname}")
@@ -295,12 +275,35 @@ def save_results_to_temp_file(results_list, dataset_id, rank):
     return temp_fname
 
 
+def _h5py_merge_groups(src_group, dst_file, dst_path):
+    """
+    Recursively copy h5py groups/datasets from src_group into dst_file at dst_path.
+
+    Handles merging when intermediate groups already exist in the destination.
+    Leaf-level datasets (realization data) are assumed non-overlapping between
+    temp files, so existing leaves are skipped.
+    """
+    import h5py
+    for name in src_group:
+        src_item = src_group[name]
+        full_dst = f"{dst_path}/{name}" if dst_path else name
+        if isinstance(src_item, h5py.Group):
+            if full_dst not in dst_file:
+                dst_file.create_group(full_dst)
+            _h5py_merge_groups(src_item, dst_file, full_dst)
+        else:
+            # Dataset — copy if not already present
+            if full_dst not in dst_file:
+                src_group.copy(name, dst_file[dst_path] if dst_path else dst_file)
+
+
 def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     """
     Combine temporary files from all ranks into final output.
 
-    This is used in low-memory mode - loads and combines files sequentially
-    to avoid holding all data in memory at once.
+    Uses h5py-level group copying to merge temp files directly into the
+    output HDF5 file, bypassing pandas DataFrame deserialization/reserialization.
+    This is much faster than loading each temp file through pywrdrb.Data.
 
     Parameters
     ----------
@@ -316,101 +319,54 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     keep_data : pywrdrb.Data
         Combined data object
     """
-    print(f"\nCombining {len(temp_files)} temporary files...")
+    import h5py
 
-    # Initialize combined dictionaries
-    combined = {
-        'shortage': {},
-        'contribution': {},
-        'major_flow': {},
-        'inflow': {},
-        'res_storage': {},
-        'ibt_diversions': {},
-        'ibt_demands': {},
-        'mrf_target': {},
-        'res_level': {}
-    }
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    print(f"\nCombining {len(temp_files)} temporary files via h5py direct copy...")
 
-    results_sets = list(combined.keys())
+    # Phase 1: Merge all temp files at the HDF5 level (no DataFrame round-trip)
+    with h5py.File(fname, 'w') as dst:
+        for i, temp_fname in enumerate(temp_files):
+            if temp_fname is None or not os.path.exists(temp_fname):
+                continue
 
-    # Load each temp file sequentially and merge
-    for i, temp_fname in enumerate(temp_files):
-        if temp_fname is None or not os.path.exists(temp_fname):
-            continue
+            print(f"  Copying temp file {i+1}/{len(temp_files)}: {temp_fname}")
+            with h5py.File(temp_fname, 'r') as src:
+                _h5py_merge_groups(src, dst, "")
 
-        print(f"  Loading temp file {i+1}/{len(temp_files)}: {temp_fname}")
+            try:
+                os.remove(temp_fname)
+            except:
+                pass
 
-        temp_data = pywrdrb.Data()
-        temp_data.load_from_export(temp_fname, results_sets=results_sets)
-
-        # Merge data
-        for key in combined.keys():
-            data_dict = getattr(temp_data, key, {})
-            if dataset_id in data_dict:
-                combined[key].update(data_dict[dataset_id])
-
-        # Free memory
-        del temp_data
-        gc.collect()
-
-        # Optionally delete temp file after loading
-        try:
-            os.remove(temp_fname)
-        except:
-            pass
-
-    # Verify we have all realizations
-    n_realizations = len(combined['shortage'])
+    # Count realizations from the merged file
+    with h5py.File(fname, 'r') as f:
+        shortage_path = f"shortage/{dataset_id}"
+        n_realizations = len(f[shortage_path]) if shortage_path in f else 0
     print(f"  Combined {n_realizations} ensemble realizations")
 
     if n_realizations != TOTAL_REALIZATIONS:
         print(f"  WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
 
-    # Load and process historical models
+    # Phase 2: Add historical data and gage flow via pd.HDFStore (small amount of data)
     historical_data = load_and_process_historical_models(dataset_id)
-
-    # Load gage flow data
     combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
 
-    # Create final data object with all models
+    with pd.HDFStore(fname, mode='a') as store:
+        for rs_name, rs_data in historical_data.items():
+            for model_id, realizations in rs_data.items():
+                for real_id, df in realizations.items():
+                    store.put(f"/{rs_name}/{model_id}/{real_id}", df)
+        for real_id, df in combined_gage_flow.items():
+            store.put(f"/gage_flow/{dataset_id}/{real_id}", df)
+
+    print(f"Exported combined data to {fname}")
+
+    # Phase 3: Load final file as pywrdrb.Data for downstream metric calculations
+    print(f"Loading combined data for downstream processing...")
     keep_data = pywrdrb.Data()
-
-    # Combine ensemble and historical data
-    keep_data.shortage = {dataset_id: combined['shortage']}
-    keep_data.shortage.update(historical_data['shortage'])
-
-    keep_data.contribution = {dataset_id: combined['contribution']}
-    keep_data.contribution.update(historical_data['contribution'])
-
-    keep_data.major_flow = {dataset_id: combined['major_flow']}
-    keep_data.major_flow.update(historical_data['major_flow'])
-
-    keep_data.inflow = {dataset_id: combined['inflow']}
-    keep_data.inflow.update(historical_data['inflow'])
-
-    keep_data.res_storage = {dataset_id: combined['res_storage']}
-    keep_data.res_storage.update(historical_data['res_storage'])
-
-    keep_data.ibt_diversions = {dataset_id: combined['ibt_diversions']}
-    keep_data.ibt_diversions.update(historical_data['ibt_diversions'])
-
-    keep_data.ibt_demands = {dataset_id: combined['ibt_demands']}
-    keep_data.ibt_demands.update(historical_data['ibt_demands'])
-
-    keep_data.mrf_target = {dataset_id: combined['mrf_target']}
-    keep_data.mrf_target.update(historical_data['mrf_target'])
-
-    keep_data.res_level = {dataset_id: combined['res_level']}
-    keep_data.res_level.update(historical_data['res_level'])
-
-    # Add gage flow
-    keep_data.gage_flow = {dataset_id: combined_gage_flow}
-
-    # Export final file
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-    print(f"Exporting combined data to {fname}...")
-    keep_data.export(fname)
-    print(f"Successfully combined and exported data for {dataset_id}!")
+    keep_data.load_from_export(fname)
+    print(f"Successfully combined and loaded data for {dataset_id}!")
 
     # Clean up temp directory
     try:
@@ -419,6 +375,12 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
         pass
 
     return keep_data
+
+
+RESULTS_SET_KEYS = [
+    'shortage', 'contribution', 'major_flow', 'inflow',
+    'res_storage', 'ibt_diversions', 'ibt_demands', 'mrf_target', 'res_level'
+]
 
 
 def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs):
@@ -441,39 +403,18 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
     """
     print(f"\nCombining results from all ranks...")
 
-    # Initialize combined dictionaries for ensemble data
-    combined_shortage = {}
-    combined_contribution = {}
-    combined_major_flow = {}
-    combined_inflow = {}
-    combined_res_storage = {}
-    combined_ibt_diversions = {}
-    combined_ibt_demands = {}
-    combined_mrf_target = {}
-    combined_res_level = {}
+    combined = {key: {} for key in RESULTS_SET_KEYS}
 
-    # Flatten and combine results from all ranks
     for rank_results in all_rank_results:
         if rank_results is None:
             continue
-
         for set_results in rank_results:
             if set_results is None:
                 continue
+            for key in RESULTS_SET_KEYS:
+                combined[key].update(set_results[key])
 
-            # Merge all dictionaries
-            combined_shortage.update(set_results['shortage'])
-            combined_contribution.update(set_results['contribution'])
-            combined_major_flow.update(set_results['major_flow'])
-            combined_inflow.update(set_results['inflow'])
-            combined_res_storage.update(set_results['res_storage'])
-            combined_ibt_diversions.update(set_results['ibt_diversions'])
-            combined_ibt_demands.update(set_results['ibt_demands'])
-            combined_mrf_target.update(set_results['mrf_target'])
-            combined_res_level.update(set_results['res_level'])
-
-    # Verify we have all realizations
-    n_realizations = len(combined_shortage)
+    n_realizations = len(combined['shortage'])
     print(f"  Combined {n_realizations} ensemble realizations")
 
     if n_realizations != TOTAL_REALIZATIONS:
@@ -481,42 +422,14 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
 
     # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
-
-    # Load gage flow data
     combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
 
     # Create final data object with all models
     keep_data = pywrdrb.Data()
-
-    # Combine ensemble and historical data
-    keep_data.shortage = {dataset_id: combined_shortage}
-    keep_data.shortage.update(historical_data['shortage'])
-
-    keep_data.contribution = {dataset_id: combined_contribution}
-    keep_data.contribution.update(historical_data['contribution'])
-
-    keep_data.major_flow = {dataset_id: combined_major_flow}
-    keep_data.major_flow.update(historical_data['major_flow'])
-
-    keep_data.inflow = {dataset_id: combined_inflow}
-    keep_data.inflow.update(historical_data['inflow'])
-
-    keep_data.res_storage = {dataset_id: combined_res_storage}
-    keep_data.res_storage.update(historical_data['res_storage'])
-
-    keep_data.ibt_diversions = {dataset_id: combined_ibt_diversions}
-    keep_data.ibt_diversions.update(historical_data['ibt_diversions'])
-
-    keep_data.ibt_demands = {dataset_id: combined_ibt_demands}
-    keep_data.ibt_demands.update(historical_data['ibt_demands'])
-
-    keep_data.mrf_target = {dataset_id: combined_mrf_target}
-    keep_data.mrf_target.update(historical_data['mrf_target'])
-
-    keep_data.res_level = {dataset_id: combined_res_level}
-    keep_data.res_level.update(historical_data['res_level'])
-
-    # Add gage flow
+    for key in RESULTS_SET_KEYS:
+        ensemble_and_historical = {dataset_id: combined[key]}
+        ensemble_and_historical.update(historical_data[key])
+        setattr(keep_data, key, ensemble_and_historical)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
     # Export
