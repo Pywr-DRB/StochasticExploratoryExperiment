@@ -126,15 +126,18 @@ def _count_droughts_per_year(drought_events_df):
 
 def _evaluate_period(storage_pct, shortage, inflow, contrib,
                      storage_threshold, violation_days,
-                     shortage_tolerance=1.0):
+                     shortage_tolerance=0.0):
     """
     Evaluate satisficing conditions for a single time period.
 
     Parameters
     ----------
     shortage_tolerance : float
-        Minimum shortage (MGD) to count as a violation (default: 1.0).
-        Shortages below this threshold are ignored.
+        Minimum shortage (MGD) to count as a violation (default: 0.0).
+        The tolerance is normally already applied upstream when
+        creating the shortage series via calculate_shortage_series()
+        (DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0 MGD).  Set > 0 here
+        only if additional filtering is desired at analysis time.
 
     Returns
     -------

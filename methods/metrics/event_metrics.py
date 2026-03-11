@@ -50,8 +50,6 @@ def calculate_all_event_metrics(data, dataset_id, drought_events_df,
     for r in realizations:
         # Load timeseries once per realization
         ts = _load_realization_timeseries(data, dataset_id, r)
-        if ts is None:
-            continue
 
         # Get this realization's drought events
         r_events = drought_events_df[drought_events_df['realization_id'] == r]
@@ -60,8 +58,7 @@ def calculate_all_event_metrics(data, dataset_id, drought_events_df,
             metrics = _calculate_single_event(
                 event, ts, storage_threshold, violation_days
             )
-            if metrics is not None:
-                all_results.append(metrics)
+            all_results.append(metrics)
 
     if not all_results:
         return pd.DataFrame()
@@ -113,11 +110,12 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
             'nyc_demand': nyc_demand,
         }
     except (KeyError, IndexError) as e:
-        print(f"  Warning: Could not load realization {realization_id}: {e}")
-        return None
+        raise RuntimeError(
+            f"Failed to load timeseries for realization {realization_id}: {e}"
+        ) from e
 
 
-def _max_consecutive_positive(series, tolerance=1.0):
+def _max_consecutive_positive(series, tolerance=0.0):
     """
     Count maximum consecutive days where series exceeds tolerance.
 
@@ -126,7 +124,10 @@ def _max_consecutive_positive(series, tolerance=1.0):
     Parameters
     ----------
     tolerance : float
-        Minimum shortage (MGD) to count as a violation (default: 1.0).
+        Minimum shortage (MGD) to count as a violation (default: 0.0).
+        The tolerance is normally already applied upstream when
+        creating the shortage series via calculate_shortage_series()
+        (DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0 MGD).
     """
     violations = series > tolerance
     if not violations.any():
@@ -152,8 +153,13 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
 
     Returns
     -------
-    dict or None
-        Metrics dict, or None if event window has no data
+    dict
+        Metrics dict for this drought event.
+
+    Raises
+    ------
+    ValueError
+        If the event window has no overlapping data in the timeseries.
     """
     start = pd.Timestamp(event['start'])
     end = pd.Timestamp(event['end'])
@@ -161,7 +167,13 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
     # Slice all timeseries to event window
     mask = (ts['storage_pct'].index >= start) & (ts['storage_pct'].index <= end)
     if not mask.any():
-        return None
+        raise ValueError(
+            f"No timeseries data found for drought event "
+            f"{start.date()} to {end.date()} "
+            f"(realization {event.get('realization_id', '?')}). "
+            f"Data range: {ts['storage_pct'].index[0].date()} to "
+            f"{ts['storage_pct'].index[-1].date()}."
+        )
 
     stor = ts['storage_pct'][mask]
     short = ts['montague_shortage'][mask]

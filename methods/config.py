@@ -272,6 +272,10 @@ NYC_STORAGE_CAPACITIES = {
 # Total NYC reservoir storage capacity (million gallons)
 NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,837 MG
 
+# Default shortage tolerance (MGD). Shortages below this magnitude are treated
+# as zero to filter out numerical noise / trivially small deficits.
+DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
+
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================

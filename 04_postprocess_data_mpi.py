@@ -48,7 +48,7 @@ warnings.filterwarnings("ignore")
 from methods.mpi_utils import get_comm, MPI_AVAILABLE, global_point_to_point_gather
 
 import pywrdrb
-from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow
+from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow, calculate_shortage_series
 from methods.config import *
 from methods.postprocess import (
     calculate_and_save_performance_metrics,
@@ -211,15 +211,7 @@ def compute_metrics_for_ensemble_set(data, dataset_id, set_idx, rank):
                 data, node, set_name, local_id, start_date=None, end_date=None
             )
 
-            shortage_series = target_series - flow_series
-            shortage_series[shortage_series < 0] = 0
-            shortage_series.iloc[:3] = 0.0
-
-            # Ignore shortages with duration < 3 days
-            shortage_durations = (shortage_series > 0).astype(int).groupby(
-                (shortage_series > 0).astype(int).diff().ne(0).cumsum()
-            ).cumsum()
-            shortage_series[shortage_durations < 3] = 0.0
+            shortage_series = calculate_shortage_series(target_series, flow_series)
 
             node_shortages[node] = shortage_series
 

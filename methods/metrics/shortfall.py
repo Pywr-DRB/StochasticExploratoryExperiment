@@ -6,6 +6,75 @@ from pywrdrb.pywr_drb_node_data import downstream_node_lags, immediate_downstrea
 from pywrdrb.utils.timeseries import subset_timeseries
 from pywrdrb.utils.constants import cfs_to_mgd
 
+from methods.config import DEFAULT_SHORTAGE_TOLERANCE_MGD
+
+
+def calculate_shortage_series(target, flow, tolerance=None,
+                              min_duration=3, warmup_days=3):
+    """
+    Calculate shortage timeseries from target/demand and flow/delivery series.
+
+    This is the single authoritative function for computing shortage timeseries
+    anywhere in the codebase.  All other code that needs a shortage series
+    should call this rather than reimplementing the logic.
+
+    Parameters
+    ----------
+    target : pd.Series
+        Target or demand timeseries (MGD).
+    flow : pd.Series
+        Actual flow or delivery timeseries (MGD).
+    tolerance : float or None
+        Minimum shortage magnitude (MGD) to retain.  Values below this are
+        set to 0.  If None, uses ``DEFAULT_SHORTAGE_TOLERANCE_MGD`` from
+        config (currently 1.0 MGD).
+    min_duration : int
+        Minimum consecutive days for a shortage event.  Events shorter than
+        this are zeroed out.  Set to 0 to disable.  Default: 3.
+    warmup_days : int
+        Number of days at the start of the series to zero out (model
+        warm-up artefacts).  Set to 0 to disable.  Default: 3.
+
+    Returns
+    -------
+    pd.Series
+        Shortage timeseries with tolerance and duration filters applied.
+    """
+    if tolerance is None:
+        tolerance = DEFAULT_SHORTAGE_TOLERANCE_MGD
+
+    if not isinstance(target, pd.Series) or not isinstance(flow, pd.Series):
+        raise TypeError(
+            "Both target and flow must be pd.Series with datetime index. "
+            f"Got target={type(target).__name__}, flow={type(flow).__name__}."
+        )
+    if len(target) != len(flow):
+        raise ValueError(
+            f"target and flow must have the same length. "
+            f"Got {len(target)} and {len(flow)}."
+        )
+    if len(target) == 0:
+        raise ValueError("target and flow must not be empty.")
+
+    shortage = (target - flow).clip(lower=0)
+
+    # Zero out model warm-up period
+    if warmup_days > 0 and len(shortage) > warmup_days:
+        shortage.iloc[:warmup_days] = 0.0
+
+    # Apply tolerance — treat sub-tolerance values as zero
+    shortage[shortage < tolerance] = 0.0
+
+    # Filter short-duration events
+    if min_duration > 0:
+        positive = (shortage > 0).astype(int)
+        durations = positive.groupby(
+            positive.diff().ne(0).cumsum()
+        ).cumsum()
+        shortage[durations < min_duration] = 0.0
+
+    return shortage
+
 
 def calculate_shortage_by_day_of_year(data, dataset_id, location):
     """
@@ -43,13 +112,13 @@ def calculate_shortage_by_day_of_year(data, dataset_id, location):
             violation_days = shortage > 0
 
         elif location == 'nyc':
-            # Calculate NYC diversion shortage
+            # Calculate NYC diversion shortage using central function
             delivery = data.ibt_diversions[dataset_id][r]['delivery_nyc']
             demand = data.ibt_demands[dataset_id][r]['demand_nyc']
 
-            shortage = demand - delivery
-            shortage[shortage < 0] = 0
-            shortage[shortage < 0.1] = 0.0  # Filter out negligible shortages
+            shortage = calculate_shortage_series(
+                demand, delivery, min_duration=0, warmup_days=0
+            )
 
             # Any shortage > 0 is a violation
             violation_days = shortage > 0
@@ -97,10 +166,11 @@ def annual_max_positive_streak(series):
    
    return annual_max
 
-def calculate_hashimoto_metrics(flows, 
+def calculate_hashimoto_metrics(flows,
                                 thresholds,
                                 eps=1e-9,
-                                shortfall_break_length=7):
+                                shortfall_break_length=7,
+                                tolerance=None):
     
     ### Check inputs
     # Make sure both have datetime index
@@ -117,13 +187,21 @@ def calculate_hashimoto_metrics(flows,
     flows = flows.values
     thresholds = thresholds.values
 
-    ### reliability is the fraction of time steps above threshold
-    reliability = (flows > thresholds).mean()
-    
-    ### resiliency is the probability of recovering to above threshold if currently under threshold
-    if reliability < 1 - eps:
-        resiliency = np.logical_and(flows[:-1] < thresholds[:-1], \
-                                    (flows[1:] >= thresholds[1:])).mean() / (1 - reliability)
+    # Resolve tolerance
+    if tolerance is None:
+        tolerance = DEFAULT_SHORTAGE_TOLERANCE_MGD
+
+    # Deficit array with tolerance applied (deficits below tolerance are zero)
+    deficits = np.maximum(thresholds - flows, 0)
+    is_deficit = deficits >= tolerance
+
+    ### reliability is the fraction of time steps without a deficit (above tolerance)
+    reliability_frac = (~is_deficit).mean()
+
+    ### resiliency is the probability of recovering if currently in deficit
+    if reliability_frac < 1 - eps:
+        resiliency = np.logical_and(is_deficit[:-1],
+                                    ~is_deficit[1:]).mean() / (1 - reliability_frac)
     else:
         resiliency = np.nan
 
@@ -134,29 +212,26 @@ def calculate_hashimoto_metrics(flows,
     vulnerabilities = []    # vulnerability = max daily deficit within event
     event_starts = []       # define event to start with nonzero shortfall and end with the next shortfall date that preceeds shortfall_break_length non-shortfall dates.
     event_ends = []
-    
-    if reliability > eps and reliability < 1 - eps:
+
+    if reliability_frac > eps and reliability_frac < 1 - eps:
         duration = 0
         severity = 0
         vulnerability = 0
         in_event = False
         for i in range(len(flows)):
-            v = flows[i]
-            t = thresholds[i]
             d = dates[i]
-            if in_event or v < t:
+            if in_event or is_deficit[i]:
                 ### is this the start of a new event?
                 if not in_event:
                     event_starts.append(d)
-                
+
                 ### if this is part of event, we add to metrics whether today is deficit or not
                 duration += 1
-                s = max(t - v, 0)
+                s = deficits[i]
                 severity += s
                 vulnerability = max(vulnerability, s)
                 ### now check if next shortfall_break_length days include any deficits. if not, end event.
-                in_event = np.any(flows[i+1: i+1+shortfall_break_length] < \
-                                    thresholds[i+1: i+1+shortfall_break_length])
+                in_event = np.any(is_deficit[i+1: i+1+shortfall_break_length])
                 if not in_event:
                     event_ends.append(dates[min(i+1, len(dates)-1)])
                     durations.append(duration)
@@ -184,7 +259,7 @@ def calculate_hashimoto_metrics(flows,
     # 'events': pd.DataFrame with columns:
     #   'start', 'end', 'duration', 'severity', 'intensity', 'vulnerability'
     resultsdict = {}
-    resultsdict['reliability'] = reliability * 100
+    resultsdict['reliability'] = reliability_frac * 100
     resultsdict['resiliency'] = resiliency * 100
     resultsdict['events'] = events_df
 

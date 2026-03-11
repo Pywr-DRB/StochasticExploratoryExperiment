@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.metrics.shortfall import add_trenton_equiv_flow, get_flow_and_target_values
+from methods.metrics.shortfall import add_trenton_equiv_flow, get_flow_and_target_values, calculate_shortage_series
 from methods.zone_duration_metrics import calculate_drought_zone_events
 from methods.config import (
     N_REALIZATIONS_PER_ENSEMBLE_SET,
@@ -77,8 +77,10 @@ def calculate_performance_metrics(data, dataset_id, realizations):
         # NYC diversions
         nyc_diversion_actual = data.ibt_diversions[dataset_id][r]['delivery_nyc']
         nyc_diversion_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
-        nyc_diversion_shortage = (nyc_diversion_demand - nyc_diversion_actual).clip(lower=0)
-        nyc_diversion_shortage[nyc_diversion_shortage < 0.1] = 0.0  # Filter out negligible shortages
+        nyc_diversion_shortage = calculate_shortage_series(
+            nyc_diversion_demand, nyc_diversion_actual,
+            min_duration=0, warmup_days=0
+        )
 
         # NYC contributions to downstream targets
         total_nyc_contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
@@ -672,17 +674,7 @@ def _compute_shortage(data, dataset_id):
             flow_series, target_series = get_flow_and_target_values(
                 data, node, dataset_id, r, start_date=None, end_date=None
             )
-            shortage_series = target_series - flow_series
-            shortage_series[shortage_series < 0] = 0
-            shortage_series.iloc[:3] = 0.0
-
-            # Ignore shortages with duration < 3 days
-            shortage_durations = (shortage_series > 0).astype(int).groupby(
-                (shortage_series > 0).astype(int).diff().ne(0).cumsum()
-            ).cumsum()
-            shortage_series[shortage_durations < 3] = 0.0
-
-            node_shortages[node] = shortage_series
+            node_shortages[node] = calculate_shortage_series(target_series, flow_series)
 
         shortage_dict[r] = pd.DataFrame(node_shortages)
 
