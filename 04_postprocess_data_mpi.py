@@ -275,35 +275,18 @@ def save_results_to_temp_file(results_list, dataset_id, rank):
     return temp_fname
 
 
-def _h5py_merge_groups(src_group, dst_file, dst_path):
-    """
-    Recursively copy h5py groups/datasets from src_group into dst_file at dst_path.
-
-    Handles merging when intermediate groups already exist in the destination.
-    Leaf-level datasets (realization data) are assumed non-overlapping between
-    temp files, so existing leaves are skipped.
-    """
-    import h5py
-    for name in src_group:
-        src_item = src_group[name]
-        full_dst = f"{dst_path}/{name}" if dst_path else name
-        if isinstance(src_item, h5py.Group):
-            if full_dst not in dst_file:
-                dst_file.create_group(full_dst)
-            _h5py_merge_groups(src_item, dst_file, full_dst)
-        else:
-            # Dataset — copy if not already present
-            if full_dst not in dst_file:
-                src_group.copy(name, dst_file[dst_path] if dst_path else dst_file)
-
-
 def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     """
     Combine temporary files from all ranks into final output.
 
     Uses h5py-level group copying to merge temp files directly into the
     output HDF5 file, bypassing pandas DataFrame deserialization/reserialization.
-    This is much faster than loading each temp file through pywrdrb.Data.
+    Each realization group is copied as a complete unit to preserve the pytables
+    metadata (pandas_type, encoding, etc.) that pd.HDFStore needs to read them.
+
+    The temp files have structure: /{results_set}/{dataset_id}/{realization_id}/...
+    where each realization_id group is a pytables fixed-format node containing
+    axis0, axis1, block0_items, block0_values datasets plus metadata attributes.
 
     Parameters
     ----------
@@ -324,7 +307,8 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
     print(f"\nCombining {len(temp_files)} temporary files via h5py direct copy...")
 
-    # Phase 1: Merge all temp files at the HDF5 level (no DataFrame round-trip)
+    # Phase 1: Merge all temp files at the HDF5 level (no DataFrame round-trip).
+    # Copy at the realization-group level to preserve pytables attributes.
     with h5py.File(fname, 'w') as dst:
         for i, temp_fname in enumerate(temp_files):
             if temp_fname is None or not os.path.exists(temp_fname):
@@ -332,7 +316,16 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
 
             print(f"  Copying temp file {i+1}/{len(temp_files)}: {temp_fname}")
             with h5py.File(temp_fname, 'r') as src:
-                _h5py_merge_groups(src, dst, "")
+                for rs_key in src:  # shortage, contribution, ...
+                    if rs_key not in dst:
+                        dst.create_group(rs_key)
+                    for ds_key in src[rs_key]:  # stationary_ensemble
+                        ds_path = f"{rs_key}/{ds_key}"
+                        if ds_path not in dst:
+                            dst.create_group(ds_path)
+                        for real_key in src[rs_key][ds_key]:  # 0, 1, 2, ...
+                            # Copy entire realization group as a unit
+                            src[rs_key][ds_key].copy(real_key, dst[ds_path])
 
             try:
                 os.remove(temp_fname)
