@@ -123,7 +123,8 @@ class WorkflowFlags:
 # root dir is 1 level above this config file
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/outputs/")
-FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
+from datetime import datetime as _dt
+FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures_{_dt.now().strftime('%m%d%Y')}/")
 
 # Base ensemble directory
 ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
