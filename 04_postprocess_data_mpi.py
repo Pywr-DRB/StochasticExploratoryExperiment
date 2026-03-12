@@ -279,14 +279,8 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     """
     Combine temporary files from all ranks into final output.
 
-    Uses h5py-level group copying to merge temp files directly into the
-    output HDF5 file, bypassing pandas DataFrame deserialization/reserialization.
-    Each realization group is copied as a complete unit to preserve the pytables
-    metadata (pandas_type, encoding, etc.) that pd.HDFStore needs to read them.
-
-    The temp files have structure: /{results_set}/{dataset_id}/{realization_id}/...
-    where each realization_id group is a pytables fixed-format node containing
-    axis0, axis1, block0_items, block0_values datasets plus metadata attributes.
+    Loads and combines files sequentially to avoid holding all data in memory
+    at once during the MPI gather phase.
 
     Parameters
     ----------
@@ -302,64 +296,55 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     keep_data : pywrdrb.Data
         Combined data object
     """
-    import h5py
+    print(f"\nCombining {len(temp_files)} temporary files...")
 
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
-    print(f"\nCombining {len(temp_files)} temporary files via h5py direct copy...")
+    combined = {key: {} for key in RESULTS_SET_KEYS}
 
-    # Phase 1: Merge all temp files at the HDF5 level (no DataFrame round-trip).
-    # Copy at the realization-group level to preserve pytables attributes.
-    with h5py.File(fname, 'w') as dst:
-        for i, temp_fname in enumerate(temp_files):
-            if temp_fname is None or not os.path.exists(temp_fname):
-                continue
+    for i, temp_fname in enumerate(temp_files):
+        if temp_fname is None or not os.path.exists(temp_fname):
+            continue
 
-            print(f"  Copying temp file {i+1}/{len(temp_files)}: {temp_fname}")
-            with h5py.File(temp_fname, 'r') as src:
-                for rs_key in src:  # shortage, contribution, ...
-                    if rs_key not in dst:
-                        dst.create_group(rs_key)
-                    for ds_key in src[rs_key]:  # stationary_ensemble
-                        ds_path = f"{rs_key}/{ds_key}"
-                        if ds_path not in dst:
-                            dst.create_group(ds_path)
-                        for real_key in src[rs_key][ds_key]:  # 0, 1, 2, ...
-                            # Copy entire realization group as a unit
-                            src[rs_key][ds_key].copy(real_key, dst[ds_path])
+        print(f"  Loading temp file {i+1}/{len(temp_files)}: {temp_fname}")
 
-            try:
-                os.remove(temp_fname)
-            except:
-                pass
+        temp_data = pywrdrb.Data()
+        temp_data.load_from_export(temp_fname, results_sets=RESULTS_SET_KEYS)
 
-    # Count realizations from the merged file
-    with h5py.File(fname, 'r') as f:
-        shortage_path = f"shortage/{dataset_id}"
-        n_realizations = len(f[shortage_path]) if shortage_path in f else 0
+        for key in RESULTS_SET_KEYS:
+            data_dict = getattr(temp_data, key, {})
+            if dataset_id in data_dict:
+                combined[key].update(data_dict[dataset_id])
+
+        del temp_data
+        gc.collect()
+
+        try:
+            os.remove(temp_fname)
+        except:
+            pass
+
+    n_realizations = len(combined['shortage'])
     print(f"  Combined {n_realizations} ensemble realizations")
 
     if n_realizations != TOTAL_REALIZATIONS:
         print(f"  WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
 
-    # Phase 2: Add historical data and gage flow via pd.HDFStore (small amount of data)
+    # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
     combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
 
-    with pd.HDFStore(fname, mode='a') as store:
-        for rs_name, rs_data in historical_data.items():
-            for model_id, realizations in rs_data.items():
-                for real_id, df in realizations.items():
-                    store.put(f"/{rs_name}/{model_id}/{real_id}", df)
-        for real_id, df in combined_gage_flow.items():
-            store.put(f"/gage_flow/{dataset_id}/{real_id}", df)
-
-    print(f"Exported combined data to {fname}")
-
-    # Phase 3: Load final file as pywrdrb.Data for downstream metric calculations
-    print(f"Loading combined data for downstream processing...")
+    # Create final data object with all models
     keep_data = pywrdrb.Data()
-    keep_data.load_from_export(fname)
-    print(f"Successfully combined and loaded data for {dataset_id}!")
+    for key in RESULTS_SET_KEYS:
+        ensemble_and_historical = {dataset_id: combined[key]}
+        ensemble_and_historical.update(historical_data[key])
+        setattr(keep_data, key, ensemble_and_historical)
+    keep_data.gage_flow = {dataset_id: combined_gage_flow}
+
+    # Export final file
+    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    print(f"Exporting combined data to {fname}...")
+    keep_data.export(fname)
+    print(f"Successfully combined and exported data for {dataset_id}!")
 
     # Clean up temp directory
     try:
