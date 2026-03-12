@@ -4,6 +4,7 @@
 #SBATCH --error=./logs/post_%x.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=20
+#SBATCH --exclusive
 
 # Load modules and environment
 module load python/3.11.5
