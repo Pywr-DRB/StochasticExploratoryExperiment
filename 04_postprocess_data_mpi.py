@@ -693,6 +693,12 @@ def main_mpi(dataset_id, recombine_sets=True, low_memory=False):
         print(f"Postprocessing {'completed successfully' if success else 'failed'}!")
         print("=" * 80)
 
+    # Barrier so all ranks wait for rank 0 to finish before exiting.
+    # Without this, non-rank-0 processes exit early and trigger
+    # "exited without calling finalize" MPI errors.
+    if comm is not None:
+        comm.Barrier()
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
