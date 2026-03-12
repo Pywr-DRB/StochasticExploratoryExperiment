@@ -499,6 +499,8 @@ def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
     """
     Load and combine gage flow data from all ensemble sets.
 
+    Loads one ensemble set at a time to reduce peak memory usage.
+
     Parameters
     ----------
     dataset_id : str
@@ -511,6 +513,8 @@ def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
     combined_gage_flow : dict
         Combined gage flow data with global realization IDs
     """
+    import gc
+
     if ensemble_set_specs is None:
         ensemble_set_specs = [get_ensemble_set_spec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
 
@@ -524,19 +528,20 @@ def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
         pn_config[f"flows/{dataset_name}"] = os.path.abspath(dataset_dir)
     pywrdrb.load_pn_config(pn_config)
 
-    # Load hydrologic flow data
-    ensemble_set_names = [spec.directory.split('/')[-1] for spec in ensemble_set_specs]
-    data = pywrdrb.Data(results_sets=['major_flow'], print_status=False)
-    data.load_hydrologic_model_flow(ensemble_set_names)
-
-    # Combine all sets into single dataset key
+    # Load one set at a time to reduce peak memory
     combined_gage_flow = {}
-    for set_name in ensemble_set_names:
-        if set_name not in data.major_flow:
-            continue
-        set_data = data.major_flow[set_name]
+    for spec in ensemble_set_specs:
+        set_name = spec.directory.split('/')[-1]
         set_idx = int(set_name.split('_set')[-1]) - 1
 
+        data = pywrdrb.Data(results_sets=['major_flow'], print_status=False)
+        data.load_hydrologic_model_flow([set_name])
+
+        if set_name not in data.major_flow:
+            del data
+            continue
+
+        set_data = data.major_flow[set_name]
         local_ids = list(set_data.keys())
         min_local_id = min(local_ids) if local_ids else 0
 
@@ -544,6 +549,9 @@ def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
             local_id_normalized = local_id - min_local_id
             global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
             combined_gage_flow[global_id] = df
+
+        del data
+        gc.collect()
 
     print(f"  Loaded gage flow for {len(combined_gage_flow)} realizations")
     return combined_gage_flow

@@ -330,14 +330,19 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
 
     # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
-    combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
 
-    # Create final data object with all models
+    # Build keep_data from combined + historical, then free intermediates
+    # before loading gage flow (which is memory-intensive)
     keep_data = pywrdrb.Data()
     for key in RESULTS_SET_KEYS:
         ensemble_and_historical = {dataset_id: combined[key]}
         ensemble_and_historical.update(historical_data[key])
         setattr(keep_data, key, ensemble_and_historical)
+    del combined, historical_data
+    gc.collect()
+
+    # Load gage flow after freeing intermediates
+    combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
     # Export final file
@@ -400,14 +405,19 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
 
     # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
-    combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
 
-    # Create final data object with all models
+    # Build keep_data from combined + historical, then free intermediates
+    # before loading gage flow (which is memory-intensive)
     keep_data = pywrdrb.Data()
     for key in RESULTS_SET_KEYS:
         ensemble_and_historical = {dataset_id: combined[key]}
         ensemble_and_historical.update(historical_data[key])
         setattr(keep_data, key, ensemble_and_historical)
+    del combined, historical_data
+    gc.collect()
+
+    # Load gage flow after freeing intermediates
+    combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
     # Export
