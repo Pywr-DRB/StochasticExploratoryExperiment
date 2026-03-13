@@ -6,7 +6,7 @@
 #   S1 & S2  (stationary + climate-adjusted ensembles, in parallel)
 #   S3  (SSI drought metrics)
 #   S4  (postprocess all 3 datasets, in parallel)
-#   S5  (performance metrics)
+#   S5  (performance metrics, all 3 datasets in parallel)
 #   S6 & S7  (figures + SI figures, in parallel)
 #
 # Usage: bash S99_run_entire_workflow.sh
@@ -46,15 +46,23 @@ done
 
 S4_DEP=$(IFS=:; echo "${S4_IDS[*]}")
 
-# --- S5: Performance metrics (after all S4 jobs) ---
-S5=$(sbatch --parsable --dependency=afterok:$S4_DEP S5_calculate_performance_metrics.sh)
-echo "S5 perf metrics:     job $S5 (after S4)"
+# --- S5: Performance metrics per dataset (parallel, after all S4 jobs) ---
+S5_IDS=()
+for DATASET_ID in "${DATASETS[@]}"; do
+    JID=$(sbatch --parsable --dependency=afterok:$S4_DEP \
+        --job-name="perf_${DATASET_ID}" \
+        S5_calculate_performance_metrics_dataset.sh "$DATASET_ID")
+    S5_IDS+=($JID)
+    echo "S5 perf $DATASET_ID: job $JID (after S4)"
+done
 
-# --- S6 & S7: Figures (parallel, after S5) ---
-S6=$(sbatch --parsable --dependency=afterok:$S5 S6_run_figure_generation.sh)
+S5_DEP=$(IFS=:; echo "${S5_IDS[*]}")
+
+# --- S6 & S7: Figures (parallel, after all S5 jobs) ---
+S6=$(sbatch --parsable --dependency=afterok:$S5_DEP S6_run_figure_generation.sh)
 echo "S6 figures:          job $S6 (after S5)"
 
-S7=$(sbatch --parsable --dependency=afterok:$S5 S7_run_SI_scripts.sh)
+S7=$(sbatch --parsable --dependency=afterok:$S5_DEP S7_run_SI_scripts.sh)
 echo "S7 SI figures:       job $S7 (after S5)"
 
 echo ""
@@ -62,4 +70,4 @@ echo "============================================================"
 echo "ALL JOBS SUBMITTED"
 echo "============================================================"
 echo "Monitor with: squeue -u \$USER"
-echo "Cancel all:   scancel $S0 $S1 $S2 $S3 ${S4_IDS[*]} $S5 $S6 $S7"
+echo "Cancel all:   scancel $S0 $S1 $S2 $S3 ${S4_IDS[*]} ${S5_IDS[*]} $S6 $S7"
