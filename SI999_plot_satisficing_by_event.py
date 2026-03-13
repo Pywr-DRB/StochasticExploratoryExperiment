@@ -7,7 +7,7 @@ conditions:
 - SSI Drought Periods
 - Non-Drought Years
 
-The script loads results from 06_calculate_drought_analysis.py and creates
+The script loads results from 06_calculate_performance_metrics.py and creates
 comparison visualizations showing how performance differs during drought vs
 non-drought conditions.
 

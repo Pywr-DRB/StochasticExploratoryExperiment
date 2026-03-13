@@ -34,7 +34,7 @@ from methods.plotting.styles import (
     DATASET_LINESTYLES,
     apply_publication_style,
 )
-from methods.load import load_annual_metrics, load_annual_satisficing
+from methods.load import load_annual_metrics
 
 # ============================================================================
 # CONFIG
@@ -43,31 +43,19 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/F5_performance_outcomes"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 DATASETS = list(DATASET_CONFIGS.keys())
-SSI_WINDOW = 12  # for satisficing calculation
-
 # ============================================================================
 # DATA LOADING
 # ============================================================================
 
 def load_all_data():
-    """Load annual metrics and satisficing results for all datasets."""
+    """Load annual metrics for all datasets."""
     perf = {}
-    satis = {}
-
     for did in DATASETS:
         perf[did] = load_annual_metrics(did)
-
-        # Load annual satisficing results
-        try:
-            satis[did] = load_annual_satisficing(did, SSI_WINDOW)
-        except (FileNotFoundError, KeyError) as e:
-            print(f"  Warning: satisficing results not found for {did}: {e}")
-            satis[did] = None
-
-    return perf, satis
+    return perf
 
 
-def compute_panel_data(perf, satis):
+def compute_panel_data(perf):
     """
     Compute the three panel metrics per realization per dataset.
 
@@ -419,8 +407,8 @@ def main():
     print("F5: Performance Outcomes")
     print("Loading data...")
 
-    perf, satis = load_all_data()
-    panel_data = compute_panel_data(perf, satis)
+    perf = load_all_data()
+    panel_data = compute_panel_data(perf)
 
     print_summary_table(panel_data)
 

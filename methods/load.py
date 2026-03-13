@@ -828,7 +828,7 @@ def load_reservoir_storage(dataset_id):
 
 def load_annual_satisficing(dataset_id, ssi_window):
     """
-    Load annual satisficing results from 06_calculate_drought_analysis.py.
+    Load annual satisficing results (legacy format).
 
     Parameters
     ----------
@@ -850,7 +850,7 @@ def load_annual_satisficing(dataset_id, ssi_window):
     if not os.path.exists(fname):
         raise FileNotFoundError(
             f"Annual satisficing file not found: {fname}\n"
-            "Run 06_calculate_drought_analysis.py first!"
+            "Legacy satisficing CSV not found. Satisficing is now computed from annual_metrics."
         )
 
     df = pd.read_csv(fname)

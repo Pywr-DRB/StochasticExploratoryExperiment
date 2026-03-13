@@ -25,9 +25,9 @@ The pipeline is executed through numbered scripts. Each step accepts a `dataset_
 | `01_generate_ensemble_sets.py` | Generate synthetic streamflow ensembles (Kirsch-Nowak) |
 | `02_prep_pywrdrb_inputs.py` | Convert synthetic flows to Pywr-DRB input format |
 | `03_run_pywrdrb_simulations.py` | Run Pywr-DRB simulations across ensemble sets |
-| `04_postprocess_data_mpi.py` | Calculate shortage and contribution metrics |
-| `05_calculate_ssi_drought_metrics.py` | Calculate SSI-based drought metrics (3, 6, 12-month windows) |
-| `06_calculate_drought_analysis.py` | Annual satisficing + per-event metrics (combined) |
+| `04_calculate_ssi_drought_metrics.py` | Calculate SSI-based drought metrics (3, 6, 12-month windows) |
+| `05_postprocess_data_mpi.py` | Postprocess HDF5 simulation outputs (shortage, contribution, zone events) |
+| `06_calculate_performance_metrics.py` | Annual performance metrics, Hashimoto RRV, event metrics |
 
 Example usage:
 ```bash
@@ -43,11 +43,12 @@ A serial workflow (`serial_workflow.py`) is available for debugging or small-sca
 | `S0_run_baseline_historic.sh` | Run baseline historical simulations | 1 node |
 | `S1_run_stationary_ensemble.sh` | Generate, prep, and simulate stationary ensemble | 8 nodes, 30 tasks/node |
 | `S2_run_climate_adjusted_ensemble.sh` | Generate, prep, and simulate climate-adjusted ensembles | 8 nodes, 30 tasks/node |
-| `S3_postprocess_all.sh` | Submit postprocessing for all 3 datasets in parallel | Launches 3 SLURM jobs |
-| `S3_postprocess_dataset.sh` | Postprocess a single dataset (called by `S3_postprocess_all.sh`) | 1 node, 20 tasks |
-| `S4_calculate_ssi.sh` | Calculate SSI drought metrics, satisficing, and event metrics | 8 nodes, 40 tasks/node |
-| `S5_run_figure_generation.sh` | Generate manuscript figures | 1 node |
-| `S6_run_SI_scripts.sh` | Generate supplementary information figures | 1 node |
+| `S3_calculate_ssi.sh` | Calculate SSI drought metrics | 8 nodes, 40 tasks/node |
+| `S4_postprocess_all.sh` | Submit postprocessing for all 3 datasets in parallel | Launches 3 SLURM jobs |
+| `S4_postprocess_dataset.sh` | Postprocess a single dataset (called by `S4_postprocess_all.sh`) | 1 node, 20 tasks |
+| `S5_calculate_performance_metrics.sh` | Calculate annual, Hashimoto, and event metrics | 1 node, 20 tasks |
+| `S6_run_figure_generation.sh` | Generate manuscript figures | 1 node |
+| `S7_run_SI_scripts.sh` | Generate supplementary information figures | 1 node |
 | `S99_run_entire_workflow.sh` | Submit full pipeline with SLURM dependency chains | All of the above |
 
 Usage:
@@ -59,11 +60,12 @@ bash S99_run_entire_workflow.sh
 sbatch S0_run_baseline_historic.sh
 sbatch S1_run_stationary_ensemble.sh
 sbatch S2_run_climate_adjusted_ensemble.sh
-bash S3_postprocess_all.sh                              # submits 3 parallel jobs
-sbatch S3_postprocess_dataset.sh stationary_ensemble    # or a single dataset
-sbatch S4_calculate_ssi.sh
-sbatch S5_run_figure_generation.sh
-sbatch S6_run_SI_scripts.sh
+sbatch S3_calculate_ssi.sh
+bash S4_postprocess_all.sh                              # submits 3 parallel jobs
+sbatch S4_postprocess_dataset.sh stationary_ensemble    # or a single dataset
+sbatch S5_calculate_performance_metrics.sh
+sbatch S6_run_figure_generation.sh
+sbatch S7_run_SI_scripts.sh
 ```
 
 `S99_run_entire_workflow.sh` uses `--dependency=afterok` to chain jobs, maximizing parallelism:
@@ -74,14 +76,16 @@ S0 (baseline)
  ├── S1 (stationary)
  └── S2 (climate-adjusted)
       |
-      ├── S3 post stationary_ensemble
-      ├── S3 post climate_adjusted_low
-      └── S3 post climate_adjusted_high
+      S3 (SSI metrics)
+      |
+      ├── S4 post stationary_ensemble
+      ├── S4 post climate_adjusted_low
+      └── S4 post climate_adjusted_high
            |
-           S4 (SSI metrics)
+           S5 (performance metrics)
            |
-           ├── S5 (figures)
-           └── S6 (SI figures)
+           ├── S6 (figures)
+           └── S7 (SI figures)
 ```
 
 ## File naming conventions
