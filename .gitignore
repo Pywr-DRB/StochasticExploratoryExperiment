@@ -209,7 +209,7 @@ notebooks/
 archive/*
 .vscode/
 JanStart_pywrdrb/
-figures/*
+figures*/
 manuscript/*
 pywrdrb_JanStart/*
 pywrdrb_RemoveZerosFalse/*
