@@ -336,7 +336,10 @@ def make_distribution_figure(annual, hashimoto, period='all'):
             ax.set_ylabel('CDF across\nrealizations', fontsize=FONTSIZE_SMALL - 1)
         else:
             ax.set_ylabel('CDF of annual\nvalues', fontsize=FONTSIZE_SMALL - 1)
-        ax.set_ylim(-0.02, 1.02)
+        if metric_name.endswith('_reliability'):
+            ax.set_ylim(-0.02, 0.4)
+        else:
+            ax.set_ylim(-0.02, 1.02)
         ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
         ax.grid(True, alpha=0.3, linewidth=0.5)
         ax.set_axisbelow(True)
@@ -379,6 +382,161 @@ def make_distribution_figure(annual, hashimoto, period='all'):
 
 
 # ============================================================================
+# 2×3 RELIABILITY / RESILIENCY FIGURE
+# ============================================================================
+
+# Layout:
+#   Columns: Montague, Trenton, NYC
+#   Row 1: Weekly reliability (annual, per-realization CDF bands)
+#   Row 2: Hashimoto resiliency (simulation-level, simple CDF)
+
+RR_GRID = [
+    # (row, col, metric, is_annual, title, xlabel)
+    (0, 0, 'montague_reliability', True,
+     'Montague', 'Fraction of Weeks Without Failure'),
+    (0, 1, 'trenton_reliability', True,
+     'Trenton', 'Fraction of Weeks Without Failure'),
+    (0, 2, 'nyc_reliability', True,
+     'NYC', 'Fraction of Weeks Without Failure'),
+
+    (1, 0, 'hashimoto_resiliency_montague', False,
+     'Montague', 'P(Recovery | Deficit Day)'),
+    (1, 1, 'hashimoto_resiliency_trenton', False,
+     'Trenton', 'P(Recovery | Deficit Day)'),
+    (1, 2, 'nyc_reliability', False,  # placeholder — NYC resiliency not available
+     'NYC', ''),
+]
+
+ROW_LABELS = [
+    'Weekly Reliability\n(Weeks Without 3+ Deficit Days)',
+    'Hashimoto Resiliency\nP(Recovery | Deficit Day)',
+]
+
+
+def make_reliability_resiliency_figure(annual, hashimoto, period='all'):
+    """Create focused 2×3 reliability/resiliency comparison figure."""
+
+    nrows, ncols = 2, 3
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.0 * ncols, 4.0 * nrows))
+
+    for row, col, metric, is_annual, col_title, xlabel in RR_GRID:
+        ax = axes[row, col]
+
+        # NYC resiliency doesn't exist in Hashimoto (only Montague/Trenton)
+        if row == 1 and col == 2:
+            ax.text(0.5, 0.5, 'Not applicable\n(NYC shortage uses\ndiversion deficit,\nnot flow target)',
+                    ha='center', va='center', transform=ax.transAxes,
+                    fontsize=FONTSIZE_SMALL, color='0.5')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            if row == 0:
+                ax.set_title(col_title, fontsize=FONTSIZE_MEDIUM, fontweight='bold')
+            continue
+
+        has_data = False
+        for did in DATASETS:
+            color = DATASET_COLORS[did]
+            ls = DATASET_LINESTYLES.get(did, '-')
+
+            if is_annual:
+                x_grid, bands = compute_cdf_bands(
+                    annual[did], metric, period=period
+                )
+                if x_grid is None:
+                    continue
+                ax.fill_between(x_grid, bands[0], bands[100],
+                                color=color, alpha=0.15, zorder=3)
+                ax.plot(x_grid, bands[50], color=color, linestyle=ls,
+                        linewidth=LINEWIDTH_MEDIUM, zorder=5,
+                        label=DATASET_LABELS.get(did, did))
+                has_data = True
+            else:
+                df_h = hashimoto.get(did)
+                if df_h is None or metric not in df_h.columns:
+                    continue
+                vals = np.sort(df_h[metric].dropna().values)
+                if len(vals) == 0:
+                    continue
+                cdf = np.arange(1, len(vals) + 1) / len(vals)
+                ax.plot(vals, cdf, color=color, linestyle=ls,
+                        linewidth=LINEWIDTH_MEDIUM,
+                        label=DATASET_LABELS.get(did, did))
+                has_data = True
+
+        if not has_data:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                    transform=ax.transAxes, fontsize=FONTSIZE_SMALL)
+
+        # Column title on top row only
+        if row == 0:
+            ax.set_title(col_title, fontsize=FONTSIZE_MEDIUM, fontweight='bold')
+
+        ax.set_xlabel(xlabel, fontsize=FONTSIZE_SMALL)
+
+        # "better →" always to the right
+        higher_better = HIGHER_IS_BETTER.get(metric, True)
+        if not higher_better:
+            ax.invert_xaxis()
+        ax.annotate('better →', xy=(0.97, 0.03), xycoords='axes fraction',
+                    ha='right', va='bottom', fontsize=FONTSIZE_SMALL - 2,
+                    color='0.4', fontstyle='italic')
+
+        if is_annual:
+            ax.set_ylabel('CDF of annual values', fontsize=FONTSIZE_SMALL)
+        else:
+            ax.set_ylabel('CDF across realizations', fontsize=FONTSIZE_SMALL)
+        if metric.endswith('_reliability'):
+            ax.set_ylim(-0.02, 0.4)
+        else:
+            ax.set_ylim(-0.02, 1.02)
+        ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
+        ax.grid(True, alpha=0.3, linewidth=0.5)
+        ax.set_axisbelow(True)
+
+    # Row labels on the left
+    for r, label in enumerate(ROW_LABELS):
+        axes[r, 0].annotate(
+            label, xy=(-0.35, 0.5), xycoords='axes fraction',
+            ha='center', va='center', fontsize=FONTSIZE_MEDIUM,
+            fontweight='bold', rotation=90,
+        )
+
+    # Legend at top
+    legend_handles = []
+    legend_labels = []
+    for did in DATASETS:
+        color = DATASET_COLORS[did]
+        patch = mpatches.Patch(facecolor=color, alpha=0.15)
+        line = mlines.Line2D([], [], color=color,
+                             linestyle=DATASET_LINESTYLES.get(did, '-'),
+                             linewidth=LINEWIDTH_MEDIUM)
+        legend_handles.append((patch, line))
+        legend_labels.append(
+            f'{DATASET_LABELS.get(did, did)} (median & range)')
+
+    fig.legend(legend_handles, legend_labels, loc='upper center',
+               ncol=len(DATASETS), fontsize=FONTSIZE_MEDIUM,
+               bbox_to_anchor=(0.5, 1.0), frameon=False,
+               handler_map={tuple: HandlerTuple(ndivide=1)},
+               handleheight=1.5)
+
+    period_label = {
+        'all': 'All Days',
+        'drought': 'Drought Days Only',
+        'nondrought': 'Non-Drought Days Only',
+    }
+    fig.suptitle(
+        f'Shortage Reliability & Resiliency — {period_label.get(period, period)}',
+        fontsize=FONTSIZE_MEDIUM + 2, fontweight='bold', y=1.03,
+    )
+
+    fig.tight_layout(rect=[0.05, 0, 1, 0.97])
+    return fig
+
+
+# ============================================================================
 # ENTRY POINT
 # ============================================================================
 
@@ -388,11 +546,22 @@ if __name__ == '__main__':
     print("Loading data...")
     annual, hashimoto = load_all_data()
 
+    # Full metric overview (24-panel)
     for period in ['all', 'drought', 'nondrought']:
-        print(f"Plotting {period} period...")
+        print(f"Plotting {period} period (full overview)...")
         fig = make_distribution_figure(annual, hashimoto, period=period)
 
         fname = f"{FIG_OUTPUT_DIR}/metric_cdfs_{period}.png"
+        fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"  Saved: {fname}")
+        plt.close(fig)
+
+    # Focused reliability/resiliency (2×3)
+    for period in ['all', 'drought', 'nondrought']:
+        print(f"Plotting {period} period (reliability & resiliency)...")
+        fig = make_reliability_resiliency_figure(annual, hashimoto, period=period)
+
+        fname = f"{FIG_OUTPUT_DIR}/reliability_resiliency_{period}.png"
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"  Saved: {fname}")
         plt.close(fig)
