@@ -34,7 +34,7 @@ from methods.plotting.styles import (
     DATASET_LINESTYLES,
     apply_publication_style,
 )
-from methods.load import load_performance_metrics, load_annual_satisficing
+from methods.load import load_annual_metrics, load_annual_satisficing
 
 # ============================================================================
 # CONFIG
@@ -50,12 +50,12 @@ SSI_WINDOW = 12  # for satisficing calculation
 # ============================================================================
 
 def load_all_data():
-    """Load performance metrics and satisficing results for all datasets."""
+    """Load annual metrics and satisficing results for all datasets."""
     perf = {}
     satis = {}
 
     for did in DATASETS:
-        perf[did] = load_performance_metrics(did)
+        perf[did] = load_annual_metrics(did)
 
         # Load annual satisficing results
         try:
@@ -78,38 +78,33 @@ def compute_panel_data(perf, satis):
 
     for did in DATASETS:
         df = perf[did]
-        n_realizations = len(df)
+        # Filter to period='all' for realization-level aggregation
+        df_all = df[df['period'] == 'all'].copy()
 
-        # Panel A: max consecutive Montague shortage days (already per-realization)
-        panel_a = df['max_consecutive_drought_days'].values
+        # Aggregate annual metrics to per-realization values
+        by_r = df_all.groupby('realization_id')
 
-        # Panel B: NYC demand satisfaction
-        # Compute as 100% minus pct_days with shortage (approximate daily satisfaction)
-        # More precisely: 1 - (mean_annual_shortage / mean_annual_demand)
-        # But we have pct_days_nyc_diversion_shortage which is % of days with ANY shortage
-        # Better metric: use total diversion vs total demand if available
-        # From the CSV, we have mean_annual_nyc_diversion_shortage_mg
-        # NYC baseline demand ≈ 800 MGD → 800*365 = 292000 MG/yr
-        # Satisfaction ≈ 1 - shortage/demand
-        nyc_baseline_demand_mg_per_year = 800.0 * 365.25
-        mean_annual_shortage = df['mean_annual_nyc_diversion_shortage_mg'].values
-        panel_b = 100.0 * (1.0 - mean_annual_shortage / nyc_baseline_demand_mg_per_year)
-        panel_b = np.clip(panel_b, 0, 100)
+        # Panel A: max consecutive Montague shortage days across all water years
+        panel_a = by_r['montague_max_consec_shortage_days'].max()
+
+        # Panel B: mean NYC reliability across water years (as %)
+        panel_b = by_r['nyc_reliability'].mean() * 100.0
 
         # Panel C: satisficing rate (fraction of years satisficing per realization)
-        if satis[did] is not None:
-            sat_df = satis[did]
-            sat_rate = sat_df.groupby('realization')['satisficing'].mean() * 100.0
-            # Align to realization indices
-            panel_c = np.array([sat_rate.get(r, np.nan) for r in df.index])
-        else:
-            panel_c = np.full(n_realizations, np.nan)
+        # Satisficing = (nyc_min_storage_pct >= 20) & (montague_max_consec_shortage_days <= 3)
+        df_all['satisficing'] = (
+            (df_all['nyc_min_storage_pct'] >= 20.0) &
+            (df_all['montague_max_consec_shortage_days'] <= 3)
+        ).astype(float)
+        panel_c = df_all.groupby('realization_id')['satisficing'].mean() * 100.0
 
-        panel_data[did] = pd.DataFrame({
+        # Combine into a single DataFrame
+        combined = pd.DataFrame({
             'max_consec_shortage_days': panel_a,
             'mean_nyc_satisfaction_pct': panel_b,
             'satisficing_rate_pct': panel_c,
-        }, index=df.index)
+        })
+        panel_data[did] = combined
 
     return panel_data
 

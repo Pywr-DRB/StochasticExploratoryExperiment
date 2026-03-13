@@ -136,7 +136,7 @@ def compute_kde_on_grid(data, x_grid, bw_method='scott'):
     return kde(x_grid)
 
 
-def classify_years_by_min_zone(res_level_df):
+def classify_years_by_max_zone(res_level_df):
     """
     Classify each year by the minimum drought zone reached.
 
@@ -148,7 +148,7 @@ def classify_years_by_min_zone(res_level_df):
     Returns
     -------
     year_classifications : dict
-        Dictionary mapping year -> (min_zone, min_zone_date)
+        Dictionary mapping year -> (max_zone, max_zone_date)
     """
     # Add year column
     df = res_level_df.copy()
@@ -167,8 +167,8 @@ def classify_years_by_min_zone(res_level_df):
         max_zone_date = year_data[year_data['nyc'] == max_zone].index[0]
 
         year_classifications[year] = {
-            'min_zone': max_zone,
-            'min_zone_date': max_zone_date
+            'max_zone': max_zone,
+            'max_zone_date': max_zone_date
         }
 
     return year_classifications
@@ -185,7 +185,7 @@ def calculate_n_month_aggregates(year_classifications, inflow_series, contributi
     Parameters
     ----------
     year_classifications : dict
-        Output from classify_years_by_min_zone()
+        Output from classify_years_by_max_zone()
     inflow_series : pd.Series
         Daily NYC inflow with datetime index
     contribution_series : pd.Series
@@ -194,43 +194,43 @@ def calculate_n_month_aggregates(year_classifications, inflow_series, contributi
     Returns
     -------
     aggregates : pd.DataFrame
-        DataFrame with columns: year, min_zone, inflow_total, contribution_total
+        DataFrame with columns: year, max_zone, inflow_total, contribution_total
     """
     records = []
 
     for year, info in year_classifications.items():
-        min_zone = info['min_zone']
-        min_zone_date = info['min_zone_date']
+        max_zone = info['max_zone']
+        max_zone_date = info['max_zone_date']
 
         # Determine start date based on aggregation method
         if AGGREGATION_METHOD == 'since_june1':
-            # Start from June 1 of the same year as min_zone_date
+            # Start from June 1 of the same year as max_zone_date
             # Note: For droughts occurring Jan-May, this will use June 1 of previous year
-            year_of_min_zone = min_zone_date.year
-            if min_zone_date.month >= 6:
+            year_of_max_zone = max_zone_date.year
+            if max_zone_date.month >= 6:
                 # Use June 1 of same year
-                start_date = pd.Timestamp(year=year_of_min_zone, month=6, day=1)
+                start_date = pd.Timestamp(year=year_of_max_zone, month=6, day=1)
             else:
                 # Use June 1 of previous year (for droughts in Jan-May)
-                start_date = pd.Timestamp(year=year_of_min_zone - 1, month=6, day=1)
+                start_date = pd.Timestamp(year=year_of_max_zone - 1, month=6, day=1)
 
         elif AGGREGATION_METHOD == 'n_months_prior':
             # Calculate start date (N months before minimum zone)
-            start_date = min_zone_date - pd.DateOffset(months=N_MONTHS_PRIOR)
+            start_date = max_zone_date - pd.DateOffset(months=N_MONTHS_PRIOR)
 
         else:
             raise ValueError(f"Invalid AGGREGATION_METHOD: {AGGREGATION_METHOD}. Must be 'since_june1' or 'n_months_prior'")
 
         # Sum inflow and contributions in window
-        inflow_mask = (inflow_series.index >= start_date) & (inflow_series.index <= min_zone_date)
-        contribution_mask = (contribution_series.index >= start_date) & (contribution_series.index <= min_zone_date)
+        inflow_mask = (inflow_series.index >= start_date) & (inflow_series.index <= max_zone_date)
+        contribution_mask = (contribution_series.index >= start_date) & (contribution_series.index <= max_zone_date)
 
         inflow_total = inflow_series[inflow_mask].sum()
         contribution_total = contribution_series[contribution_mask].sum()
 
         records.append({
             'year': year,
-            'min_zone': min_zone,
+            'max_zone': max_zone,
             'inflow_total': inflow_total,
             'contribution_total': contribution_total
         })
@@ -268,7 +268,7 @@ def extract_water_balance_by_zone(data, dataset_id, realization_id):
     nyc_contributions = contribution_df['mrf_montagueTrenton_nyc']
 
     # Classify years by minimum drought zone
-    year_classifications = classify_years_by_min_zone(res_level_df)
+    year_classifications = classify_years_by_max_zone(res_level_df)
 
     # Calculate N-month aggregates
     aggregates_df = calculate_n_month_aggregates(
@@ -331,7 +331,7 @@ def categorize_by_drought_zone(aggregates_df):
 
     for cat_name, cat_info in DROUGHT_CATEGORIES.items():
         zones = cat_info['zones']
-        mask = aggregates_df['min_zone'].isin(zones)
+        mask = aggregates_df['max_zone'].isin(zones)
         categorized_data[cat_name] = aggregates_df[mask]
 
     return categorized_data

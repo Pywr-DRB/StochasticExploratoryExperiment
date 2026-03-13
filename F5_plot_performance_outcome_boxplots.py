@@ -26,7 +26,7 @@ from methods.plotting.styles import (
     get_ylabel_for_metrics,
     DPI_HIGH,
 )
-from methods.load import load_performance_metrics
+from methods.load import load_annual_metrics
 
 
 # Output directory
@@ -45,25 +45,25 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # between stationary and climate-adjusted datasets).
 
 # Category 1: NYC Reservoir Storage (Row 1)
-# Selected metrics with highest sensitivity to climate scenarios
+# Aggregated from annual metrics: per-realization statistics across water years
 METRICS_NYC_STORAGE = [
-    'min_storage_pct',              # Absolute minimum storage (%) - 29% avg change
-    'pct_days_storage_below_30',    # % days storage <30% - 59% avg change
-    'years_below_30pct',            # Years with storage dropping ≤30% - 52% avg change
+    'nyc_min_storage_pct',          # Min annual storage (%) — take min across WYs
+    'ndays_storage_below_30pct',    # Days storage <30% — sum across WYs
+    'ndays_storage_below_20pct',    # Days storage <20% — sum across WYs
 ]
 
 # Category 2: NYC Diversion/Demand Outcomes (Row 2)
 METRICS_NYC_DIVERSION = [
-    'mean_annual_nyc_diversion_shortage_mg',  # Mean annual NYC shortage - 53% avg change
-    'pct_days_nyc_diversion_shortage',        # % days with NYC shortage - 11% avg change
-    'mean_annual_nyc_contribution_mg',        # Mean annual NYC contribution - 12% avg change
+    'nyc_shortage_mg',              # Annual NYC shortage (MG) — mean across WYs
+    'nyc_reliability',              # Annual NYC reliability — mean across WYs
+    'nyc_contribution_mg',          # Annual NYC contribution (MG) — mean across WYs
 ]
 
 # Category 3: Montague Flow Outcomes (Row 3)
 METRICS_MONTAGUE = [
-    'mean_annual_montague_shortage_mg',  # Mean annual Montague shortage - 62% avg change
-    'max_1day_montague_shortage_mg',     # Max single-day shortage - 28% avg change
-    'max_consecutive_drought_days',      # Longest drought duration - 21% avg change
+    'montague_shortage_mg',              # Annual Montague shortage (MG) — mean across WYs
+    'montague_max_1day_shortage_mg',     # Max 1-day Montague shortage — max across WYs
+    'montague_max_consec_shortage_days', # Max consec shortage days — max across WYs
 ]
 
 # Combined list for compatibility with existing code
@@ -195,46 +195,39 @@ def plot_boxplot_comparison():
     # Get datasets from config
     datasets_to_plot, dataset_labels = get_datasets_to_plot()
 
-    # Load all metrics
+    # Load all metrics and aggregate to per-realization values
     all_metrics_dfs = {}
 
+    # Define aggregation rules: how to reduce annual metrics to per-realization
+    AGG_RULES = {
+        'nyc_min_storage_pct': 'min',      # worst year
+        'ndays_storage_below_30pct': 'sum', # total days
+        'ndays_storage_below_20pct': 'sum', # total days
+        'nyc_shortage_mg': 'mean',          # mean annual
+        'nyc_reliability': 'mean',          # mean annual
+        'nyc_contribution_mg': 'mean',      # mean annual
+        'montague_shortage_mg': 'mean',     # mean annual
+        'montague_max_1day_shortage_mg': 'max',  # worst single day
+        'montague_max_consec_shortage_days': 'max',  # worst run
+    }
+
     for dataset_id in datasets_to_plot:
-        # Load pre-calculated metrics from CSV
         try:
-            metrics_df = load_performance_metrics(dataset_id)
+            annual_df = load_annual_metrics(dataset_id)
         except FileNotFoundError as e:
             print(f"ERROR: {e}")
             return None
 
-        # Validate that requested metrics exist
-        try:
-            validate_metrics(metrics_df, dataset_id)
-        except ValueError as e:
-            print(str(e))
-            return None
+        # Filter to period='all'
+        df_all = annual_df[annual_df['period'] == 'all'].copy()
 
+        # Aggregate per realization
+        agg_dict = {m: agg for m, agg in AGG_RULES.items() if m in df_all.columns}
+        metrics_df = df_all.groupby('realization_id').agg(agg_dict)
         all_metrics_dfs[dataset_id] = metrics_df
 
-    # Load historic (reconstruction) metrics if requested
+    # Historic reconstruction not currently supported with new structure
     historic_quantiles = None
-    if SHOW_HISTORIC:
-        try:
-            historic_metrics_df = load_performance_metrics('reconstruction')
-            historic_quantiles = {}
-            for metric in METRICS_TO_PLOT:
-                if metric in historic_metrics_df.columns:
-                    raw_value = historic_metrics_df[metric].iloc[0]
-                    if metric in METRICS_TO_SCALE:
-                        scaled_value = raw_value * RECONSTRUCTION_SCALE_FACTOR
-                    else:
-                        scaled_value = raw_value
-                    historic_quantiles[metric] = {
-                        'p5': scaled_value,
-                        'p50': scaled_value,
-                        'p95': scaled_value
-                    }
-        except FileNotFoundError:
-            historic_quantiles = None
 
     # Calculate quantiles for each metric and dataset
     quantiles_data = calculate_quantiles_by_dataset(

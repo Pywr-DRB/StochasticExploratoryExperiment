@@ -290,7 +290,7 @@ def _make_bin_labels(metric, bin_edges, thresholds):
     labels = []
 
     # Format thresholds based on metric scale
-    if metric in ('min_storage_pct', 'storage_at_start_pct'):
+    if metric in ('event_min_storage_pct', 'storage_at_start_pct'):
         fmt = lambda v: f"{v:.0f}%"
     elif metric in ('nyc_diversion_sat_ratio', 'contribution_ratio'):
         fmt = lambda v: f"{v:.2f}"
@@ -404,7 +404,7 @@ def _default_label(metric):
         'total_nyc_contribution_mg': 'NYC Contribution\nto Montague',
         'contribution_ratio': 'Contribution\nRatio',
         'max_consec_montague_days': 'Montague\nViolations',
-        'min_storage_pct': 'Min Storage\nDuring Drought',
+        'event_min_storage_pct': 'Min Storage\nDuring Drought',
         'total_montague_shortage_mg': 'Montague\nShortage',
         'nyc_diversion_sat_ratio': 'NYC Diversion\nSatisfaction',
     }

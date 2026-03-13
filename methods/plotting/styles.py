@@ -260,204 +260,107 @@ def apply_publication_style():
 # PERFORMANCE METRICS CONFIGURATION
 # =============================================================================
 
-# Metric display names (for plot labels)
+# Annual metrics display names (for plot labels)
+# These correspond to columns in the {dataset_id}_annual_metrics.csv
 METRIC_DISPLAY_NAMES = {
-    # Flow Reliability - Montague
-    'years_reliable_montague': 'Years Montague\nReliable (>90%)',
-    'years_reliable_montague_95': 'Years Montague\nReliable (>95%)',
-    'mean_annual_montague_reliability': 'Mean Annual\nMontague Reliability',
-    'min_annual_montague_reliability': 'Worst Annual\nMontague Reliability',
-    'total_montague_shortage_mg': 'Total Montague\nShortage (MG)',
-    'mean_annual_montague_shortage_mg': 'Mean Annual\nMontague Shortage',
-    'max_1day_montague_shortage_mg': 'Max 1-Day\nMontague Shortage',
-    'max_3day_montague_shortage_mg': 'Max 3-Day\nMontague Shortage',
-    'max_7day_montague_shortage_mg': 'Max 7-Day\nMontague Shortage',
+    # Per-location shortage metrics (4 × 3 locations = 12)
+    'montague_reliability': 'Montague\nReliability',
+    'montague_shortage_mg': 'Montague\nShortage (MG)',
+    'montague_max_consec_shortage_days': 'Max Consec.\nMontague Shortage (d)',
+    'montague_max_1day_shortage_mg': 'Max 1-Day\nMontague Shortage (MG)',
 
-    # Flow Reliability - Trenton
-    'years_reliable_trenton': 'Years Trenton\nReliable (>90%)',
-    'years_reliable_trenton_95': 'Years Trenton\nReliable (>95%)',
-    'mean_annual_trenton_reliability': 'Mean Annual\nTrenton Reliability',
-    'total_trenton_shortage_mg': 'Total Trenton\nShortage (MG)',
-    'mean_annual_trenton_shortage_mg': 'Mean Annual\nTrenton Shortage',
+    'trenton_reliability': 'Trenton\nReliability',
+    'trenton_shortage_mg': 'Trenton\nShortage (MG)',
+    'trenton_max_consec_shortage_days': 'Max Consec.\nTrenton Shortage (d)',
+    'trenton_max_1day_shortage_mg': 'Max 1-Day\nTrenton Shortage (MG)',
 
-    # NYC Storage - Thresholds
-    'years_above_30pct': 'Years Min\nStorage >30%',
-    'years_above_20pct': 'Years Min\nStorage >20%',
-    'years_above_10pct': 'Years Min\nStorage >10%',
-    'years_below_30pct': 'Years Min\nStorage ≤30%',
-    'years_below_20pct': 'Years Min\nStorage ≤20%',
-    'years_below_10pct': 'Years Min\nStorage ≤10%',
+    'nyc_reliability': 'NYC Diversion\nReliability',
+    'nyc_shortage_mg': 'NYC Diversion\nShortage (MG)',
+    'nyc_max_consec_shortage_days': 'Max Consec.\nNYC Shortage (d)',
+    'nyc_max_1day_shortage_mg': 'Max 1-Day\nNYC Shortage (MG)',
 
-    # NYC Storage - Key Dates
-    'years_high_storage_june1': 'Years June 1\nStorage ≥95%',
-    'years_high_storage_june1_90': 'Years June 1\nStorage ≥90%',
-    'mean_june1_storage_pct': 'Mean June 1\nStorage (%)',
-    'mean_sept1_storage_pct': 'Mean Sept 1\nStorage (%)',
-    'years_low_carryover': 'Years Sept 1\nStorage <50%',
-    'years_low_carryover_40': 'Years Sept 1\nStorage <40%',
+    # NYC storage metrics (5)
+    'nyc_min_storage_pct': 'Min NYC\nStorage (%)',
+    'june1_storage_pct': 'June 1\nStorage (%)',
+    'sept1_storage_pct': 'Sept 1\nStorage (%)',
+    'ndays_storage_below_20pct': 'Days Storage\n< 20%',
+    'ndays_storage_below_30pct': 'Days Storage\n< 30%',
 
-    # NYC Storage - Statistics
-    'mean_storage_pct': 'Mean Storage (%)',
-    'median_storage_pct': 'Median Storage (%)',
-    'min_storage_pct': 'Min Storage (%)',
-    'max_storage_pct': 'Max Storage (%)',
-    'std_storage_pct': 'Storage Std Dev (%)',
-    'pct_days_storage_below_30': '% Days\nStorage <30%',
-    'pct_days_storage_below_20': '% Days\nStorage <20%',
-    'mean_annual_storage_range': 'Mean Annual\nStorage Range (%)',
+    # System metrics (3)
+    'nyc_contribution_mg': 'NYC\nContribution (MG)',
+    'ndays_combined_stress': 'Days Combined\nStress',
+    'max_zone': 'Max NYC\nDrought Zone',
 
-    # Water Supply Reliability
-    'pct_days_nyc_diversion_shortage': '% Days NYC\nDiversion Shortage',
-    'total_nyc_diversion_shortage_mg': 'Total NYC\nDiversion Shortage',
-    'mean_annual_nyc_diversion_shortage_mg': 'Mean Annual NYC\nDiversion Shortage',
-    'max_daily_nyc_diversion_shortage_mg': 'Max Daily NYC\nDiversion Shortage',
-    'years_no_nyc_shortage': 'Years No\nNYC Shortage',
-    'years_minor_nyc_shortage': 'Years Minor\nNYC Shortage',
+    # Hashimoto simulation-level
+    'hashimoto_reliability_montague': 'Hashimoto Reliability\nMontague (%)',
+    'hashimoto_resiliency_montague': 'Hashimoto Resiliency\nMontague (%)',
+    'hashimoto_reliability_trenton': 'Hashimoto Reliability\nTrenton (%)',
+    'hashimoto_resiliency_trenton': 'Hashimoto Resiliency\nTrenton (%)',
 
-    # Drought Characteristics
-    'max_consecutive_drought_days': 'Max Consecutive\nDrought (days)',
-    'mean_drought_duration_days': 'Mean Drought\nDuration (days)',
-    'n_drought_events': 'Number of\nDrought Events',
-    'n_major_droughts': 'Number of\nMajor Droughts',
-    'n_severe_droughts': 'Number of\nSevere Droughts',
-    'worst_drought_max_daily_shortage_mg': 'Worst Drought\nPeak Shortage',
-    'max_consecutive_drought_days_trenton': 'Max Consecutive\nTrenton Drought',
-    'n_drought_events_trenton': 'Number of\nTrenton Droughts',
-    'pct_days_combined_stress': '% Days Combined\nSystem Stress',
-
-    # NYC Contributions
-    'mean_annual_nyc_contribution_mg': 'Mean Annual NYC\nContribution (MG)',
-    'max_annual_nyc_contribution_mg': 'Max Annual NYC\nContribution (MG)',
-    'min_annual_nyc_contribution_mg': 'Min Annual NYC\nContribution (MG)',
-    'std_annual_nyc_contribution_mg': 'NYC Contribution\nStd Dev (MG)',
-    'total_nyc_contribution_mg': 'Total NYC\nContribution (MG)',
-    'pct_days_nyc_contribution': '% Days NYC\nContribution',
-    'n_days_high_nyc_contribution': 'Days High NYC\nContribution (>100 MGD)',
-
-    # System Balance
-    'nyc_contribution_to_shortage_ratio': 'NYC Contribution /\nShortage Ratio',
-    'years_high_storage_and_reliable': 'Years High Storage\n& Reliable',
-    'years_vulnerable': 'Years\nVulnerable',
-
-    # Legacy
-    'years_reliable': 'Years Montague\nReliable',
-    'years_high_storage': 'Years June 1\nStorage High',
+    # Contribution analysis columns
+    'annual_max_zone': 'Annual Max\nDrought Zone',
+    'annual_min_storage_pct': 'Annual Min\nStorage (%)',
 }
 
 # Metric units (for determining appropriate y-axis labels)
 METRIC_UNITS = {
-    # Year count metrics
-    'years_reliable': 'years',
-    'years_reliable_montague': 'years',
-    'years_reliable_montague_95': 'years',
-    'years_reliable_trenton': 'years',
-    'years_reliable_trenton_95': 'years',
-    'years_high_storage': 'years',
-    'years_high_storage_june1': 'years',
-    'years_high_storage_june1_90': 'years',
-    'years_above_30pct': 'years',
-    'years_above_20pct': 'years',
-    'years_above_10pct': 'years',
-    'years_below_30pct': 'years',
-    'years_below_20pct': 'years',
-    'years_below_10pct': 'years',
-    'years_low_carryover': 'years',
-    'years_low_carryover_40': 'years',
-    'years_no_nyc_shortage': 'years',
-    'years_minor_nyc_shortage': 'years',
-    'years_high_storage_and_reliable': 'years',
-    'years_vulnerable': 'years',
+    # Reliability (fraction 0-1)
+    'montague_reliability': 'fraction',
+    'trenton_reliability': 'fraction',
+    'nyc_reliability': 'fraction',
 
     # Percentage metrics
-    'mean_sept1_storage_pct': 'percent',
-    'mean_june1_storage_pct': 'percent',
-    'mean_storage_pct': 'percent',
-    'median_storage_pct': 'percent',
-    'min_storage_pct': 'percent',
-    'max_storage_pct': 'percent',
-    'std_storage_pct': 'percent',
-    'pct_days_storage_below_30': 'percent',
-    'pct_days_storage_below_20': 'percent',
-    'pct_days_nyc_diversion_shortage': 'percent',
-    'pct_days_nyc_contribution': 'percent',
-    'pct_days_combined_stress': 'percent',
-    'mean_annual_storage_range': 'percent',
-    'mean_annual_montague_reliability': 'percent',
-    'min_annual_montague_reliability': 'percent',
-    'mean_annual_trenton_reliability': 'percent',
+    'nyc_min_storage_pct': 'percent',
+    'june1_storage_pct': 'percent',
+    'sept1_storage_pct': 'percent',
+    'hashimoto_reliability_montague': 'percent',
+    'hashimoto_resiliency_montague': 'percent',
+    'hashimoto_reliability_trenton': 'percent',
+    'hashimoto_resiliency_trenton': 'percent',
+    'annual_min_storage_pct': 'percent',
 
     # Duration metrics (days)
-    'max_consecutive_drought_days': 'days',
-    'max_consecutive_drought_days_trenton': 'days',
-    'mean_drought_duration_days': 'days',
-    'n_days_high_nyc_contribution': 'days',
-
-    # Count metrics
-    'n_drought_events': 'count',
-    'n_drought_events_trenton': 'count',
-    'n_major_droughts': 'count',
-    'n_severe_droughts': 'count',
+    'montague_max_consec_shortage_days': 'days',
+    'trenton_max_consec_shortage_days': 'days',
+    'nyc_max_consec_shortage_days': 'days',
+    'ndays_storage_below_20pct': 'days',
+    'ndays_storage_below_30pct': 'days',
+    'ndays_combined_stress': 'days',
 
     # Volume metrics (million gallons)
-    'mean_annual_nyc_contribution_mg': 'million_gallons',
-    'max_annual_nyc_contribution_mg': 'million_gallons',
-    'min_annual_nyc_contribution_mg': 'million_gallons',
-    'std_annual_nyc_contribution_mg': 'million_gallons',
-    'total_nyc_contribution_mg': 'million_gallons',
-    'total_montague_shortage_mg': 'million_gallons',
-    'mean_annual_montague_shortage_mg': 'million_gallons',
-    'max_1day_montague_shortage_mg': 'million_gallons',
-    'max_3day_montague_shortage_mg': 'million_gallons',
-    'max_7day_montague_shortage_mg': 'million_gallons',
-    'total_trenton_shortage_mg': 'million_gallons',
-    'mean_annual_trenton_shortage_mg': 'million_gallons',
-    'total_nyc_diversion_shortage_mg': 'million_gallons',
-    'mean_annual_nyc_diversion_shortage_mg': 'million_gallons',
-    'max_daily_nyc_diversion_shortage_mg': 'million_gallons',
-    'worst_drought_max_daily_shortage_mg': 'million_gallons',
+    'montague_shortage_mg': 'million_gallons',
+    'montague_max_1day_shortage_mg': 'million_gallons',
+    'trenton_shortage_mg': 'million_gallons',
+    'trenton_max_1day_shortage_mg': 'million_gallons',
+    'nyc_shortage_mg': 'million_gallons',
+    'nyc_max_1day_shortage_mg': 'million_gallons',
+    'nyc_contribution_mg': 'million_gallons',
 
-    # Ratio metrics
-    'nyc_contribution_to_shortage_ratio': 'ratio',
+    # Zone level (integer 1-6)
+    'max_zone': 'zone_level',
+    'annual_max_zone': 'zone_level',
 }
 
 # Y-axis labels for different metric types
 Y_AXIS_LABELS = {
-    'years': 'Number of Years (out of 70)',
+    'fraction': 'Reliability (0–1)',
     'percent': 'Percentage (%)',
     'days': 'Days',
     'count': 'Count',
     'million_gallons': 'Million Gallons (MG)',
-    'ratio': 'Ratio',
+    'zone_level': 'Zone Level',
     'value': 'Value',  # Generic fallback
 }
 
-# Reconstruction scaling
+# Reconstruction scaling — no longer needed for annual metrics
+# (annual metrics are per water year, not aggregated counts)
 RECONSTRUCTION_YEARS = 79
 ENSEMBLE_YEARS = 70
-RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS  # 70/79 ≈ 0.886
+RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS
 
-# Metrics that should be scaled when comparing reconstruction to ensemble
-# (These are year-count metrics that need adjustment for different time periods)
-METRICS_TO_SCALE = [
-    'years_reliable',
-    'years_reliable_montague',
-    'years_reliable_montague_95',
-    'years_reliable_trenton',
-    'years_reliable_trenton_95',
-    'years_high_storage',
-    'years_high_storage_june1',
-    'years_high_storage_june1_90',
-    'years_above_30pct',
-    'years_above_20pct',
-    'years_above_10pct',
-    'years_below_10pct',
-    'years_low_carryover',
-    'years_low_carryover_40',
-    'years_no_nyc_shortage',
-    'years_minor_nyc_shortage',
-    'years_high_storage_and_reliable',
-    'years_vulnerable',
-]
+# Metrics that need scaling when comparing reconstruction to ensemble
+# (only applies if aggregating annual metrics to counts externally)
+METRICS_TO_SCALE = []
 
 # Historic reconstruction marker style
 HISTORIC_MARKER_STYLE = {

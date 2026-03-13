@@ -28,11 +28,11 @@ from methods.load import load_zone_probabilities, load_ffmp_boundaries, load_sto
 DEFAULT_PROB_BINS = [0.01, 0.1,  1, 5, 10, 25, 50, 75, 99]
 
 
-def get_percentile_realization_years(dataset_id, percentiles=[10, 50, 90], metric='min_storage_pct'):
+def get_percentile_realization_years(dataset_id, percentiles=[10, 50, 90], metric='nyc_min_storage_pct'):
     """
     Get (realization_id, year) combinations at specified percentiles of a metric.
 
-    Uses pre-calculated satisficing results which have per-year min_storage_pct.
+    Uses pre-calculated satisficing results which have per-year nyc_min_storage_pct.
 
     Parameters
     ----------
@@ -42,14 +42,14 @@ def get_percentile_realization_years(dataset_id, percentiles=[10, 50, 90], metri
         Percentiles to find (e.g., [10, 50, 90])
     metric : str
         Metric column to use for percentile calculation.
-        Default 'min_storage_pct' selects by minimum storage reached in each year.
+        Default 'nyc_min_storage_pct' selects by minimum storage reached in each year.
 
     Returns
     -------
     dict
         Dictionary mapping percentile -> (realization_id, year)
     """
-    # Load annual satisficing results which have per-year min_storage_pct
+    # Load annual satisficing results which have per-year nyc_min_storage_pct
     from methods.load import load_annual_satisficing
     df = load_annual_satisficing(dataset_id, ssi_window=6)
 
@@ -837,7 +837,7 @@ def plot_4panel_storage_comparison(period='weekly',
                     percentile_real_years = get_percentile_realization_years(
                         dataset_id,
                         percentiles=percentiles,
-                        metric='min_storage_pct'
+                        metric='nyc_min_storage_pct'
                     )
                     print(f"  {dataset_id}: {percentile_real_years}")
 

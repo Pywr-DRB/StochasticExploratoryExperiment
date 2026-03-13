@@ -68,8 +68,8 @@ def print_satisficing_summary(df, dataset_id, ssi_window):
             continue
 
         n_total = len(subset)
-        storage_fail = subset['min_storage_pct'] < 20
-        montague_fail = subset['max_violation_days'] > 3
+        storage_fail = subset['nyc_min_storage_pct'] < 20
+        montague_fail = subset['montague_max_consec_shortage_days'] > 3
 
         print(f"\n{label}:")
         print(f"  Storage < 20% only:        {(storage_fail & ~montague_fail).sum():>6,} "
@@ -90,15 +90,14 @@ def print_satisficing_summary(df, dataset_id, ssi_window):
     for subset, label in subsets:
         if len(subset) == 0:
             continue
-        metrics_summary.append({
+        record = {
             'Condition': label,
-            'Mean Min Storage (%)': subset['min_storage_pct'].mean(),
-            'Median Min Storage (%)': subset['min_storage_pct'].median(),
-            'Mean Max Violations (days)': subset['max_violation_days'].mean(),
-            'Median Max Violations (days)': subset['max_violation_days'].median(),
-            'Mean NYC Inflow (MG)': subset['nyc_inflow'].mean(),
-            'Mean Montague Contrib (MG)': subset['montague_contrib'].mean()
-        })
+            'Mean Min Storage (%)': subset['nyc_min_storage_pct'].mean(),
+            'Median Min Storage (%)': subset['nyc_min_storage_pct'].median(),
+            'Mean Max Shortage (days)': subset['montague_max_consec_shortage_days'].mean(),
+            'Median Max Shortage (days)': subset['montague_max_consec_shortage_days'].median(),
+        }
+        metrics_summary.append(record)
 
     metrics_df = pd.DataFrame(metrics_summary)
     print("\n" + metrics_df.to_string(index=False))
@@ -106,51 +105,61 @@ def print_satisficing_summary(df, dataset_id, ssi_window):
     print("\n" + "=" * 80)
 
 
-def print_performance_metrics_summary(metrics_df):
+def print_annual_metrics_summary(annual_df):
     """
-    Print summary statistics for performance metrics.
+    Print summary statistics for annual performance metrics.
 
     Parameters
     ----------
-    metrics_df : pd.DataFrame
-        Performance metrics DataFrame
+    annual_df : pd.DataFrame
+        Annual metrics DataFrame with columns: realization_id, water_year, period,
+        and 20 metric columns.
     """
-    print(f"\n  Key Performance Metrics Summary:")
-    print(f"  {'='*60}")
+    import numpy as np
 
-    count_metrics = ['years_reliable', 'years_high_storage', 'years_above_20pct',
-                     'years_low_carryover', 'years_trenton_reliable']
-    for metric in count_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
-
-    print(f"\n  Other Metrics Summary:")
+    print(f"\n  Annual Metrics Summary:")
     print(f"  {'='*60}")
-    other_metrics = ['pct_days_nyc_diversion_shortage', 'max_consecutive_drought_days',
-                     'mean_sept1_storage_pct', 'mean_annual_nyc_contribution_mg']
-    for metric in other_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            if 'pct' in metric or 'storage' in metric:
-                print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
+    print(f"  Total rows: {len(annual_df)}")
+    n_real = annual_df['realization_id'].nunique()
+    n_wy = annual_df['water_year'].nunique()
+    print(f"  Realizations: {n_real}, Water years: {n_wy}")
+
+    # Focus on period='all' for summary
+    df_all = annual_df[annual_df['period'] == 'all']
+
+    # Reliability metrics (mean across water years per realization, then quantiles)
+    print(f"\n  Reliability (mean annual, across realizations):")
+    print(f"  {'-'*60}")
+    for loc in ['montague', 'trenton', 'nyc']:
+        col = f'{loc}_reliability'
+        if col in df_all.columns:
+            means = df_all.groupby('realization_id')[col].mean()
+            p5, p50, p95 = np.percentile(means, [5, 50, 95])
+            print(f"    {col:40s}: p5={p5:.3f}, p50={p50:.3f}, p95={p95:.3f}")
+
+    # Storage metrics
+    print(f"\n  Storage (across realizations):")
+    print(f"  {'-'*60}")
+    for col in ['nyc_min_storage_pct', 'june1_storage_pct', 'sept1_storage_pct']:
+        if col in df_all.columns:
+            if col == 'nyc_min_storage_pct':
+                vals = df_all.groupby('realization_id')[col].min()
             else:
-                print(f"    {metric:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
+                vals = df_all.groupby('realization_id')[col].mean()
+            p5, p50, p95 = np.percentile(vals.dropna(), [5, 50, 95])
+            print(f"    {col:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
 
-    print(f"\n  Drought Zone & Shortage Metrics Summary:")
+    # Shortage magnitudes
+    print(f"\n  Shortage (across realizations):")
+    print(f"  {'-'*60}")
+    for loc in ['montague', 'trenton', 'nyc']:
+        col = f'{loc}_max_consec_shortage_days'
+        if col in df_all.columns:
+            maxes = df_all.groupby('realization_id')[col].max()
+            p5, p50, p95 = np.percentile(maxes, [5, 50, 95])
+            print(f"    {col:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
+
     print(f"  {'='*60}")
-    zone_metrics = ['years_drought_emergency', 'years_drought_watch', 'years_drought_warning',
-                    'max_1day_montague_shortage_mg', 'max_3day_montague_shortage_mg', 'max_7day_montague_shortage_mg']
-    for metric in zone_metrics:
-        if metric in metrics_df.columns:
-            p5 = metrics_df[metric].quantile(0.05)
-            p50 = metrics_df[metric].quantile(0.50)
-            p95 = metrics_df[metric].quantile(0.95)
-            print(f"    {metric:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
 
 
 def print_prep_status(dataset_id):

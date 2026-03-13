@@ -99,9 +99,9 @@ def load_rank_subset_from_export(fname, realization_ids, results_sets,
                           realizations=realization_ids)
     return data
 
-def load_performance_metrics(dataset_id):
+def load_annual_metrics(dataset_id):
     """
-    Load pre-calculated performance metrics from CSV.
+    Load annual performance metrics CSV.
 
     Parameters
     ----------
@@ -110,20 +110,56 @@ def load_performance_metrics(dataset_id):
 
     Returns
     -------
-    metrics_df : pd.DataFrame
-        DataFrame with performance metrics for all realizations
+    pd.DataFrame
+        Rows: (realization_id, water_year, period).
+        Columns: 20 metrics + 3 annotation columns.
     """
     performance_metrics_dir = f"{ROOT_DIR}/pywrdrb/performance_metrics"
-    csv_file = f"{performance_metrics_dir}/{dataset_id}_performance_metrics.csv"
+    csv_file = f"{performance_metrics_dir}/{dataset_id}_annual_metrics.csv"
 
     if not os.path.exists(csv_file):
         raise FileNotFoundError(
-            f"Performance metrics not found: {csv_file}\n"
-            f"Run 04_postprocess_data.py first to calculate metrics!"
+            f"Annual metrics not found: {csv_file}\n"
+            f"Run 06_calculate_performance_metrics.py first!"
         )
 
-    metrics_df = pd.read_csv(csv_file, index_col='realization_id')
-    return metrics_df
+    return pd.read_csv(csv_file)
+
+
+def load_hashimoto_metrics(dataset_id):
+    """
+    Load Hashimoto simulation-level metrics CSV.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per realization with reliability/resiliency for Montague and Trenton.
+    """
+    csv_file = f"{ROOT_DIR}/pywrdrb/performance_metrics/{dataset_id}_hashimoto_metrics.csv"
+    if not os.path.exists(csv_file):
+        raise FileNotFoundError(
+            f"Hashimoto metrics not found: {csv_file}\n"
+            f"Run 06_calculate_performance_metrics.py first!"
+        )
+    return pd.read_csv(csv_file)
+
+
+def load_hashimoto_events(dataset_id):
+    """
+    Load Hashimoto per-shortage-event CSV.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per shortage event per location per realization.
+    """
+    csv_file = f"{ROOT_DIR}/pywrdrb/performance_metrics/{dataset_id}_hashimoto_shortage_events.csv"
+    if not os.path.exists(csv_file):
+        raise FileNotFoundError(
+            f"Hashimoto events not found: {csv_file}\n"
+            f"Run 06_calculate_performance_metrics.py first!"
+        )
+    return pd.read_csv(csv_file)
 
 
 def load_baseline_historical_flow(gage_flow=True, 
@@ -805,8 +841,8 @@ def load_annual_satisficing(dataset_id, ssi_window):
     -------
     pd.DataFrame
         Annual satisficing DataFrame with columns: year, realization,
-        satisficing, min_storage_pct, max_violation_days, nyc_inflow,
-        montague_contrib, n_droughts_in_year.
+        satisficing, nyc_min_storage_pct, montague_max_consec_shortage_days,
+        nyc_inflow, montague_contrib, n_droughts_in_year.
     """
     data_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
     fname = f"{data_dir}/{dataset_id}_ssi{ssi_window}_annual_satisficing.csv"
@@ -894,7 +930,7 @@ def load_contribution_metrics(dataset_id):
     -------
     pd.DataFrame
         Contribution metrics with columns:
-        - realization_id, year, min_zone, min_zone_date, min_storage_pct
+        - realization_id, year, annual_max_zone, annual_max_zone_date, annual_min_storage_pct
         - contribution_total_{W}d, contribution_ratio_{W}d, inflow_total_{W}d,
           demand_satisfaction_{W}d, worst_1mo_demand_sat_{W}d
           for W in [30, 60, 90, 120, 150, 180, 270]
@@ -909,12 +945,12 @@ def load_contribution_metrics(dataset_id):
     if not os.path.exists(fname):
         raise FileNotFoundError(
             f"Pre-computed metrics not found: {fname}\n"
-            "Run postprocessing (04_postprocess_data_mpi.py) to generate these files."
+            "Run 06_calculate_performance_metrics.py to generate these files."
         )
 
     df = pd.read_csv(fname)
 
-    if 'min_zone_date' in df.columns:
-        df['min_zone_date'] = pd.to_datetime(df['min_zone_date'])
+    if 'annual_max_zone_date' in df.columns:
+        df['annual_max_zone_date'] = pd.to_datetime(df['annual_max_zone_date'])
 
     return df

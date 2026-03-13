@@ -15,402 +15,424 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.metrics.shortfall import add_trenton_equiv_flow, get_flow_and_target_values, calculate_shortage_series
+from methods.metrics.shortfall import (
+    add_trenton_equiv_flow,
+    get_flow_and_target_values,
+    calculate_shortage_series,
+    calculate_hashimoto_metrics,
+)
 from methods.zone_duration_metrics import calculate_drought_zone_events
 from methods.config import (
     N_REALIZATIONS_PER_ENSEMBLE_SET,
     N_ENSEMBLE_SETS,
     NYC_TOTAL_CAPACITY,
+    NYC_RESERVOIRS,
     get_ensemble_set_spec
 )
-from methods.print_summary import print_performance_metrics_summary
 
 
-def calculate_performance_metrics(data, dataset_id, realizations):
+def assign_water_year(index):
     """
-    Calculate comprehensive performance metrics for all realizations.
+    Assign water year labels to a datetime index.
 
-    This function calculates metrics across multiple categories:
-    - Flow reliability (Montague, Trenton)
-    - NYC reservoir storage (levels, frequencies, extremes)
-    - Water supply reliability (diversions, shortages)
-    - Drought characteristics (frequency, duration, severity)
-    - System operations (releases, contributions, balances)
-    - Drought zone classifications (watch, warning, emergency)
+    Water year starts June 1. Dates June 1 - Dec 31 belong to that calendar
+    year's water year; dates Jan 1 - May 31 belong to the previous year's.
+
+    Example: WY2030 = June 1 2030 through May 31 2031.
+    """
+    return np.where(index.month >= 6, index.year, index.year - 1)
+
+
+def _max_consec_in_mask(series, mask):
+    """
+    Find longest consecutive run of True values in *series* within days
+    where *mask* is True.
+
+    If mask has no True values, returns 0.
+    """
+    if not mask.any():
+        return 0
+    masked = series[mask]
+    if not masked.any():
+        return 0
+    groups = (masked != masked.shift()).cumsum()
+    return int(masked.groupby(groups).sum().max())
+
+
+def _build_drought_day_mask(index, drought_events_df, realization_id):
+    """
+    Build a boolean array marking which days fall within SSI drought events.
+
+    Parameters
+    ----------
+    index : pd.DatetimeIndex
+        Full timeseries index.
+    drought_events_df : pd.DataFrame
+        Columns: start, end, realization_id.
+    realization_id : int
+        Realization to filter events for.
+
+    Returns
+    -------
+    np.ndarray of bool, same length as index
+    """
+    mask = np.zeros(len(index), dtype=bool)
+    r_events = drought_events_df[drought_events_df['realization_id'] == realization_id]
+
+    for _, event in r_events.iterrows():
+        start = pd.Timestamp(event['start'])
+        end = pd.Timestamp(event['end'])
+        mask |= (index >= start) & (index <= end)
+
+    return mask
+
+
+def _compute_period_metrics(shortage_dict, target_dict, nyc_storage_pct,
+                            nyc_contribution, nyc_zone_level,
+                            period_mask, period_name, water_year):
+    """
+    Compute all 20 annual metrics for a single (water_year, period) slice.
+
+    Parameters
+    ----------
+    shortage_dict : dict
+        {loc: pd.Series} for 'montague', 'trenton', 'nyc'.
+    target_dict : dict
+        {loc: pd.Series} for 'montague', 'trenton', 'nyc'.
+    nyc_storage_pct : pd.Series
+        Daily NYC combined storage as % of capacity.
+    nyc_contribution : pd.Series
+        Daily NYC releases for downstream targets (MG).
+    nyc_zone_level : pd.Series or None
+        Daily NYC drought zone level.
+    period_mask : np.ndarray of bool
+        Which days within the water year belong to this period.
+    period_name : str
+        'all', 'drought', or 'nondrought'.
+    water_year : int
+        Water year label.
+
+    Returns
+    -------
+    dict with all metric values for this period.
+    """
+    ndays = int(period_mask.sum())
+
+    record = {
+        'period': period_name,
+        'ndays_in_period': ndays,
+    }
+
+    # Per-location shortage metrics (4 x 3 locations = 12 columns)
+    for loc in ['montague', 'trenton', 'nyc']:
+        shortage = shortage_dict[loc]
+        target = target_dict[loc]
+
+        if ndays == 0:
+            record[f'{loc}_reliability'] = np.nan
+            record[f'{loc}_shortage_mg'] = np.nan
+            record[f'{loc}_max_consec_shortage_days'] = np.nan
+            record[f'{loc}_max_1day_shortage_mg'] = np.nan
+            continue
+
+        period_shortage = shortage[period_mask]
+        period_target = target[period_mask]
+
+        shortage_sum = period_shortage.sum()
+        target_sum = period_target.sum()
+
+        if target_sum > 0:
+            reliability = float(np.clip(1.0 - shortage_sum / target_sum, 0.0, 1.0))
+        else:
+            reliability = 1.0
+
+        record[f'{loc}_reliability'] = reliability
+        record[f'{loc}_shortage_mg'] = float(shortage_sum)
+        record[f'{loc}_max_1day_shortage_mg'] = float(period_shortage.max()) if len(period_shortage) > 0 else 0.0
+
+        # Max consecutive shortage days within period
+        shortage_positive = period_shortage > 0
+        if shortage_positive.any():
+            groups = (shortage_positive != shortage_positive.shift()).cumsum()
+            max_consec = int(shortage_positive.groupby(groups).sum().max())
+        else:
+            max_consec = 0
+        record[f'{loc}_max_consec_shortage_days'] = max_consec
+
+    # NYC storage metrics (5 columns)
+    if ndays == 0:
+        record['nyc_min_storage_pct'] = np.nan
+        record['ndays_storage_below_20pct'] = np.nan
+        record['ndays_storage_below_30pct'] = np.nan
+    else:
+        period_storage = nyc_storage_pct[period_mask]
+        record['nyc_min_storage_pct'] = float(period_storage.min())
+        record['ndays_storage_below_20pct'] = int((period_storage < 20).sum())
+        record['ndays_storage_below_30pct'] = int((period_storage < 30).sum())
+
+    # Point-in-time storage (only for period='all')
+    if period_name == 'all':
+        june1 = nyc_storage_pct[(nyc_storage_pct.index.month == 6) & (nyc_storage_pct.index.day == 1)]
+        sept1 = nyc_storage_pct[(nyc_storage_pct.index.month == 9) & (nyc_storage_pct.index.day == 1)]
+        record['june1_storage_pct'] = float(june1.iloc[0]) if len(june1) > 0 else np.nan
+        record['sept1_storage_pct'] = float(sept1.iloc[0]) if len(sept1) > 0 else np.nan
+    else:
+        record['june1_storage_pct'] = np.nan
+        record['sept1_storage_pct'] = np.nan
+
+    # System metrics (3 columns)
+    if ndays == 0:
+        record['nyc_contribution_mg'] = np.nan
+        record['ndays_combined_stress'] = np.nan
+        record['max_zone'] = np.nan
+    else:
+        period_contribution = nyc_contribution[period_mask]
+        record['nyc_contribution_mg'] = float(period_contribution.sum())
+
+        montague_shortage_positive = shortage_dict['montague'][period_mask] > 0
+        nyc_shortage_positive = shortage_dict['nyc'][period_mask] > 0
+        record['ndays_combined_stress'] = int((montague_shortage_positive & nyc_shortage_positive).sum())
+
+        if nyc_zone_level is not None:
+            period_zone = nyc_zone_level[period_mask]
+            record['max_zone'] = int(period_zone.max()) if len(period_zone) > 0 else np.nan
+        else:
+            record['max_zone'] = np.nan
+
+    return record
+
+
+def calculate_annual_metrics(data, dataset_id, realizations, drought_events_df):
+    """
+    Calculate annual performance metrics per water year, split by period.
+
+    Produces one row per (realization_id, water_year, period) with 20 metrics.
+    Period is one of 'all', 'drought', 'nondrought'.
 
     Parameters
     ----------
     data : pywrdrb.Data
-        Data object with shortage, mrf_target, res_storage, ibt_diversions, ibt_demands, contribution, res_level
+        Data object with shortage, mrf_target, res_storage, ibt_diversions,
+        ibt_demands, contribution, res_level.
     dataset_id : str
-        Dataset identifier
+        Dataset identifier.
     realizations : list
-        List of realization IDs
+        List of realization IDs.
+    drought_events_df : pd.DataFrame
+        SSI drought events with columns: start, end, realization_id.
+        Required — raises ValueError if None.
 
     Returns
     -------
-    metrics_df : pd.DataFrame
-        DataFrame with performance metrics for all realizations
+    pd.DataFrame
+        Columns: realization_id, water_year, period, 20 metric columns,
+        ndays_in_period, n_droughts_in_year, drought_days_in_year.
     """
-    print(f"  Calculating comprehensive performance metrics...")
-
-    metrics = {}
-    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-
-    for r in realizations:
-        if (r % 100 == 0) and (r > 0):
-            print(f"    Processed {r}/{len(realizations)} realizations...")
-
-        # =====================================================================
-        # LOAD DATA FOR THIS REALIZATION
-        # =====================================================================
-        # Flow targets and shortages
-        montague_shortage = data.shortage[dataset_id][r]['delMontague']
-        montague_target = data.mrf_target[dataset_id][r]['delMontague']
-        trenton_shortage = data.shortage[dataset_id][r]['delTrenton']
-        trenton_target = data.mrf_target[dataset_id][r]['delTrenton']
-
-        # NYC reservoir storage
-        nyc_storage = data.res_storage[dataset_id][r][nyc_reservoirs].sum(axis=1)
-        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
-
-        # NYC diversions
-        nyc_diversion_actual = data.ibt_diversions[dataset_id][r]['delivery_nyc']
-        nyc_diversion_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
-        nyc_diversion_shortage = calculate_shortage_series(
-            nyc_diversion_demand, nyc_diversion_actual,
-            min_duration=0, warmup_days=0
+    if drought_events_df is None:
+        raise ValueError(
+            "drought_events_df is required. Run SSI drought identification first."
         )
 
-        # NYC contributions to downstream targets
-        total_nyc_contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+    # Ensure datetime types
+    drought_events_df = drought_events_df.copy()
+    drought_events_df['start'] = pd.to_datetime(drought_events_df['start'])
+    drought_events_df['end'] = pd.to_datetime(drought_events_df['end'])
 
-        # NYC drought zone levels (if available)
+    print(f"  Calculating annual metrics for {len(realizations)} realizations...")
+
+    all_records = []
+    shortage_locations = ['montague', 'trenton', 'nyc']
+    # Map location names to get_flow_and_target_values node names
+    loc_to_node = {'montague': 'delMontague', 'trenton': 'delTrenton', 'nyc': 'nyc'}
+
+    for i, r in enumerate(realizations):
+        if (i > 0) and (i % 100 == 0):
+            print(f"    Processed {i}/{len(realizations)} realizations...")
+
+        # Build shortage and target series for all locations
+        shortage_dict = {}
+        target_dict = {}
+        for loc in shortage_locations:
+            node = loc_to_node[loc]
+            flow_series, target_series = get_flow_and_target_values(
+                data, node, dataset_id, r, start_date=None, end_date=None
+            )
+            shortage_series = calculate_shortage_series(
+                target_series, flow_series,
+                min_duration=0 if loc == 'nyc' else 3,
+                warmup_days=0 if loc == 'nyc' else 3,
+            )
+            shortage_dict[loc] = shortage_series
+            target_dict[loc] = target_series
+
+        # NYC storage
+        nyc_storage = data.res_storage[dataset_id][r][NYC_RESERVOIRS].sum(axis=1)
+        nyc_storage_pct = 100.0 * nyc_storage / NYC_TOTAL_CAPACITY
+
+        # NYC contribution
+        nyc_contribution = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
+
+        # NYC zone level
         nyc_zone_level = None
         if hasattr(data, 'res_level') and dataset_id in data.res_level and r in data.res_level[dataset_id]:
             nyc_zone_level = data.res_level[dataset_id][r]['nyc']
 
-        # =====================================================================
-        # CATEGORY 1: FLOW RELIABILITY METRICS
-        # =====================================================================
+        # Use a common index (storage is typically the reference)
+        common_idx = nyc_storage_pct.index
 
-        # Montague reliability
-        annual_shortage = montague_shortage.resample('YS').sum()
-        annual_target = montague_target.resample('YS').sum()
-        annual_reliability = (1 - (annual_shortage / annual_target)).clip(0, 1)
-
-        years_reliable_montague = (annual_reliability > 0.90).sum()
-        years_reliable_montague_95 = (annual_reliability > 0.95).sum()
-        years_reliable_montague_99 = (annual_reliability > 0.99).sum()
-        mean_annual_montague_reliability = annual_reliability.mean()
-        min_annual_montague_reliability = annual_reliability.min()
-
-        # Trenton reliability
-        annual_trenton_shortage = trenton_shortage.resample('YS').sum()
-        annual_trenton_target = trenton_target.resample('YS').sum()
-        trenton_reliability = (1 - (annual_trenton_shortage / annual_trenton_target)).clip(0, 1)
-
-        years_reliable_trenton = (trenton_reliability > 0.90).sum()
-        years_reliable_trenton_95 = (trenton_reliability > 0.95).sum()
-        mean_annual_trenton_reliability = trenton_reliability.mean()
-
-        # Total shortage volumes
-        total_montague_shortage_mg = montague_shortage.sum()
-        total_trenton_shortage_mg = trenton_shortage.sum()
-        mean_annual_montague_shortage_mg = montague_shortage.resample('YS').sum().mean()
-        mean_annual_trenton_shortage_mg = trenton_shortage.resample('YS').sum().mean()
-
-        # =====================================================================
-        # CATEGORY 2: NYC RESERVOIR STORAGE METRICS
-        # =====================================================================
-
-        # Critical storage thresholds throughout year
-        min_annual_storage = nyc_storage_pct.resample('YS').min()
-        years_above_30pct = (min_annual_storage > 30).sum()
-        years_below_30pct = (min_annual_storage <= 30).sum()
-        years_above_20pct = (min_annual_storage > 20).sum()
-        years_below_20pct = (min_annual_storage <= 20).sum()
-        years_above_10pct = (min_annual_storage > 10).sum()
-        years_below_10pct = (min_annual_storage <= 10).sum()
-
-        # Storage on key dates
-        june1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 6) &
-                                        (nyc_storage_pct.index.day == 1)]
-        sept1_storage = nyc_storage_pct[(nyc_storage_pct.index.month == 9) &
-                                        (nyc_storage_pct.index.day == 1)]
-
-        years_high_storage_june1 = (june1_storage >= 95).sum()
-        years_high_storage_june1_90 = (june1_storage >= 90).sum()
-        mean_june1_storage_pct = june1_storage.mean()
-        mean_sept1_storage_pct = sept1_storage.mean()
-        years_low_carryover = (sept1_storage < 50).sum()
-        years_low_carryover_40 = (sept1_storage < 40).sum()
-
-        # Overall storage statistics
-        mean_storage_pct = nyc_storage_pct.mean()
-        median_storage_pct = nyc_storage_pct.median()
-        min_storage_pct = nyc_storage_pct.min()
-        max_storage_pct = nyc_storage_pct.max()
-        pct_days_storage_below_30 = 100.0 * (nyc_storage_pct < 30).sum() / len(nyc_storage_pct)
-        pct_days_storage_below_20 = 100.0 * (nyc_storage_pct < 20).sum() / len(nyc_storage_pct)
-        
-        # Storage variability
-        std_storage_pct = nyc_storage_pct.std()
-        annual_storage_range = nyc_storage_pct.resample('YS').apply(lambda x: x.max() - x.min())
-        mean_annual_storage_range = annual_storage_range.mean()
-
-        # =====================================================================
-        # CATEGORY 3: WATER SUPPLY RELIABILITY METRICS
-        # =====================================================================
-
-        # NYC diversion performance
-        n_days_nyc_shortage = (nyc_diversion_shortage > 0).sum()
-        pct_days_nyc_diversion_shortage = 100.0 * n_days_nyc_shortage / len(nyc_diversion_shortage)
-        total_nyc_diversion_shortage_mg = nyc_diversion_shortage.sum()
-        mean_annual_nyc_diversion_shortage_mg = nyc_diversion_shortage.resample('YS').sum().mean()
-        max_daily_nyc_diversion_shortage_mg = nyc_diversion_shortage.max()
-
-        # NYC diversion reliability by year
-        annual_nyc_diversion_shortage = nyc_diversion_shortage.resample('YS').sum()
-        years_no_nyc_shortage = (annual_nyc_diversion_shortage == 0).sum()
-        years_minor_nyc_shortage = (annual_nyc_diversion_shortage <= 365).sum()  # <1 MGD avg
-
-        # =====================================================================
-        # CATEGORY 4: DROUGHT CHARACTERISTICS
-        # =====================================================================
-
-        # Montague drought events (consecutive days with shortage)
-        montague_shortage_binary = (montague_shortage > 0).astype(int)
-        drought_events = montague_shortage_binary.groupby(
-            (montague_shortage_binary != montague_shortage_binary.shift()).cumsum()
-        ).sum()
-        drought_events = drought_events[drought_events > 0]
-
-        if len(drought_events) > 0:
-            max_consecutive_drought_days = drought_events.max()
-            mean_drought_duration_days = drought_events.mean()
-            n_drought_events = len(drought_events)
-            n_major_droughts = (drought_events >= 90).sum()  # 3+ months
-            n_severe_droughts = (drought_events >= 180).sum()  # 6+ months
-        else:
-            max_consecutive_drought_days = 0
-            mean_drought_duration_days = 0
-            n_drought_events = 0
-            n_major_droughts = 0
-            n_severe_droughts = 0
-
-        # Trenton drought events
-        trenton_shortage_binary = (trenton_shortage > 0).astype(int)
-        trenton_drought_events = trenton_shortage_binary.groupby(
-            (trenton_shortage_binary != trenton_shortage_binary.shift()).cumsum()
-        ).sum()
-        trenton_drought_events = trenton_drought_events[trenton_drought_events > 0]
-
-        if len(trenton_drought_events) > 0:
-            max_consecutive_drought_days_trenton = trenton_drought_events.max()
-            n_drought_events_trenton = len(trenton_drought_events)
-        else:
-            max_consecutive_drought_days_trenton = 0
-            n_drought_events_trenton = 0
-
-        # Drought severity (maximum shortage during worst drought)
-        if len(drought_events) > 0:
-            # Find the worst drought period
-            drought_groups = (montague_shortage_binary != montague_shortage_binary.shift()).cumsum()
-            max_shortage_by_event = montague_shortage.groupby(drought_groups).max()
-            max_shortage_by_event = max_shortage_by_event[montague_shortage.groupby(drought_groups).sum() > 0]
-            worst_drought_max_daily_shortage_mg = max_shortage_by_event.max()
-        else:
-            worst_drought_max_daily_shortage_mg = 0
-
-        # Combined system stress (simultaneous NYC shortage + Montague shortage)
-        combined_stress_days = ((nyc_diversion_shortage > 0) & (montague_shortage > 0)).sum()
-        pct_days_combined_stress = 100.0 * combined_stress_days / len(nyc_diversion_shortage)
-
-        # Maximum Montague shortage metrics (1-day, 3-day, 7-day rolling means)
-        max_1day_montague_shortage_mg = montague_shortage.max()
-        max_3day_montague_shortage_mg = montague_shortage.rolling(window=3, min_periods=1).mean().max()
-        max_7day_montague_shortage_mg = montague_shortage.rolling(window=7, min_periods=1).mean().max()
-
-        # =====================================================================
-        # CATEGORY 4b: DROUGHT ZONE CLASSIFICATIONS
-        # =====================================================================
-
-        # NYC drought zone year counts (based on res_level data)
-        # Zone definitions: 6=Emergency, 5=Watch, 4=Warning, 3=Normal, 1-2=Flood
+        # Align all series to common index
+        for loc in shortage_locations:
+            shortage_dict[loc] = shortage_dict[loc].reindex(common_idx, fill_value=0)
+            target_dict[loc] = target_dict[loc].reindex(common_idx, fill_value=0)
+        nyc_contribution = nyc_contribution.reindex(common_idx, fill_value=0)
         if nyc_zone_level is not None:
-            # Get maximum zone reached in each year
-            annual_max_zone = nyc_zone_level.resample('YS').max()
+            nyc_zone_level = nyc_zone_level.reindex(common_idx, fill_value=3)
 
-            # Count years reaching each drought zone level
-            years_drought_emergency = (annual_max_zone >= 6).sum()  # Zone 6
-            years_drought_watch = (annual_max_zone >= 5).sum()  # Zone 5 or higher
-            years_drought_warning = (annual_max_zone >= 4).sum()  # Zone 4 or higher
+        # Assign water years
+        wy_labels = assign_water_year(common_idx)
 
-            # Count years reaching exactly each zone (not higher)
-            years_exactly_emergency = (annual_max_zone == 6).sum()
-            years_exactly_watch = (annual_max_zone == 5).sum()
-            years_exactly_warning = (annual_max_zone == 4).sum()
-        else:
-            years_drought_emergency = np.nan
-            years_drought_watch = np.nan
-            years_drought_warning = np.nan
-            years_exactly_emergency = np.nan
-            years_exactly_watch = np.nan
-            years_exactly_warning = np.nan
+        # Build drought day mask for this realization
+        drought_mask_full = _build_drought_day_mask(common_idx, drought_events_df, r)
 
-        # =====================================================================
-        # CATEGORY 5: NYC CONTRIBUTION TO DOWNSTREAM TARGETS
-        # =====================================================================
+        # Count droughts per water year
+        r_events = drought_events_df[drought_events_df['realization_id'] == r]
 
-        annual_nyc_contribution = total_nyc_contribution.resample('YS').sum()
-        mean_annual_nyc_contribution_mg = annual_nyc_contribution.mean()
-        max_annual_nyc_contribution_mg = annual_nyc_contribution.max()
-        min_annual_nyc_contribution_mg = annual_nyc_contribution.min()
-        std_annual_nyc_contribution_mg = annual_nyc_contribution.std()
+        # Process each water year
+        unique_wys = np.unique(wy_labels)
+        for wy in unique_wys:
+            wy_mask = wy_labels == wy
 
-        # Days with significant contributions
-        n_days_nyc_contribution = (total_nyc_contribution > 0).sum()
-        pct_days_nyc_contribution = 100.0 * n_days_nyc_contribution / len(total_nyc_contribution)
-        n_days_high_nyc_contribution = (total_nyc_contribution > 100).sum()  # >100 MGD
+            # Subset all series to this water year
+            wy_idx = common_idx[wy_mask]
+            wy_shortage = {loc: shortage_dict[loc][wy_mask] for loc in shortage_locations}
+            wy_target = {loc: target_dict[loc][wy_mask] for loc in shortage_locations}
+            wy_storage = nyc_storage_pct[wy_mask]
+            wy_contribution = nyc_contribution[wy_mask]
+            wy_zone = nyc_zone_level[wy_mask] if nyc_zone_level is not None else None
 
-        # Total NYC contribution over simulation
-        total_nyc_contribution_mg = total_nyc_contribution.sum()
+            # Drought mask within this water year
+            wy_drought_mask = drought_mask_full[wy_mask]
 
-        # =====================================================================
-        # CATEGORY 6: SYSTEM BALANCE METRICS
-        # =====================================================================
+            # Count drought events overlapping this water year
+            wy_start = wy_idx[0]
+            wy_end = wy_idx[-1]
+            n_droughts = 0
+            for _, ev in r_events.iterrows():
+                if not (ev['end'] < wy_start or ev['start'] > wy_end):
+                    n_droughts += 1
 
-        # Ratio of NYC contribution to Montague shortage
-        if total_montague_shortage_mg > 0:
-            nyc_contribution_to_shortage_ratio = total_nyc_contribution_mg / total_montague_shortage_mg
-        else:
-            nyc_contribution_to_shortage_ratio = np.nan
+            drought_days = int(wy_drought_mask.sum())
+            all_mask = np.ones(len(wy_idx), dtype=bool)
 
-        # Years with simultaneous high storage and high reliability
-        high_storage_years = (june1_storage >= 90)
-        reliable_years = (annual_reliability > 0.90)
-        years_high_storage_and_reliable = (high_storage_years.values & reliable_years.values).sum()
+            # Compute metrics for each period
+            for period_name, period_mask in [('all', all_mask),
+                                              ('drought', wy_drought_mask),
+                                              ('nondrought', ~wy_drought_mask)]:
+                record = _compute_period_metrics(
+                    wy_shortage, wy_target, wy_storage,
+                    wy_contribution, wy_zone,
+                    period_mask, period_name, wy
+                )
+                record['realization_id'] = r
+                record['water_year'] = int(wy)
+                record['n_droughts_in_year'] = n_droughts
+                record['drought_days_in_year'] = drought_days
+                all_records.append(record)
 
-        # Years with low storage OR low reliability (vulnerability)
-        low_storage_years = (min_annual_storage <= 30)
-        unreliable_years = (annual_reliability <= 0.85)
-        years_vulnerable = (low_storage_years.values | unreliable_years.values).sum()
+    metrics_df = pd.DataFrame(all_records)
 
-        # =====================================================================
-        # STORE ALL METRICS
-        # =====================================================================
-        metrics[r] = {
-            # Flow Reliability - Montague
-            'years_reliable_montague': years_reliable_montague,
-            'years_reliable_montague_95': years_reliable_montague_95,
-            'years_reliable_montague_99': years_reliable_montague_99,
-            'mean_annual_montague_reliability': mean_annual_montague_reliability,
-            'min_annual_montague_reliability': min_annual_montague_reliability,
-            'total_montague_shortage_mg': total_montague_shortage_mg,
-            'mean_annual_montague_shortage_mg': mean_annual_montague_shortage_mg,
+    # Reorder columns: index cols first, then annotations, then metrics
+    index_cols = ['realization_id', 'water_year', 'period']
+    annotation_cols = ['ndays_in_period', 'n_droughts_in_year', 'drought_days_in_year']
+    metric_cols = [c for c in metrics_df.columns if c not in index_cols + annotation_cols]
+    metrics_df = metrics_df[index_cols + annotation_cols + metric_cols]
 
-            # Flow Reliability - Trenton
-            'years_reliable_trenton': years_reliable_trenton,
-            'years_reliable_trenton_95': years_reliable_trenton_95,
-            'mean_annual_trenton_reliability': mean_annual_trenton_reliability,
-            'total_trenton_shortage_mg': total_trenton_shortage_mg,
-            'mean_annual_trenton_shortage_mg': mean_annual_trenton_shortage_mg,
-
-            # NYC Storage - Critical Thresholds
-            'years_above_30pct': years_above_30pct,
-            'years_above_20pct': years_above_20pct,
-            'years_above_10pct': years_above_10pct,
-            'years_below_30pct': years_below_30pct,
-            'years_below_20pct': years_below_20pct,
-            'years_below_10pct': years_below_10pct,
-
-            # NYC Storage - Key Dates
-            'years_high_storage_june1': years_high_storage_june1,
-            'years_high_storage_june1_90': years_high_storage_june1_90,
-            'mean_june1_storage_pct': mean_june1_storage_pct,
-            'mean_sept1_storage_pct': mean_sept1_storage_pct,
-            'years_low_carryover': years_low_carryover,
-            'years_low_carryover_40': years_low_carryover_40,
-
-            # NYC Storage - Statistics
-            'mean_storage_pct': mean_storage_pct,
-            'median_storage_pct': median_storage_pct,
-            'min_storage_pct': min_storage_pct,
-            'max_storage_pct': max_storage_pct,
-            'std_storage_pct': std_storage_pct,
-            'pct_days_storage_below_30': pct_days_storage_below_30,
-            'pct_days_storage_below_20': pct_days_storage_below_20,
-            'mean_annual_storage_range': mean_annual_storage_range,
-
-            # Water Supply Reliability - NYC
-            'pct_days_nyc_diversion_shortage': pct_days_nyc_diversion_shortage,
-            'total_nyc_diversion_shortage_mg': total_nyc_diversion_shortage_mg,
-            'mean_annual_nyc_diversion_shortage_mg': mean_annual_nyc_diversion_shortage_mg,
-            'max_daily_nyc_diversion_shortage_mg': max_daily_nyc_diversion_shortage_mg,
-            'years_no_nyc_shortage': years_no_nyc_shortage,
-            'years_minor_nyc_shortage': years_minor_nyc_shortage,
-
-            # Drought Characteristics - Montague
-            'max_consecutive_drought_days': max_consecutive_drought_days,
-            'mean_drought_duration_days': mean_drought_duration_days,
-            'n_drought_events': n_drought_events,
-            'n_major_droughts': n_major_droughts,
-            'n_severe_droughts': n_severe_droughts,
-            'worst_drought_max_daily_shortage_mg': worst_drought_max_daily_shortage_mg,
-
-            # Drought Characteristics - Trenton
-            'max_consecutive_drought_days_trenton': max_consecutive_drought_days_trenton,
-            'n_drought_events_trenton': n_drought_events_trenton,
-
-            # System Stress
-            'pct_days_combined_stress': pct_days_combined_stress,
-
-            # Maximum Montague Shortage (rolling means)
-            'max_1day_montague_shortage_mg': max_1day_montague_shortage_mg,
-            'max_3day_montague_shortage_mg': max_3day_montague_shortage_mg,
-            'max_7day_montague_shortage_mg': max_7day_montague_shortage_mg,
-
-            # Drought Zone Classifications
-            'years_drought_emergency': years_drought_emergency,
-            'years_drought_watch': years_drought_watch,
-            'years_drought_warning': years_drought_warning,
-            'years_exactly_emergency': years_exactly_emergency,
-            'years_exactly_watch': years_exactly_watch,
-            'years_exactly_warning': years_exactly_warning,
-
-            # NYC Contributions
-            'mean_annual_nyc_contribution_mg': mean_annual_nyc_contribution_mg,
-            'max_annual_nyc_contribution_mg': max_annual_nyc_contribution_mg,
-            'min_annual_nyc_contribution_mg': min_annual_nyc_contribution_mg,
-            'std_annual_nyc_contribution_mg': std_annual_nyc_contribution_mg,
-            'total_nyc_contribution_mg': total_nyc_contribution_mg,
-            'pct_days_nyc_contribution': pct_days_nyc_contribution,
-            'n_days_high_nyc_contribution': n_days_high_nyc_contribution,
-
-            # System Balance
-            'nyc_contribution_to_shortage_ratio': nyc_contribution_to_shortage_ratio,
-            'years_high_storage_and_reliable': years_high_storage_and_reliable,
-            'years_vulnerable': years_vulnerable,
-
-            # Legacy metric names (for backward compatibility)
-            'years_reliable': years_reliable_montague,
-            'years_high_storage': years_high_storage_june1,
-            'years_trenton_reliable': years_reliable_trenton,
-        }
-
-    # Convert to DataFrame
-    metrics_df = pd.DataFrame(metrics).T
-    metrics_df.index.name = 'realization_id'
-
-    print(f"  Calculated {len(metrics_df)} rows × {len(metrics_df.columns)} performance metrics")
-
+    print(f"  Calculated {len(metrics_df)} rows × {len(metrics_df.columns)} annual metrics")
     return metrics_df
 
 
-def classify_years_by_min_zone(res_level_df):
+def calculate_hashimoto_all(data, dataset_id, realizations):
     """
-    Classify each year by the minimum drought zone reached.
+    Calculate Hashimoto (1982) RRV metrics for all realizations.
+
+    Returns two DataFrames:
+    1. Simulation-level metrics (reliability, resiliency) per realization
+    2. Per-event detail (start, end, duration, severity, intensity, vulnerability)
+
+    Parameters
+    ----------
+    data : pywrdrb.Data
+        Data object with major_flow and mrf_target.
+    dataset_id : str
+        Dataset identifier.
+    realizations : list
+        List of realization IDs.
+
+    Returns
+    -------
+    hashimoto_metrics_df : pd.DataFrame
+        One row per realization with reliability and resiliency for
+        Montague and Trenton.
+    hashimoto_events_df : pd.DataFrame
+        One row per shortage event per location per realization.
+    """
+    print(f"  Calculating Hashimoto RRV metrics for {len(realizations)} realizations...")
+
+    sim_records = []
+    event_records = []
+
+    loc_config = {
+        'montague': {'flow_col': 'delMontague', 'target_node': 'delMontague'},
+        'trenton': {'flow_col': 'delTrenton_equiv', 'target_node': 'delTrenton'},
+    }
+
+    for i, r in enumerate(realizations):
+        if (i > 0) and (i % 100 == 0):
+            print(f"    Processed {i}/{len(realizations)} realizations...")
+
+        sim_record = {'realization_id': r}
+
+        for loc, config in loc_config.items():
+            flows = data.major_flow[dataset_id][r][config['flow_col']]
+            thresholds = data.mrf_target[dataset_id][r][config['target_node']]
+
+            result = calculate_hashimoto_metrics(
+                flows, thresholds,
+                shortfall_break_length=7,
+            )
+
+            sim_record[f'hashimoto_reliability_{loc}'] = result['reliability']
+            sim_record[f'hashimoto_resiliency_{loc}'] = result['resiliency']
+
+            # Collect per-event detail
+            events_df = result['events']
+            if len(events_df) > 0:
+                for _, ev in events_df.iterrows():
+                    event_records.append({
+                        'realization_id': r,
+                        'location': loc,
+                        'start': ev['start'].isoformat() if hasattr(ev['start'], 'isoformat') else str(ev['start']),
+                        'end': ev['end'].isoformat() if hasattr(ev['end'], 'isoformat') else str(ev['end']),
+                        'duration_days': int(ev['duration']),
+                        'severity_mg': float(ev['severity']),
+                        'intensity_mgd': float(ev['intensity']),
+                        'vulnerability_mgd': float(ev['vulnerability']),
+                    })
+
+        sim_records.append(sim_record)
+
+    hashimoto_metrics_df = pd.DataFrame(sim_records)
+    hashimoto_events_df = pd.DataFrame(event_records)
+
+    print(f"  Hashimoto: {len(hashimoto_metrics_df)} realizations, "
+          f"{len(hashimoto_events_df)} shortage events")
+
+    return hashimoto_metrics_df, hashimoto_events_df
+
+
+def classify_years_by_max_zone(res_level_df):
+    """
+    Classify each year by the maximum drought zone reached.
 
     Parameters
     ----------
@@ -420,7 +442,7 @@ def classify_years_by_min_zone(res_level_df):
     Returns
     -------
     year_classifications : dict
-        Dictionary mapping year -> {'min_zone': int, 'min_zone_date': pd.Timestamp}
+        Dictionary mapping year -> {'max_zone': int, 'max_zone_date': pd.Timestamp}
     """
     nyc = res_level_df['nyc']
     years = nyc.index.year
@@ -430,8 +452,8 @@ def classify_years_by_min_zone(res_level_df):
     max_zone_date_per_year = nyc.groupby(years).idxmax()
 
     return {
-        year: {'min_zone': max_zone_per_year[year],
-               'min_zone_date': max_zone_date_per_year[year]}
+        year: {'max_zone': max_zone_per_year[year],
+               'max_zone_date': max_zone_date_per_year[year]}
         for year in max_zone_per_year.index
     }
 
@@ -485,23 +507,23 @@ def _contribution_metrics_for_realization(args):
     records = []
 
     for year in max_zone_per_year.index:
-        min_zone = max_zone_per_year[year]
-        min_zone_date = max_zone_date_per_year[year]
-        min_storage = min_storage_per_year[year]
+        annual_max_zone = max_zone_per_year[year]
+        annual_max_zone_date = max_zone_date_per_year[year]
+        annual_min_storage = min_storage_per_year[year]
 
         record = {
             'realization_id': r,
             'year': year,
-            'min_zone': min_zone,
-            'min_zone_date': min_zone_date.isoformat(),
-            'min_storage_pct': min_storage
+            'annual_max_zone': annual_max_zone,
+            'annual_max_zone_date': annual_max_zone_date.isoformat(),
+            'annual_min_storage_pct': annual_min_storage
         }
 
-        # Find the position of min_zone_date in the index
+        # Find the position of annual_max_zone_date in the index
         # Use searchsorted for O(log n) lookup
-        end_pos = idx.searchsorted(min_zone_date, side='right') - 1
+        end_pos = idx.searchsorted(annual_max_zone_date, side='right') - 1
         if end_pos < 0:
-            # min_zone_date is before the start of the timeseries
+            # annual_max_zone_date is before the start of the timeseries
             for W in window_days:
                 record.update({
                     f'contribution_total_{W}d': np.nan,
@@ -515,7 +537,7 @@ def _contribution_metrics_for_realization(args):
 
         # Compute metrics for each window using cumsum differences
         for W in window_days:
-            start_date = min_zone_date - pd.Timedelta(days=W)
+            start_date = annual_max_zone_date - pd.Timedelta(days=W)
             start_pos = idx.searchsorted(start_date, side='left')
 
             # Cumsum-based window sums: sum[start:end+1] = cumsum[end] - cumsum[start-1]
@@ -584,7 +606,7 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     -------
     metrics_df : pd.DataFrame
         DataFrame with columns:
-        - realization_id, year, min_zone, min_zone_date, min_storage_pct
+        - realization_id, year, annual_max_zone, annual_max_zone_date, annual_min_storage_pct
         - For each window W in window_days:
           - contribution_total_{W}d: NYC→Montague contributions sum (MG)
           - contribution_ratio_{W}d: (contribution/inflow) × 100 (%)
@@ -626,26 +648,23 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     return metrics_df
 
 
-def save_performance_metrics(metrics_df, dataset_id, output_dir):
+def save_metrics_csv(df, dataset_id, suffix, output_dir):
     """
-    Save performance metrics to CSV and print summary statistics.
+    Save a metrics DataFrame to CSV.
 
     Parameters
     ----------
-    metrics_df : pd.DataFrame
-        Performance metrics
+    df : pd.DataFrame
     dataset_id : str
-        Dataset identifier
+    suffix : str
+        e.g. 'annual_metrics', 'hashimoto_metrics'
     output_dir : str
-        Output directory path
     """
     os.makedirs(output_dir, exist_ok=True)
-    fname = f"{output_dir}/{dataset_id}_performance_metrics.csv"
-    metrics_df.to_csv(fname)
-    print(f"  Saved performance metrics: {fname}")
-
-    # Print summary using centralized function
-    print_performance_metrics_summary(metrics_df)
+    fname = f"{output_dir}/{dataset_id}_{suffix}.csv"
+    df.to_csv(fname, index=False)
+    print(f"  Saved: {fname} ({len(df)} rows)")
+    return fname
 
 
 def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):
@@ -699,29 +718,6 @@ def calculate_and_save_zone_duration_events(data, dataset_id, realizations, outp
     return events_df
 
 
-def calculate_and_save_performance_metrics(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):
-    """
-    Calculate performance metrics and save to CSV (wrapper function).
-
-    Parameters
-    ----------
-    data : pywrdrb.Data
-        Data object with shortage, mrf_target, res_storage, ibt_diversions, ibt_demands, contribution
-    dataset_id : str
-        Dataset identifier
-    realizations : list
-        List of realization IDs
-    output_dir : str
-        Output directory path
-
-    Returns
-    -------
-    metrics_df : pd.DataFrame
-        DataFrame with performance metrics for all realizations
-    """
-    metrics_df = calculate_performance_metrics(data, dataset_id, realizations)
-    save_performance_metrics(metrics_df, dataset_id, output_dir)
-    return metrics_df
 
 
 def _compute_shortage(data, dataset_id):

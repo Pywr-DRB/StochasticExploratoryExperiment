@@ -75,7 +75,7 @@ def calculate_contribution_ratio_metrics(data, dataset_id, n_days=90):
     Returns
     -------
     pd.DataFrame
-        Columns: year, realization, min_storage_pct, contribution_ratio,
+        Columns: year, realization, annual_min_storage_pct, contribution_ratio,
                  min_storage_date, nyc_inflow_sum, montague_contrib_sum
     """
 
@@ -155,7 +155,7 @@ def calculate_contribution_ratio_metrics(data, dataset_id, n_days=90):
                 results.append({
                     'year': year,
                     'realization': r,
-                    'min_storage_pct': min_storage_value,
+                    'annual_min_storage_pct': min_storage_value,
                     'contribution_ratio': contrib_ratio,
                     'min_storage_date': min_storage_date,
                     'nyc_inflow_sum': inflow_sum,
@@ -204,14 +204,14 @@ def plot_contribution_ratio_scatter(df, dataset_id, n_days=90, ax=None, show_sta
         fig = ax.get_figure()
 
     # Remove NaN values
-    df_clean = df.dropna(subset=['contribution_ratio', 'min_storage_pct'])
+    df_clean = df.dropna(subset=['contribution_ratio', 'annual_min_storage_pct'])
 
     # Create scatter plot
     color = DATASET_COLORS.get(dataset_id, 'steelblue')
 
     ax.scatter(
         df_clean['contribution_ratio'],
-        df_clean['min_storage_pct'],
+        df_clean['annual_min_storage_pct'],
         alpha=0.3,
         s=20,
         color=color,
@@ -221,7 +221,7 @@ def plot_contribution_ratio_scatter(df, dataset_id, n_days=90, ax=None, show_sta
     # Calculate and display statistics
     if show_stats and len(df_clean) > 0:
         # Pearson correlation
-        corr = df_clean[['contribution_ratio', 'min_storage_pct']].corr().iloc[0, 1]
+        corr = df_clean[['contribution_ratio', 'annual_min_storage_pct']].corr().iloc[0, 1]
 
         # Add text box with statistics
         stats_text = f"n = {len(df_clean):,}\nr = {corr:.3f}"
@@ -232,7 +232,7 @@ def plot_contribution_ratio_scatter(df, dataset_id, n_days=90, ax=None, show_sta
                 fontsize=10)
 
         # Add trend line
-        z = np.polyfit(df_clean['contribution_ratio'], df_clean['min_storage_pct'], 1)
+        z = np.polyfit(df_clean['contribution_ratio'], df_clean['annual_min_storage_pct'], 1)
         p = np.poly1d(z)
         x_trend = np.linspace(df_clean['contribution_ratio'].min(),
                              df_clean['contribution_ratio'].max(), 100)
@@ -359,9 +359,9 @@ def find_optimal_n_days(data, dataset_id, n_range=(30, 180, 10)):
         df = calculate_contribution_ratio_metrics(data, dataset_id, n_days=n)
 
         if len(df) > 10:  # Need minimum sample size
-            df_clean = df.dropna(subset=['contribution_ratio', 'min_storage_pct'])
+            df_clean = df.dropna(subset=['contribution_ratio', 'annual_min_storage_pct'])
             if len(df_clean) > 10:
-                corr = df_clean[['contribution_ratio', 'min_storage_pct']].corr().iloc[0, 1]
+                corr = df_clean[['contribution_ratio', 'annual_min_storage_pct']].corr().iloc[0, 1]
                 correlations[n] = corr
                 print(f"r = {corr:.4f}")
             else:
@@ -496,7 +496,7 @@ def main():
                 print("  Optimizing window using pre-computed metrics (fast)...")
                 result = find_optimal_window_for_correlation(
                     dataset_id,
-                    target_metric='min_storage_pct',
+                    target_metric='annual_min_storage_pct',
                     source_metric='contribution_ratio',
                     window_range=tuple(args.n_range)
                 )

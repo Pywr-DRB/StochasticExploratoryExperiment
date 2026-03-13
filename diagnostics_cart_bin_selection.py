@@ -58,7 +58,7 @@ AXIS_METRICS = [
     'total_nyc_contribution_mg',
     'contribution_ratio',
     'max_consec_montague_days',
-    'min_storage_pct',
+    'event_min_storage_pct',
     'total_montague_shortage_mg',
     'nyc_diversion_sat_ratio',
 ]

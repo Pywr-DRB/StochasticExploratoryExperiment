@@ -40,7 +40,7 @@ def get_metrics_for_window(df, window_days, metrics=None):
             f"Note: 3 months = 90 days, 6 months = 180 days, 9 months = 270 days"
         )
 
-    base_cols = ['realization_id', 'year', 'min_zone', 'min_zone_date', 'min_storage_pct']
+    base_cols = ['realization_id', 'year', 'annual_max_zone', 'annual_max_zone_date', 'annual_min_storage_pct']
 
     if metrics is None:
         metrics = ['contribution_total', 'contribution_ratio', 'inflow_total',
@@ -82,12 +82,12 @@ def categorize_by_zone(df, zone_categories=None):
 
     categorized = {}
     for category, zones in zone_categories.items():
-        categorized[category] = df[df['min_zone'].isin(zones)].copy()
+        categorized[category] = df[df['annual_max_zone'].isin(zones)].copy()
 
     return categorized
 
 
-def find_optimal_window_for_correlation(dataset_id, target_metric='min_storage_pct',
+def find_optimal_window_for_correlation(dataset_id, target_metric='annual_min_storage_pct',
                                        source_metric='contribution_ratio',
                                        window_range=(30, 180, 10)):
     """
@@ -98,7 +98,7 @@ def find_optimal_window_for_correlation(dataset_id, target_metric='min_storage_p
     dataset_id : str
         Dataset identifier
     target_metric : str
-        Target metric for correlation (default: 'min_storage_pct')
+        Target metric for correlation (default: 'annual_min_storage_pct')
     source_metric : str
         Source metric for correlation (default: 'contribution_ratio')
     window_range : tuple of (min, max, step)

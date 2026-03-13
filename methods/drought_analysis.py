@@ -191,8 +191,8 @@ def calculate_statistical_significance(drought_results, non_drought_results):
 
     # Mann-Whitney U test for storage levels
     u_stat_storage, p_value_storage = mannwhitneyu(
-        drought_results['min_storage_pct'],
-        non_drought_results['min_storage_pct'],
+        drought_results['nyc_min_storage_pct'],
+        non_drought_results['nyc_min_storage_pct'],
         alternative='two-sided'
     )
     results['mannwhitney_storage'] = {'u_statistic': u_stat_storage, 'p_value': p_value_storage}

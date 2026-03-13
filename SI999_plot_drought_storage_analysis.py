@@ -129,13 +129,13 @@ def analyze_drought_storage(droughts, storage_data):
     Returns:
     --------
     pd.DataFrame
-        Droughts DataFrame with added 'min_storage_pct' column
+        Droughts DataFrame with added 'event_min_storage_pct' column
     """
     print("\n  Analyzing minimum storage for each drought event...")
 
     # Add column for minimum storage
     droughts = droughts.copy()
-    droughts['min_storage_pct'] = np.nan
+    droughts['event_min_storage_pct'] = np.nan
 
     # Group by realization for efficiency
     grouped = droughts.groupby('realization_id')
@@ -160,11 +160,11 @@ def analyze_drought_storage(droughts, storage_data):
                 drought['start'],
                 drought['end']
             )
-            droughts.loc[idx, 'min_storage_pct'] = min_storage
+            droughts.loc[idx, 'event_min_storage_pct'] = min_storage
 
     # Remove droughts where we couldn't find storage data
     n_before = len(droughts)
-    droughts = droughts.dropna(subset=['min_storage_pct'])
+    droughts = droughts.dropna(subset=['event_min_storage_pct'])
     n_after = len(droughts)
 
     if n_before > n_after:
@@ -181,7 +181,7 @@ def create_storage_vs_metric_plots(droughts, dataset_id, ssi_window, metrics=['s
     Parameters:
     -----------
     droughts : pd.DataFrame
-        Drought events with min_storage_pct column
+        Drought events with event_min_storage_pct column
     dataset_id : str
         Dataset identifier
     ssi_window : int
@@ -214,7 +214,7 @@ def create_storage_vs_metric_plots(droughts, dataset_id, ssi_window, metrics=['s
         # Create scatter plot
         ax.scatter(
             droughts[metric],
-            droughts['min_storage_pct'],
+            droughts['event_min_storage_pct'],
             alpha=0.4,
             s=20,
             c=color,
@@ -223,10 +223,10 @@ def create_storage_vs_metric_plots(droughts, dataset_id, ssi_window, metrics=['s
         )
 
         # Calculate correlation
-        corr = droughts[metric].corr(droughts['min_storage_pct'])
+        corr = droughts[metric].corr(droughts['event_min_storage_pct'])
 
         # Add trend line
-        z = np.polyfit(droughts[metric], droughts['min_storage_pct'], 1)
+        z = np.polyfit(droughts[metric], droughts['event_min_storage_pct'], 1)
         p = np.poly1d(z)
         x_line = np.array([droughts[metric].min(), droughts[metric].max()])
         ax.plot(x_line, p(x_line), 'r--', linewidth=2, alpha=0.8, label=f'r = {corr:.3f}')
@@ -262,7 +262,7 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
     Parameters:
     -----------
     droughts : pd.DataFrame
-        Drought events with min_storage_pct column
+        Drought events with event_min_storage_pct column
     dataset_id : str
         Dataset identifier
     ssi_window : int
@@ -282,12 +282,12 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
 
     # Plot 1: Storage vs Severity
     ax1 = fig.add_subplot(gs[0, 0])
-    ax1.scatter(droughts['severity'], droughts['min_storage_pct'],
+    ax1.scatter(droughts['severity'], droughts['event_min_storage_pct'],
                 alpha=0.4, s=20, c=color, edgecolors='none', rasterized=True)
-    z = np.polyfit(droughts['severity'], droughts['min_storage_pct'], 1)
+    z = np.polyfit(droughts['severity'], droughts['event_min_storage_pct'], 1)
     p = np.poly1d(z)
     x_line = np.linspace(droughts['severity'].min(), droughts['severity'].max(), 100)
-    corr = droughts['severity'].corr(droughts['min_storage_pct'])
+    corr = droughts['severity'].corr(droughts['event_min_storage_pct'])
     ax1.plot(x_line, p(x_line), 'r--', linewidth=2, alpha=0.8)
     ax1.set_xlabel('Drought Severity (min SSI)', fontsize=11, fontweight='bold')
     ax1.set_ylabel('Minimum NYC Storage (%)', fontsize=11, fontweight='bold')
@@ -297,12 +297,12 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
 
     # Plot 2: Storage vs Magnitude
     ax2 = fig.add_subplot(gs[0, 1])
-    ax2.scatter(droughts['magnitude'], droughts['min_storage_pct'],
+    ax2.scatter(droughts['magnitude'], droughts['event_min_storage_pct'],
                 alpha=0.4, s=20, c=color, edgecolors='none', rasterized=True)
-    z = np.polyfit(droughts['magnitude'], droughts['min_storage_pct'], 1)
+    z = np.polyfit(droughts['magnitude'], droughts['event_min_storage_pct'], 1)
     p = np.poly1d(z)
     x_line = np.linspace(droughts['magnitude'].min(), droughts['magnitude'].max(), 100)
-    corr = droughts['magnitude'].corr(droughts['min_storage_pct'])
+    corr = droughts['magnitude'].corr(droughts['event_min_storage_pct'])
     ax2.plot(x_line, p(x_line), 'r--', linewidth=2, alpha=0.8)
     ax2.set_xlabel('Drought Magnitude (cumulative deficit)', fontsize=11, fontweight='bold')
     ax2.set_ylabel('Minimum NYC Storage (%)', fontsize=11, fontweight='bold')
@@ -312,12 +312,12 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
 
     # Plot 3: Storage vs Duration
     ax3 = fig.add_subplot(gs[0, 2])
-    ax3.scatter(droughts['duration'], droughts['min_storage_pct'],
+    ax3.scatter(droughts['duration'], droughts['event_min_storage_pct'],
                 alpha=0.4, s=20, c=color, edgecolors='none', rasterized=True)
-    z = np.polyfit(droughts['duration'], droughts['min_storage_pct'], 1)
+    z = np.polyfit(droughts['duration'], droughts['event_min_storage_pct'], 1)
     p = np.poly1d(z)
     x_line = np.linspace(droughts['duration'].min(), droughts['duration'].max(), 100)
-    corr = droughts['duration'].corr(droughts['min_storage_pct'])
+    corr = droughts['duration'].corr(droughts['event_min_storage_pct'])
     ax3.plot(x_line, p(x_line), 'r--', linewidth=2, alpha=0.8)
     ax3.set_xlabel('Drought Duration (months)', fontsize=11, fontweight='bold')
     ax3.set_ylabel('Minimum NYC Storage (%)', fontsize=11, fontweight='bold')
@@ -327,9 +327,9 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
 
     # Plot 4: Distribution of minimum storage
     ax4 = fig.add_subplot(gs[1, 0])
-    ax4.hist(droughts['min_storage_pct'], bins=50, color=color, alpha=0.7, edgecolor='black')
-    ax4.axvline(droughts['min_storage_pct'].median(), color='red', linestyle='--',
-                linewidth=2, label=f"Median: {droughts['min_storage_pct'].median():.1f}%")
+    ax4.hist(droughts['event_min_storage_pct'], bins=50, color=color, alpha=0.7, edgecolor='black')
+    ax4.axvline(droughts['event_min_storage_pct'].median(), color='red', linestyle='--',
+                linewidth=2, label=f"Median: {droughts['event_min_storage_pct'].median():.1f}%")
     ax4.set_xlabel('Minimum NYC Storage (%)', fontsize=11, fontweight='bold')
     ax4.set_ylabel('Frequency', fontsize=11, fontweight='bold')
     ax4.set_title('Distribution of Minimum Storage', fontsize=12, fontweight='bold')
@@ -339,7 +339,7 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
     # Plot 5: 2D histogram of Severity vs Magnitude colored by storage
     ax5 = fig.add_subplot(gs[1, 1])
     scatter = ax5.scatter(droughts['severity'], droughts['magnitude'],
-                         c=droughts['min_storage_pct'], s=30, alpha=0.6,
+                         c=droughts['event_min_storage_pct'], s=30, alpha=0.6,
                          cmap='RdYlGn', vmin=0, vmax=100, edgecolors='none', rasterized=True)
     ax5.set_xlabel('Drought Severity (min SSI)', fontsize=11, fontweight='bold')
     ax5.set_ylabel('Drought Magnitude (cumulative deficit)', fontsize=11, fontweight='bold')
@@ -356,11 +356,11 @@ def create_comprehensive_plot(droughts, dataset_id, ssi_window):
     stats_data = [
         ['Metric', 'Mean', 'Median', 'Std Dev', 'Min', 'Max'],
         ['Min Storage (%)',
-         f"{droughts['min_storage_pct'].mean():.1f}",
-         f"{droughts['min_storage_pct'].median():.1f}",
-         f"{droughts['min_storage_pct'].std():.1f}",
-         f"{droughts['min_storage_pct'].min():.1f}",
-         f"{droughts['min_storage_pct'].max():.1f}"],
+         f"{droughts['event_min_storage_pct'].mean():.1f}",
+         f"{droughts['event_min_storage_pct'].median():.1f}",
+         f"{droughts['event_min_storage_pct'].std():.1f}",
+         f"{droughts['event_min_storage_pct'].min():.1f}",
+         f"{droughts['event_min_storage_pct'].max():.1f}"],
         ['Severity',
          f"{droughts['severity'].mean():.2f}",
          f"{droughts['severity'].median():.2f}",
@@ -498,8 +498,8 @@ def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):
     for satisficing_status in [False, True]:
         subset = satisficing_data[satisficing_data['satisficing'] == satisficing_status]
         ax2.scatter(
-            subset['min_storage_pct'],
-            subset['max_violation_days'],
+            subset['nyc_event_min_storage_pct'],
+            subset['montague_max_consec_shortage_days'],
             c=colors[satisficing_status],
             label=labels[satisficing_status],
             alpha=0.6,
@@ -533,7 +533,7 @@ def merge_satisficing_with_droughts(droughts_with_storage, satisficing_data):
     Parameters:
     -----------
     droughts_with_storage : pd.DataFrame
-        Drought events with min_storage_pct column
+        Drought events with event_min_storage_pct column
     satisficing_data : pd.DataFrame
         Satisficing data for drought years
 
@@ -633,7 +633,7 @@ def create_drought_satisficing_scatter(merged_data, dataset_id, ssi_window):
         subset = plot_data[plot_data['satisficing'] == satisficing_status]
         ax2.scatter(
             subset['severity'],
-            subset['min_storage_pct'],
+            subset['event_min_storage_pct'],
             c=colors[satisficing_status],
             label=labels[satisficing_status],
             alpha=0.6,
@@ -767,13 +767,13 @@ def main():
         # Print summary statistics
         print(f"\nSummary Statistics (SSI-{ssi_window}):")
         print(f"  Total drought events: {len(droughts_with_storage):,}")
-        print(f"  Min storage range: {droughts_with_storage['min_storage_pct'].min():.1f}% - {droughts_with_storage['min_storage_pct'].max():.1f}%")
-        print(f"  Mean min storage: {droughts_with_storage['min_storage_pct'].mean():.1f}%")
-        print(f"  Median min storage: {droughts_with_storage['min_storage_pct'].median():.1f}%")
-        print(f"  Events with storage < 25%: {(droughts_with_storage['min_storage_pct'] < 25).sum():,} ({100*(droughts_with_storage['min_storage_pct'] < 25).sum()/len(droughts_with_storage):.1f}%)")
-        print(f"  Correlation with severity: {droughts_with_storage['severity'].corr(droughts_with_storage['min_storage_pct']):.3f}")
-        print(f"  Correlation with magnitude: {droughts_with_storage['magnitude'].corr(droughts_with_storage['min_storage_pct']):.3f}")
-        print(f"  Correlation with duration: {droughts_with_storage['duration'].corr(droughts_with_storage['min_storage_pct']):.3f}")
+        print(f"  Min storage range: {droughts_with_storage['event_min_storage_pct'].min():.1f}% - {droughts_with_storage['event_min_storage_pct'].max():.1f}%")
+        print(f"  Mean min storage: {droughts_with_storage['event_min_storage_pct'].mean():.1f}%")
+        print(f"  Median min storage: {droughts_with_storage['event_min_storage_pct'].median():.1f}%")
+        print(f"  Events with storage < 25%: {(droughts_with_storage['event_min_storage_pct'] < 25).sum():,} ({100*(droughts_with_storage['event_min_storage_pct'] < 25).sum()/len(droughts_with_storage):.1f}%)")
+        print(f"  Correlation with severity: {droughts_with_storage['severity'].corr(droughts_with_storage['event_min_storage_pct']):.3f}")
+        print(f"  Correlation with magnitude: {droughts_with_storage['magnitude'].corr(droughts_with_storage['event_min_storage_pct']):.3f}")
+        print(f"  Correlation with duration: {droughts_with_storage['duration'].corr(droughts_with_storage['event_min_storage_pct']):.3f}")
 
     print("\n" + "=" * 80)
     print("COMPLETED SUCCESSFULLY")

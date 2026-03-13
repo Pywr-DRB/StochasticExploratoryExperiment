@@ -228,7 +228,7 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
         'magnitude': event.get('magnitude', np.nan),
         'avg_severity': event.get('avg_severity', np.nan),
         'storage_at_start_pct': storage_at_start,
-        'min_storage_pct': min_storage,
+        'event_min_storage_pct': min_storage,
         'total_nyc_contribution_mg': total_contribution,
         'total_inflow_mg': total_inflow,
         'contribution_ratio': contribution_ratio,

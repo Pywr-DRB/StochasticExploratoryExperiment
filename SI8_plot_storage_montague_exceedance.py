@@ -143,7 +143,7 @@ def compute_annual_metrics(data, dataset_id):
     annual_metrics : dict
         Dictionary mapping realization_id to DataFrame with columns:
         - year: int
-        - min_storage_pct: float (minimum NYC storage percentage for that year)
+        - nyc_min_storage_pct: float (minimum NYC storage percentage for that year)
         - montague_release_total: float (total NYC→Montague releases for that year, MG)
     """
     nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
@@ -164,7 +164,7 @@ def compute_annual_metrics(data, dataset_id):
         annual_montague_total = montague_releases.resample('YS').sum()
 
         # Combine into single DataFrame
-        metrics_df = annual_min_storage.to_frame(name='min_storage_pct')
+        metrics_df = annual_min_storage.to_frame(name='nyc_min_storage_pct')
         metrics_df['montague_release_total'] = annual_montague_total
         metrics_df['year'] = metrics_df.index.year
         metrics_df = metrics_df.reset_index(drop=True)
@@ -185,7 +185,7 @@ def extract_ensemble_percentile_series(annual_metrics, metric, ensemble_percenti
     annual_metrics : dict
         Dictionary mapping realization_id to annual metrics DataFrame
     metric : str
-        Metric name ('min_storage_pct' or 'montague_release_total')
+        Metric name ('nyc_min_storage_pct' or 'montague_release_total')
     ensemble_percentile : float
         Percentile to extract (0.0 to 1.0, e.g., 0.5 for median)
 
@@ -289,7 +289,7 @@ def plot_storage_montague_exceedance(
 
         # Extract percentile series for both metrics
         storage_series = extract_ensemble_percentile_series(
-            annual_metrics, 'min_storage_pct', ensemble_percentile
+            annual_metrics, 'nyc_min_storage_pct', ensemble_percentile
         )
         montague_series = extract_ensemble_percentile_series(
             annual_metrics, 'montague_release_total', ensemble_percentile

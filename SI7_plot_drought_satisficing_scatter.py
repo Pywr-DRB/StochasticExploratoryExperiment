@@ -78,8 +78,8 @@ SATISFICING_LABELS = {
 
 def _add_satisficing_category(df):
     """Add satisficing category based on storage and montague thresholds."""
-    df['storage_pass'] = df['min_storage_pct'] >= STORAGE_THRESHOLD
-    df['montague_pass'] = df['max_violation_days'] <= VIOLATION_DAYS_THRESHOLD
+    df['storage_pass'] = df['nyc_min_storage_pct'] >= STORAGE_THRESHOLD
+    df['montague_pass'] = df['montague_max_consec_shortage_days'] <= VIOLATION_DAYS_THRESHOLD
 
     def get_category(row):
         failures = []
@@ -137,11 +137,11 @@ def load_satisficing_data(dataset_id, ssi_window):
 
     # Merge on year and realization
     merged = events_df.merge(
-        annual_df[['year', 'realization_id', 'min_storage_pct', 'max_violation_days', 'satisficing']],
+        annual_df[['year', 'realization_id', 'nyc_min_storage_pct', 'montague_max_consec_shortage_days', 'satisficing']],
         on=['year', 'realization_id'],
         how='left'
     )
-    merged = merged.dropna(subset=['min_storage_pct'])
+    merged = merged.dropna(subset=['nyc_min_storage_pct'])
     merged = _add_satisficing_category(merged)
     print(f"    Merged {len(merged)} drought events with annual satisficing")
 

@@ -56,8 +56,8 @@ def save_annual_satisficing(df, dataset_id, ssi_window, output_dir=None):
     ----------
     df : pd.DataFrame
         Annual satisficing DataFrame with columns: year, realization,
-        satisficing, min_storage_pct, max_violation_days, nyc_inflow,
-        montague_contrib, n_droughts_in_year.
+        satisficing, nyc_min_storage_pct, montague_max_consec_shortage_days,
+        nyc_inflow, montague_contrib, n_droughts_in_year.
     dataset_id : str
         Dataset identifier.
     ssi_window : int

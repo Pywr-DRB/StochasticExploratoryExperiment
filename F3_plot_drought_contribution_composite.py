@@ -43,12 +43,12 @@ from methods.plotting.styles import (
     ALPHA_LINE,
     apply_publication_style,
 )
-from methods.load import load_ffmp_boundaries, load_performance_metrics
+from methods.load import load_ffmp_boundaries, load_annual_metrics, load_contribution_metrics
 
 # Reuse data-processing functions
 import methods.plotting.water_balance_by_drought_zone as F4_module
 from methods.plotting.water_balance_by_drought_zone import (
-    classify_years_by_min_zone,
+    classify_years_by_max_zone,
     aggregate_across_realizations,
     categorize_by_drought_zone,
     calculate_reconstruction_contribution_ratio,
@@ -122,7 +122,7 @@ def calculate_drought_metrics_per_year(data, dataset_id, n_months_prior=None):
     For each realization-year, compute:
       - contribution_total: NYC Montague contribution (MG) in n-month window
       - contribution_ratio: contribution_total / NYC inflow over same window (%)
-      - min_storage_pct: annual minimum combined NYC storage %
+      - annual_min_storage_pct: annual minimum combined NYC storage %
       - demand_satisfaction: volumetric diversion / demand over window (clipped <=1)
       - worst_1mo_demand_sat: worst 1-month rolling demand satisfaction (%) during
         the n-month window. Computed as min of 30-day rolling sum(diversion)/sum(demand).
@@ -143,7 +143,7 @@ def calculate_drought_metrics_per_year(data, dataset_id, n_months_prior=None):
 
     for r in realizations:
         res_level_df = data.res_level[dataset_id][r]
-        year_classifications = classify_years_by_min_zone(res_level_df)
+        year_classifications = classify_years_by_max_zone(res_level_df)
 
         nyc_contributions = data.contribution[dataset_id][r]['mrf_montagueTrenton_nyc']
         nyc_inflow = data.inflow[dataset_id][r][NYC_RESERVOIRS].sum(axis=1)
@@ -153,15 +153,15 @@ def calculate_drought_metrics_per_year(data, dataset_id, n_months_prior=None):
         nyc_demand = data.ibt_demands[dataset_id][r]['demand_nyc']
 
         for year, info in year_classifications.items():
-            min_zone_date = info['min_zone_date']
-            start_date = min_zone_date - pd.DateOffset(months=n_months_prior)
+            max_zone_date = info['max_zone_date']
+            start_date = max_zone_date - pd.DateOffset(months=n_months_prior)
 
             # contribution total
-            mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= min_zone_date)
+            mask = (nyc_contributions.index >= start_date) & (nyc_contributions.index <= max_zone_date)
             contribution_total = nyc_contributions[mask].sum()
 
             # inflow total over same window
-            inflow_mask = (nyc_inflow.index >= start_date) & (nyc_inflow.index <= min_zone_date)
+            inflow_mask = (nyc_inflow.index >= start_date) & (nyc_inflow.index <= max_zone_date)
             inflow_total = nyc_inflow[inflow_mask].sum()
 
             # contribution / inflow ratio (%)
@@ -173,7 +173,7 @@ def calculate_drought_metrics_per_year(data, dataset_id, n_months_prior=None):
             min_storage = nyc_storage_pct[year_mask].min()
 
             # demand satisfaction over full window
-            div_mask = (nyc_diversion.index >= start_date) & (nyc_diversion.index <= min_zone_date)
+            div_mask = (nyc_diversion.index >= start_date) & (nyc_diversion.index <= max_zone_date)
             total_div = nyc_diversion[div_mask].sum()
             total_dem = nyc_demand[div_mask].sum()
             demand_sat = min(total_div / total_dem, 1.0) if total_dem > 0 else 1.0
@@ -195,10 +195,10 @@ def calculate_drought_metrics_per_year(data, dataset_id, n_months_prior=None):
             records.append({
                 'year': year,
                 'realization_id': r,
-                'min_zone': info['min_zone'],
+                'max_zone': info['max_zone'],
                 'contribution_total': contribution_total,
                 'contribution_ratio': contribution_ratio,
-                'min_storage_pct': min_storage,
+                'annual_min_storage_pct': min_storage,
                 'demand_satisfaction': demand_sat,
                 'worst_1mo_demand_sat': worst_1mo,
             })
@@ -340,24 +340,29 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
     Per group: 3 side-by-side box plots (Stationary, Climate Low, Climate High)
     Box plots show the distribution of frequency values across ensemble realizations
     """
-    from methods.load import load_performance_metrics
+    from methods.load import load_annual_metrics
 
     # Drought zones and order (left to right on x-axis)
-    zone_keys = ['years_exactly_watch', 'years_exactly_warning', 'years_exactly_emergency']
+    zone_values = [5, 4, 6]  # Watch=5, Warning=4, Emergency=6
     zone_labels = ['Watch', 'Warning', 'Emergency']
 
-    # Load performance metrics for all datasets
+    # Load annual metrics for all datasets and compute zone frequency per realization
     all_freq_data = {}
     for dataset_id in SCENARIOS:
-        metrics = load_performance_metrics(dataset_id)
-        # Convert counts to fractions
+        annual = load_annual_metrics(dataset_id)
+        df_all = annual[annual['period'] == 'all'].copy()
+
         freq_data = {}
-        for zk in zone_keys:
-            freq_data[zk] = metrics[zk].values / N_YEARS
+        for zv, label in zip(zone_values, zone_labels):
+            # Count water years where max_zone == this zone, per realization
+            counts = df_all.groupby('realization_id').apply(
+                lambda g: (g['max_zone'] == zv).sum()
+            )
+            freq_data[label] = counts.values / N_YEARS
         all_freq_data[dataset_id] = freq_data
 
     # Set up grouped box plot positions
-    n_zones = len(zone_keys)
+    n_zones = len(zone_labels)
     n_datasets = len(SCENARIOS)
     positions_all = []
     colors_all = []
@@ -366,13 +371,13 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
     group_width = 0.8
     box_width = group_width / (n_datasets + 0.5)  # Add spacing between groups
 
-    for zone_idx, zk in enumerate(zone_keys):
+    for zone_idx, label in enumerate(zone_labels):
         for ds_idx, dataset_id in enumerate(SCENARIOS):
             # Calculate position for this box
             x_pos = zone_idx + (ds_idx - 1) * box_width
             positions_all.append(x_pos)
             colors_all.append(DATASET_COLORS[dataset_id])
-            data_all.append(all_freq_data[dataset_id][zk])
+            data_all.append(all_freq_data[dataset_id][label])
 
     # Create box plots
     bp = ax.boxplot(data_all, positions=positions_all, widths=box_width * 0.8,
@@ -387,14 +392,6 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
     for patch, color in zip(bp['boxes'], colors_all):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
-
-    # Historic markers
-    if show_historic:
-        hist_metrics = load_performance_metrics('reconstruction')
-        for zone_idx, zk in enumerate(zone_keys):
-            hist_val = hist_metrics[zk].values[0] / HISTORIC_N_YEARS
-            ax.scatter(zone_idx, hist_val, marker='^', s=60,
-                       color='black', edgecolors='white', linewidths=0.5, zorder=10)
 
     # Format axes
     ax.set_xticks(range(n_zones))
@@ -558,13 +555,13 @@ def plot_scatter_panel_simple(ax, metrics_df, dataset_id, ffmp_lines,
 
     Similar to plot_panel_B but simplified for bottom row.
     """
-    df = metrics_df.dropna(subset=[x_key, 'min_storage_pct', 'worst_1mo_demand_sat'])
+    df = metrics_df.dropna(subset=[x_key, 'annual_min_storage_pct', 'worst_1mo_demand_sat'])
     if len(df) == 0:
         ax.text(0.5, 0.5, 'No data', transform=ax.transAxes, ha='center')
         return None
 
     x = df[x_key].values
-    y = df['min_storage_pct'].values
+    y = df['annual_min_storage_pct'].values
     c = df['worst_1mo_demand_sat'].values
 
     if vmin is None:

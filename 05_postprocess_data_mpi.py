@@ -54,18 +54,8 @@ from methods.load import (
     load_and_process_historical_models,
     load_gage_flow_data,
 )
-from methods.postprocess import (
-    calculate_and_save_performance_metrics,
-    calculate_contribution_analysis_metrics,
-    calculate_and_save_zone_duration_events,
-)
-
 # Temporary directory for intermediate files
 TEMP_DIR = f"{ROOT_DIR}/pywrdrb/outputs/temp_mpi"
-
-# Output directory for performance metrics
-PERFORMANCE_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
-os.makedirs(PERFORMANCE_METRICS_DIR, exist_ok=True)
 
 
 def distribute_ensemble_sets(rank, size, n_sets):
@@ -588,59 +578,14 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
 
             required_results_sets = ['shortage', 'mrf_target', 'res_storage',
                                      'ibt_diversions', 'ibt_demands', 'contribution',
-                                     'res_level', 'inflow']
+                                     'res_level', 'inflow', 'major_flow']
 
             keep_data = pywrdrb.Data()
             keep_data.load_from_export(fname, results_sets=required_results_sets)
             print(f"Successfully loaded combined data for {dataset_id}!")
 
-    # Calculate performance metrics (rank 0 only)
-    if rank == 0 and keep_data is not None:
-        print(f"\nCalculating performance metrics for {dataset_id}...")
-        try:
-            realizations = list(keep_data.shortage[dataset_id].keys())
-            print(f"  Found {len(realizations)} realizations in {dataset_id}")
-
-            calculate_and_save_performance_metrics(
-                keep_data, dataset_id, realizations, PERFORMANCE_METRICS_DIR
-            )
-
-            # NEW: Calculate contribution analysis metrics
-            print(f"\nCalculating contribution analysis metrics for {dataset_id}...")
-            contrib_metrics = calculate_contribution_analysis_metrics(
-                keep_data, dataset_id, realizations
-            )
-            contrib_fname = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_contribution_metrics.csv"
-            contrib_metrics.to_csv(contrib_fname, index=False)
-            print(f"  Saved: {contrib_fname} ({len(contrib_metrics)} year-realization pairs)")
-
-            # Calculate zone drought episode durations
-            print(f"\nCalculating zone duration events for {dataset_id}...")
-            calculate_and_save_zone_duration_events(
-                keep_data, dataset_id, realizations, PERFORMANCE_METRICS_DIR
-            )
-
-        except Exception as e:
-            print(f"ERROR calculating metrics for {dataset_id}: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-
-        # Also calculate historic (reconstruction) metrics for comparison
-        print(f"\nCalculating historic (reconstruction) performance metrics...")
-        try:
-            reconstruction_realizations = list(keep_data.shortage['reconstruction'].keys())
-            print(f"  Found {len(reconstruction_realizations)} realizations in reconstruction")
-            calculate_and_save_performance_metrics(
-                keep_data, 'reconstruction', reconstruction_realizations, PERFORMANCE_METRICS_DIR
-            )
-            calculate_and_save_zone_duration_events(
-                keep_data, 'reconstruction', reconstruction_realizations, PERFORMANCE_METRICS_DIR
-            )
-        except KeyError:
-            print(f"WARNING: Could not find 'reconstruction' data in loaded file.")
-        except Exception as e:
-            print(f"WARNING: Error calculating historic metrics: {e}")
+    # Metric CSV calculation has been moved to 06_calculate_performance_metrics.py.
+    # This script now only handles HDF5 postprocessing (shortage, contribution, export).
 
     return True
 

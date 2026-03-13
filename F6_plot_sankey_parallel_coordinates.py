@@ -102,7 +102,7 @@ def get_default_axes():
             bin_labels=['0 days', '1-3 days', '> 3 days'],
         ),
         AxisConfig(
-            metric='min_storage_pct',
+            metric='event_min_storage_pct',
             label='Min Storage\nDuring Drought',
             bin_edges=[0, 20, 50, 100.1],
             bin_labels=['< 20%', '20-50%', '> 50%'],
@@ -147,7 +147,7 @@ def get_cart_axes(metrics_df, max_depth=2, n_bootstrap=200):
         'duration_days',
         'total_nyc_contribution_mg',
         'max_consec_montague_days',
-        'min_storage_pct',
+        'event_min_storage_pct',
         'nyc_diversion_sat_ratio',
     ]
 
@@ -178,7 +178,7 @@ def get_cart_axes(metrics_df, max_depth=2, n_bootstrap=200):
         'duration_days',
         'total_nyc_contribution_mg',
         'max_consec_montague_days',
-        'min_storage_pct',
+        'event_min_storage_pct',
         'nyc_diversion_sat_ratio',
     ]
 
@@ -225,7 +225,7 @@ def get_quantile_axes():
             bin_edges='quantile',
         ),
         AxisConfig(
-            metric='min_storage_pct',
+            metric='event_min_storage_pct',
             label='Min Storage\nDuring Drought',
             bin_edges='quantile',
         ),

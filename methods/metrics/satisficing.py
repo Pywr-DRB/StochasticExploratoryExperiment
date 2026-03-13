@@ -51,8 +51,8 @@ def calculate_annual_satisficing(data, dataset_id, drought_events_df=None,
     Returns
     -------
     pd.DataFrame
-        Columns: year, realization, satisficing, min_storage_pct,
-        max_violation_days, nyc_inflow, montague_contrib, n_droughts_in_year
+        Columns: year, realization, satisficing, nyc_min_storage_pct,
+        montague_max_consec_shortage_days, nyc_inflow, montague_contrib, n_droughts_in_year
     """
     # Pre-compute drought counts per (realization, year)
     drought_counts = _count_droughts_per_year(drought_events_df)
@@ -89,8 +89,8 @@ def calculate_annual_satisficing(data, dataset_id, drought_events_df=None,
                 'year': year,
                 'realization': r,
                 'satisficing': satisficing,
-                'min_storage_pct': min_storage,
-                'max_violation_days': max_consec,
+                'nyc_min_storage_pct': min_storage,
+                'montague_max_consec_shortage_days': max_consec,
                 'nyc_inflow': total_inflow,
                 'montague_contrib': total_contrib,
                 'n_droughts_in_year': drought_counts.get((r, year), 0),

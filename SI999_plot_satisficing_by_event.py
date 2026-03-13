@@ -160,8 +160,8 @@ def plot_failure_breakdown(results, dataset_id, ssi_window, dataset_label):
         n_total = len(df)
 
         # Calculate failure categories
-        storage_fail = df['min_storage_pct'] < 20
-        montague_fail = df['max_violation_days'] > 3
+        storage_fail = df['nyc_min_storage_pct'] < 20
+        montague_fail = df['montague_max_consec_shortage_days'] > 3
 
         n_satisficing = df['satisficing'].sum()
         n_storage_only = ((storage_fail & ~montague_fail).sum())
@@ -260,8 +260,8 @@ def plot_metric_distributions(results, dataset_id, ssi_window, dataset_label):
 
     for condition, label in zip(conditions, condition_labels):
         df = results[condition]
-        storage_data.extend(df['min_storage_pct'].values)
-        violation_data.extend(df['max_violation_days'].values)
+        storage_data.extend(df['nyc_min_storage_pct'].values)
+        violation_data.extend(df['montague_max_consec_shortage_days'].values)
         labels.extend([label] * len(df))
 
     # Create DataFrame for seaborn
@@ -373,7 +373,7 @@ def plot_combined_summary(results, dataset_id, ssi_window, dataset_label):
     mean_storage = []
     for condition in conditions:
         df = results[condition]
-        mean_storage.append(df['min_storage_pct'].mean())
+        mean_storage.append(df['nyc_min_storage_pct'].mean())
 
     bars = ax2.bar(x, mean_storage, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
 
@@ -397,7 +397,7 @@ def plot_combined_summary(results, dataset_id, ssi_window, dataset_label):
     mean_violations = []
     for condition in conditions:
         df = results[condition]
-        mean_violations.append(df['max_violation_days'].mean())
+        mean_violations.append(df['montague_max_consec_shortage_days'].mean())
 
     bars = ax3.bar(x, mean_violations, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
 
