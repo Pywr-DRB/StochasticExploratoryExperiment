@@ -25,7 +25,7 @@ echo "========================================"
 echo "Calculating performance metrics for $DATASET_ID with MPI ($np ranks)..."
 echo "========================================"
 
-mpirun -np $np python3 06_calculate_performance_metrics.py "$DATASET_ID"
+mpirun -np $np python3 06_calculate_performance_metrics.py "$DATASET_ID" --all
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Performance metrics failed for $DATASET_ID"

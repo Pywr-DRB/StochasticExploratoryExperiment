@@ -75,7 +75,8 @@ def compute_panel_data(perf):
         # Panel A: max consecutive Montague shortage days across all water years
         panel_a = by_r['montague_max_consec_shortage_days'].max()
 
-        # Panel B: mean NYC reliability across water years (as %)
+        # Panel B: mean NYC weekly reliability across water years (as %)
+        # Weekly reliability = fraction of weeks without >= 3 deficit days
         panel_b = by_r['nyc_reliability'].mean() * 100.0
 
         # Panel C: satisficing rate (fraction of years satisficing per realization)

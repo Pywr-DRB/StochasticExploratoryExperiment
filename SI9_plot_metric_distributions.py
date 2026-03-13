@@ -1,26 +1,32 @@
 """
-SI9: Comprehensive metric distribution overview.
+SI9: Comprehensive performance metric distribution overview.
 
-Multi-panel figure with one subplot per metric showing empirical CDFs
-for all three datasets. Used for exploratory analysis to identify
-the most interesting/discriminating metrics.
+Multi-panel figure with one subplot per metric. Each subplot shows
+per-realization empirical CDFs of annual water-year values, summarized
+as median + min/max envelope across ~2000 realizations.
+
+For each realization, a CDF is built from its ~70 annual values. All
+realization CDFs are evaluated on a shared x-grid, then the median (p50),
+min (p0), and max (p100) CDF lines are plotted — matching the style of
+F2_plot_drought_metric_distribution.py.
 
 Usage:
     python SI9_plot_metric_distributions.py
 """
 
 import os
-import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
+from matplotlib.legend_handler import HandlerTuple
 import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import FIG_DIR, DATASET_CONFIGS
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
-    METRIC_DISPLAY_NAMES, METRIC_UNITS,
     DPI_HIGH, LINEWIDTH_MEDIUM,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
     DATASET_LINESTYLES,
@@ -36,96 +42,138 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 DATASETS = list(DATASET_CONFIGS.keys())
 
-# Annual metrics to plot — 20 from annual_metrics, grouped by category.
-# Each tuple: (column_name, aggregation_method)
-#   'per_year' = plot each water-year value (full distribution across years × realizations)
-#   'per_real_max' = aggregate to max across years per realization, then plot distribution
-#   'per_real_mean' = aggregate to mean across years per realization
-#   'per_real_min' = aggregate to min across years per realization
+# Each metric: (column_name, subplot_title, x_axis_label)
 ANNUAL_METRICS = [
-    # Shortage reliability (fraction 0–1, per year)
-    ('montague_reliability', 'per_year'),
-    ('trenton_reliability', 'per_year'),
-    ('nyc_reliability', 'per_year'),
+    # --- Montague flow target ---
+    ('montague_reliability',
+     'Montague: Weekly Reliability (Weeks Without 3+ Deficit Days)',
+     'Fraction of Weeks Without Failure'),
 
-    # Total shortage volume (MG, per year)
-    ('montague_shortage_mg', 'per_year'),
-    ('trenton_shortage_mg', 'per_year'),
-    ('nyc_shortage_mg', 'per_year'),
+    ('montague_shortage_mg',
+     'Montague: Annual Shortage Volume',
+     'Shortage (MG/yr)'),
 
-    # Max consecutive shortage days (per year)
-    ('montague_max_consec_shortage_days', 'per_year'),
-    ('trenton_max_consec_shortage_days', 'per_year'),
-    ('nyc_max_consec_shortage_days', 'per_year'),
+    ('montague_max_consec_shortage_days',
+     'Montague: Max Consecutive Shortage Days per Year',
+     'Consecutive Days'),
 
-    # Max single-day shortage (MG, per year)
-    ('montague_max_1day_shortage_mg', 'per_year'),
-    ('trenton_max_1day_shortage_mg', 'per_year'),
-    ('nyc_max_1day_shortage_mg', 'per_year'),
+    ('montague_max_1day_shortage_mg',
+     'Montague: Peak Single-Day Shortage per Year',
+     'Single-Day Shortage (MG)'),
 
-    # NYC storage (per year)
-    ('nyc_min_storage_pct', 'per_year'),
-    ('june1_storage_pct', 'per_year'),
-    ('sept1_storage_pct', 'per_year'),
-    ('ndays_storage_below_20pct', 'per_year'),
-    ('ndays_storage_below_30pct', 'per_year'),
+    # --- Trenton flow target ---
+    ('trenton_reliability',
+     'Trenton: Weekly Reliability (Weeks Without 3+ Deficit Days)',
+     'Fraction of Weeks Without Failure'),
 
-    # System-level (per year)
-    ('nyc_contribution_mg', 'per_year'),
-    ('ndays_combined_stress', 'per_year'),
-    ('max_zone', 'per_year'),
+    ('trenton_shortage_mg',
+     'Trenton: Annual Shortage Volume',
+     'Shortage (MG/yr)'),
+
+    ('trenton_max_consec_shortage_days',
+     'Trenton: Max Consecutive Shortage Days per Year',
+     'Consecutive Days'),
+
+    ('trenton_max_1day_shortage_mg',
+     'Trenton: Peak Single-Day Shortage per Year',
+     'Single-Day Shortage (MG)'),
+
+    # --- NYC diversion target ---
+    ('nyc_reliability',
+     'NYC: Weekly Diversion Reliability (Weeks Without 3+ Deficit Days)',
+     'Fraction of Weeks Without Failure'),
+
+    ('nyc_shortage_mg',
+     'NYC: Annual Diversion Shortage Volume',
+     'Shortage (MG/yr)'),
+
+    ('nyc_max_consec_shortage_days',
+     'NYC: Max Consecutive Diversion Shortage Days per Year',
+     'Consecutive Days'),
+
+    ('nyc_max_1day_shortage_mg',
+     'NYC: Peak Single-Day Diversion Shortage per Year',
+     'Single-Day Shortage (MG)'),
+
+    # --- NYC reservoir storage ---
+    ('nyc_min_storage_pct',
+     'NYC: Annual Minimum Combined Reservoir Storage',
+     'Storage (% of Capacity)'),
+
+    ('june1_storage_pct',
+     'NYC: June 1 Combined Reservoir Storage',
+     'Storage (% of Capacity)'),
+
+    ('sept1_storage_pct',
+     'NYC: September 1 Combined Reservoir Storage',
+     'Storage (% of Capacity)'),
+
+    ('ndays_storage_below_20pct',
+     'NYC: Days per Year with Storage Below 20%',
+     'Days per Water Year'),
+
+    ('ndays_storage_below_30pct',
+     'NYC: Days per Year with Storage Below 30%',
+     'Days per Water Year'),
+
+    # --- System-level ---
+    ('nyc_contribution_mg',
+     'NYC: Annual Downstream Flow Contribution',
+     'Release Volume (MG/yr)'),
+
+    ('ndays_combined_stress',
+     'Days per Year with Simultaneous Montague + NYC Shortage',
+     'Days per Water Year'),
+
+    ('max_zone',
+     'NYC: Maximum Drought Zone Reached per Year',
+     'Zone Level (1=Normal, 5=Emergency)'),
 ]
 
-# Hashimoto simulation-level metrics (1 value per realization)
+# Hashimoto metrics are simulation-level (1 value per realization, no annual CDF)
+# They are plotted as a simple CDF across realizations.
 HASHIMOTO_METRICS = [
-    'hashimoto_reliability_montague',
-    'hashimoto_resiliency_montague',
-    'hashimoto_reliability_trenton',
-    'hashimoto_resiliency_trenton',
+    ('hashimoto_reliability_montague',
+     'Hashimoto: Montague Reliability (70-yr)',
+     'Fraction of Days Without Deficit'),
+
+    ('hashimoto_resiliency_montague',
+     'Hashimoto: Montague Resiliency (70-yr)',
+     'P(Recovery | Deficit Day)'),
+
+    ('hashimoto_reliability_trenton',
+     'Hashimoto: Trenton Reliability (70-yr)',
+     'Fraction of Days Without Deficit'),
+
+    ('hashimoto_resiliency_trenton',
+     'Hashimoto: Trenton Resiliency (70-yr)',
+     'P(Recovery | Deficit Day)'),
 ]
 
-# Direction convention: True = higher values are better (right = better by default).
-# Metrics where lower is better get their x-axis inverted so "better" is always right.
+HASHIMOTO_NAMES = {m[0] for m in HASHIMOTO_METRICS}
+
+# Direction: True = higher is better (right = better by default)
 HIGHER_IS_BETTER = {
-    # Reliability: higher = fewer shortages relative to target
     'montague_reliability': True,
     'trenton_reliability': True,
     'nyc_reliability': True,
-
-    # Shortage volumes: lower = less unmet demand
     'montague_shortage_mg': False,
     'trenton_shortage_mg': False,
     'nyc_shortage_mg': False,
-
-    # Consecutive shortage days: lower = shorter disruptions
     'montague_max_consec_shortage_days': False,
     'trenton_max_consec_shortage_days': False,
     'nyc_max_consec_shortage_days': False,
-
-    # Peak single-day shortage: lower = less severe peak deficit
     'montague_max_1day_shortage_mg': False,
     'trenton_max_1day_shortage_mg': False,
     'nyc_max_1day_shortage_mg': False,
-
-    # Storage levels: higher = more water in reserve
     'nyc_min_storage_pct': True,
     'june1_storage_pct': True,
     'sept1_storage_pct': True,
-
-    # Days below storage thresholds: lower = less time in critical storage
     'ndays_storage_below_20pct': False,
     'ndays_storage_below_30pct': False,
-
-    # NYC contribution: lower = less NYC release needed to meet downstream targets
     'nyc_contribution_mg': False,
-
-    # Combined stress days: lower = fewer days with simultaneous shortages
     'ndays_combined_stress': False,
-
-    # Max drought zone: lower = less severe drought classification
     'max_zone': False,
-
-    # Hashimoto: higher = more reliable / more resilient
     'hashimoto_reliability_montague': True,
     'hashimoto_resiliency_montague': True,
     'hashimoto_reliability_trenton': True,
@@ -141,64 +189,78 @@ def load_all_data():
     """Load annual metrics and hashimoto metrics for all datasets."""
     annual = {}
     hashimoto = {}
-
     for did in DATASETS:
         annual[did] = load_annual_metrics(did)
-
         try:
             hashimoto[did] = load_hashimoto_metrics(did)
         except FileNotFoundError as e:
             print(f"  Warning: Hashimoto metrics not found for {did}: {e}")
             hashimoto[did] = None
-
     return annual, hashimoto
 
 
-def get_metric_values(annual, hashimoto, metric_name, agg, period='all'):
+# ============================================================================
+# PER-REALIZATION CDF BANDS (F2-style)
+# ============================================================================
+
+def compute_cdf_bands(df, metric_name, period='all', n_grid=300,
+                      percentiles=(0, 50, 100)):
+    """Build per-realization CDFs and return percentile envelopes.
+
+    For each realization, builds an empirical CDF from its ~70 annual
+    values, evaluates all CDFs on a shared x-grid, then computes
+    percentile bands across realizations.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Annual metrics with columns: realization_id, period, metric_name.
+    metric_name : str
+        Column to build CDFs from.
+    period : str
+        Period filter ('all', 'drought', 'nondrought').
+    n_grid : int
+        Resolution of the shared x-grid.
+    percentiles : tuple of int
+        Percentiles to compute across realization CDFs.
+
+    Returns
+    -------
+    x_grid : np.ndarray, shape (n_grid,)
+    bands : dict {percentile: np.ndarray of shape (n_grid,)}
     """
-    Extract values for a single metric across all datasets.
+    subset = df[df['period'] == period]
+    if metric_name not in subset.columns:
+        return None, None
 
-    Returns dict: {dataset_id: 1-D numpy array of values}
-    """
-    result = {}
+    all_vals = subset[metric_name].dropna().values
+    if len(all_vals) == 0:
+        return None, None
 
-    for did in DATASETS:
-        if metric_name in HASHIMOTO_METRICS:
-            df = hashimoto.get(did)
-            if df is None or metric_name not in df.columns:
-                continue
-            vals = df[metric_name].dropna().values
-        else:
-            df = annual[did]
-            # Filter to period='all' for annual metrics
-            subset = df[df['period'] == period].copy()
+    x_min, x_max = np.nanmin(all_vals), np.nanmax(all_vals)
+    # Add small padding to avoid edge effects
+    pad = (x_max - x_min) * 0.01 if x_max > x_min else 0.5
+    x_grid = np.linspace(x_min - pad, x_max + pad, n_grid)
 
-            if metric_name not in subset.columns:
-                continue
+    realization_ids = sorted(subset['realization_id'].unique())
+    curves = np.zeros((len(realization_ids), n_grid))
 
-            if agg == 'per_year':
-                vals = subset[metric_name].dropna().values
-            elif agg == 'per_real_max':
-                vals = subset.groupby('realization_id')[metric_name].max().dropna().values
-            elif agg == 'per_real_min':
-                vals = subset.groupby('realization_id')[metric_name].min().dropna().values
-            elif agg == 'per_real_mean':
-                vals = subset.groupby('realization_id')[metric_name].mean().dropna().values
-            else:
-                vals = subset[metric_name].dropna().values
+    for i, rid in enumerate(realization_ids):
+        vals = np.sort(
+            subset.loc[subset['realization_id'] == rid, metric_name].dropna().values
+        )
+        if len(vals) == 0:
+            curves[i, :] = np.nan
+            continue
+        # CDF: fraction of annual values <= x
+        # Using searchsorted: count of vals <= x = searchsorted(vals, x, side='right')
+        curves[i, :] = np.searchsorted(vals, x_grid, side='right') / len(vals)
 
-        if len(vals) > 0:
-            result[did] = vals
+    bands = {}
+    for p in percentiles:
+        bands[p] = np.nanpercentile(curves, p, axis=0)
 
-    return result
-
-
-def plot_ecdf(ax, values, color, linestyle, label, linewidth=LINEWIDTH_MEDIUM):
-    """Plot empirical CDF on axis."""
-    sorted_vals = np.sort(values)
-    ecdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
-    ax.plot(sorted_vals, ecdf, color=color, linestyle=linestyle,
-            linewidth=linewidth, label=label)
+    return x_grid, bands
 
 
 # ============================================================================
@@ -206,67 +268,76 @@ def plot_ecdf(ax, values, color, linestyle, label, linewidth=LINEWIDTH_MEDIUM):
 # ============================================================================
 
 def make_distribution_figure(annual, hashimoto, period='all'):
-    """Create multi-panel CDF figure for all metrics."""
+    """Create multi-panel figure with per-realization CDF bands."""
 
-    all_metrics = [(m, a) for m, a in ANNUAL_METRICS]
-    all_metrics += [(m, 'per_real') for m in HASHIMOTO_METRICS]
-
+    all_metrics = list(ANNUAL_METRICS) + list(HASHIMOTO_METRICS)
     n_metrics = len(all_metrics)
     ncols = 4
     nrows = int(np.ceil(n_metrics / ncols))
 
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.2 * nrows))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.0 * ncols, 3.5 * nrows))
     axes = axes.flatten()
 
-    for i, (metric_name, agg) in enumerate(all_metrics):
+    for i, (metric_name, title, xlabel) in enumerate(all_metrics):
         ax = axes[i]
-
-        if metric_name in HASHIMOTO_METRICS:
-            data_by_ds = get_metric_values(annual, hashimoto, metric_name, agg, period)
-        else:
-            data_by_ds = get_metric_values(annual, hashimoto, metric_name, agg, period)
-
-        if not data_by_ds:
-            ax.text(0.5, 0.5, 'No data', ha='center', va='center',
-                    transform=ax.transAxes, fontsize=FONTSIZE_SMALL)
-            ax.set_title(metric_name, fontsize=FONTSIZE_SMALL)
-            continue
+        has_data = False
 
         for did in DATASETS:
-            if did not in data_by_ds:
-                continue
-            vals = data_by_ds[did]
-            plot_ecdf(
-                ax, vals,
-                color=DATASET_COLORS[did],
-                linestyle=DATASET_LINESTYLES.get(did, '-'),
-                label=DATASET_LABELS.get(did, did),
-            )
+            color = DATASET_COLORS[did]
+            ls = DATASET_LINESTYLES.get(did, '-')
 
-        # Title
-        display_name = METRIC_DISPLAY_NAMES.get(metric_name, metric_name)
-        # Clean up multiline display names for subplot titles
-        title = display_name.replace('\n', ' ')
-        if agg not in ('per_year', 'per_real'):
-            title += f' ({agg.replace("per_real_", "")})'
+            if metric_name in HASHIMOTO_NAMES:
+                # Hashimoto: simulation-level, plot simple CDF across realizations
+                df_h = hashimoto.get(did)
+                if df_h is None or metric_name not in df_h.columns:
+                    continue
+                vals = np.sort(df_h[metric_name].dropna().values)
+                if len(vals) == 0:
+                    continue
+                cdf = np.arange(1, len(vals) + 1) / len(vals)
+                ax.plot(vals, cdf, color=color, linestyle=ls,
+                        linewidth=LINEWIDTH_MEDIUM,
+                        label=DATASET_LABELS.get(did, did))
+                has_data = True
+            else:
+                # Annual metric: per-realization CDF bands
+                x_grid, bands = compute_cdf_bands(
+                    annual[did], metric_name, period=period
+                )
+                if x_grid is None:
+                    continue
+
+                # Shaded band: min–max across realizations
+                ax.fill_between(x_grid, bands[0], bands[100],
+                                color=color, alpha=0.15, zorder=3)
+                # Median realization CDF
+                ax.plot(x_grid, bands[50], color=color, linestyle=ls,
+                        linewidth=LINEWIDTH_MEDIUM, zorder=5,
+                        label=DATASET_LABELS.get(did, did))
+                has_data = True
+
+        if not has_data:
+            ax.text(0.5, 0.5, 'No data', ha='center', va='center',
+                    transform=ax.transAxes, fontsize=FONTSIZE_SMALL)
+
+        # Title and labels
         ax.set_title(title, fontsize=FONTSIZE_SMALL, fontweight='bold')
+        ax.set_xlabel(xlabel, fontsize=FONTSIZE_SMALL - 1)
 
         # Invert x-axis so "better" is always to the right
-        higher_better = HIGHER_IS_BETTER.get(metric_name, True)
-        if not higher_better:
+        if not HIGHER_IS_BETTER.get(metric_name, True):
             ax.invert_xaxis()
 
-        # Arrow annotation showing "better" direction
         ax.annotate('better →', xy=(0.97, 0.03), xycoords='axes fraction',
                     ha='right', va='bottom', fontsize=FONTSIZE_SMALL - 2,
                     color='0.4', fontstyle='italic')
 
-        # Axis labels
-        ax.set_ylabel('CDF', fontsize=FONTSIZE_SMALL - 1)
+        if metric_name in HASHIMOTO_NAMES:
+            ax.set_ylabel('CDF across\nrealizations', fontsize=FONTSIZE_SMALL - 1)
+        else:
+            ax.set_ylabel('CDF of annual\nvalues', fontsize=FONTSIZE_SMALL - 1)
         ax.set_ylim(-0.02, 1.02)
         ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
-
-        # Light grid
         ax.grid(True, alpha=0.3, linewidth=0.5)
         ax.set_axisbelow(True)
 
@@ -274,16 +345,34 @@ def make_distribution_figure(annual, hashimoto, period='all'):
     for j in range(n_metrics, len(axes)):
         axes[j].set_visible(False)
 
-    # Single legend at top
-    handles, labels = axes[0].get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc='upper center',
-                   ncol=len(DATASETS), fontsize=FONTSIZE_MEDIUM,
-                   bbox_to_anchor=(0.5, 1.0), frameon=False)
+    # Legend at top — use combined patch+line handles like F2
+    legend_handles = []
+    legend_labels = []
+    for did in DATASETS:
+        color = DATASET_COLORS[did]
+        patch = mpatches.Patch(facecolor=color, alpha=0.15)
+        line = mlines.Line2D([], [], color=color,
+                             linestyle=DATASET_LINESTYLES.get(did, '-'),
+                             linewidth=LINEWIDTH_MEDIUM)
+        legend_handles.append((patch, line))
+        legend_labels.append(
+            f'{DATASET_LABELS.get(did, did)} (median & range)')
 
-    period_label = {'all': 'All Days', 'drought': 'Drought Days', 'nondrought': 'Non-Drought Days'}
-    fig.suptitle(f'Metric Distributions — {period_label.get(period, period)}',
-                 fontsize=FONTSIZE_MEDIUM + 2, fontweight='bold', y=1.02)
+    fig.legend(legend_handles, legend_labels, loc='upper center',
+               ncol=len(DATASETS), fontsize=FONTSIZE_MEDIUM,
+               bbox_to_anchor=(0.5, 1.0), frameon=False,
+               handler_map={tuple: HandlerTuple(ndivide=1)},
+               handleheight=1.5)
+
+    period_label = {
+        'all': 'All Days',
+        'drought': 'Drought Days Only',
+        'nondrought': 'Non-Drought Days Only',
+    }
+    fig.suptitle(
+        f'Performance Metric Distributions — {period_label.get(period, period)}',
+        fontsize=FONTSIZE_MEDIUM + 2, fontweight='bold', y=1.03,
+    )
 
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     return fig

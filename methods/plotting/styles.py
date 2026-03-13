@@ -264,17 +264,17 @@ def apply_publication_style():
 # These correspond to columns in the {dataset_id}_annual_metrics.csv
 METRIC_DISPLAY_NAMES = {
     # Per-location shortage metrics (4 × 3 locations = 12)
-    'montague_reliability': 'Montague\nReliability',
+    'montague_reliability': 'Montague Weekly\nReliability',
     'montague_shortage_mg': 'Montague\nShortage (MG)',
     'montague_max_consec_shortage_days': 'Max Consec.\nMontague Shortage (d)',
     'montague_max_1day_shortage_mg': 'Max 1-Day\nMontague Shortage (MG)',
 
-    'trenton_reliability': 'Trenton\nReliability',
+    'trenton_reliability': 'Trenton Weekly\nReliability',
     'trenton_shortage_mg': 'Trenton\nShortage (MG)',
     'trenton_max_consec_shortage_days': 'Max Consec.\nTrenton Shortage (d)',
     'trenton_max_1day_shortage_mg': 'Max 1-Day\nTrenton Shortage (MG)',
 
-    'nyc_reliability': 'NYC Diversion\nReliability',
+    'nyc_reliability': 'NYC Diversion Weekly\nReliability',
     'nyc_shortage_mg': 'NYC Diversion\nShortage (MG)',
     'nyc_max_consec_shortage_days': 'Max Consec.\nNYC Shortage (d)',
     'nyc_max_1day_shortage_mg': 'Max 1-Day\nNYC Shortage (MG)',
@@ -304,7 +304,7 @@ METRIC_DISPLAY_NAMES = {
 
 # Metric units (for determining appropriate y-axis labels)
 METRIC_UNITS = {
-    # Reliability (fraction 0-1)
+    # Weekly reliability (fraction of weeks without >= 3 deficit days)
     'montague_reliability': 'fraction',
     'trenton_reliability': 'fraction',
     'nyc_reliability': 'fraction',

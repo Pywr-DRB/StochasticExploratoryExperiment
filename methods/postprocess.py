@@ -123,6 +123,11 @@ def _compute_period_metrics(shortage_dict, target_dict, nyc_storage_pct,
         'ndays_in_period': ndays,
     }
 
+    # Pre-compute 7-day week bins for the water year (used for reliability).
+    # Week boundaries are defined on the full water year, not the period subset.
+    n_total_days = len(period_mask)
+    week_ids = np.arange(n_total_days) // 7  # 0-indexed week number
+
     # Per-location shortage metrics (4 x 3 locations = 12 columns)
     for loc in ['montague', 'trenton', 'nyc']:
         shortage = shortage_dict[loc]
@@ -136,17 +141,36 @@ def _compute_period_metrics(shortage_dict, target_dict, nyc_storage_pct,
             continue
 
         period_shortage = shortage[period_mask]
-        period_target = target[period_mask]
 
-        shortage_sum = period_shortage.sum()
-        target_sum = period_target.sum()
+        # --- Weekly reliability ---
+        # For each 7-day week in the water year, count deficit days
+        # (shortage > 0) that fall within the period. A week is "failed"
+        # if it has >= 3 deficit days within the period. Only weeks with
+        # at least 1 day in the period contribute.
+        is_deficit_full = (shortage.values > 0) & period_mask
+        period_day_in_week = period_mask.copy()
 
-        if target_sum > 0:
-            reliability = float(np.clip(1.0 - shortage_sum / target_sum, 0.0, 1.0))
+        n_weeks = week_ids[-1] + 1 if n_total_days > 0 else 0
+        weeks_counted = 0
+        weeks_failed = 0
+        for w in range(n_weeks):
+            week_mask = week_ids == w
+            days_in_period = int(period_day_in_week[week_mask].sum())
+            if days_in_period == 0:
+                continue
+            deficit_days = int(is_deficit_full[week_mask].sum())
+            weeks_counted += 1
+            if deficit_days >= 3:
+                weeks_failed += 1
+
+        if weeks_counted > 0:
+            reliability = 1.0 - weeks_failed / weeks_counted
         else:
-            reliability = 1.0
-
+            reliability = np.nan
         record[f'{loc}_reliability'] = reliability
+
+        # --- Shortage volume, peak, consecutive days ---
+        shortage_sum = period_shortage.sum()
         record[f'{loc}_shortage_mg'] = float(shortage_sum)
         record[f'{loc}_max_1day_shortage_mg'] = float(period_shortage.max()) if len(period_shortage) > 0 else 0.0
 
