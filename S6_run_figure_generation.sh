@@ -49,7 +49,7 @@ if [ "$PLOT_CONTRIBUTION_KDE" = true ]; then
     echo "Generating contribution analysis figures..."
     echo "========================================"
     python3 F3_plot_drought_contribution_composite.py
-fi 
+fi
 
 
 if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then

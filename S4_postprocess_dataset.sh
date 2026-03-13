@@ -19,7 +19,7 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # Use low-memory mode to avoid MPI gather memory bottleneck
 USE_LOW_MEMORY=${USE_LOW_MEMORY:-true}
 
-DATASET_ID="${1:?Usage: sbatch S3_postprocess_dataset.sh <dataset_id>}"
+DATASET_ID="${1:?Usage: sbatch S4_postprocess_dataset.sh <dataset_id>}"
 
 # make directories
 mkdir -p logs figures
@@ -30,9 +30,9 @@ echo "Low-memory mode: $USE_LOW_MEMORY"
 echo "========================================"
 
 if [ "$USE_LOW_MEMORY" = true ]; then
-    mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
+    mpirun -np $np python3 05_postprocess_data_mpi.py "$DATASET_ID" --low-memory
 else
-    mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID"
+    mpirun -np $np python3 05_postprocess_data_mpi.py "$DATASET_ID"
 fi
 
 if [ $? -ne 0 ]; then
