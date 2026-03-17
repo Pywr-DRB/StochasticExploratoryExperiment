@@ -131,7 +131,6 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     Calculate NYC contribution as percentage of Montague flow for each day.
 
     Uses water years (June 1 - May 31) for analysis and day-of-water-year indexing.
-    Optimized for performance with vectorized operations.
 
     Returns
     -------
@@ -144,7 +143,9 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     """
     realization_ids = list(data.contribution[dataset_id].keys())
 
-    all_series = []
+    # Pre-allocate: collect (doy, contrib_pct) per water-year into a 2D array
+    # Each accepted water year becomes one column of shape (366,) with NaN fill
+    col_arrays = []
     n_years_total = 0
     n_years_filtered = 0
 
@@ -159,26 +160,27 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
                                100.0 * nyc_contribution / montague_flow,
                                np.nan)
 
-        # Vectorized water year and day-of-water-year calculation
+        # Vectorized water year and day-of-water-year
         dates = nyc_contribution.index
         months = dates.month.values
         years = dates.year.values
         water_years_arr = np.where(months >= 6, years, years - 1)
 
-        # Compute day-of-water-year vectorized using numpy
-        # June 1 of water year is day 1
-        june1_dates = pd.DatetimeIndex(
-            pd.to_datetime({'year': water_years_arr, 'month': 6, 'day': 1})
+        june1_years = water_years_arr
+        june1_ordinals = (
+            pd.Timestamp(1970, 6, 1).toordinal()
+            + (june1_years - 1970) * 365
+            + ((june1_years - 1968) // 4)  # leap year approx
         )
-        doy_arr = (dates - june1_dates).days.values + 1
+        # Accurate: use numpy datetime64 for speed
+        june1_dates_np = np.array(
+            [np.datetime64(f'{y}-06-01') for y in june1_years],
+            dtype='datetime64[D]'
+        )
+        dates_np = dates.values.astype('datetime64[D]')
+        doy_arr = (dates_np - june1_dates_np).astype(int) + 1
 
-        # Build DataFrame for vectorized groupby
-        df_temp = pd.DataFrame({
-            'contrib_pct': contrib_pct,
-            'water_year': water_years_arr,
-            'doy': doy_arr
-        }, index=dates)
-
+        # Zone filter map (once per realization)
         wy_zone_map = None
         if zone_filter is not None:
             if not hasattr(data, 'res_level') or dataset_id not in data.res_level:
@@ -186,9 +188,14 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
             res_level_df = data.res_level[dataset_id][real_id]
             wy_zone_map = classify_water_years_by_max_zone(res_level_df)
 
-        # Group by water year
-        for wy, group in df_temp.groupby('water_year'):
-            if len(group) < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
+        # Process water years vectorized: find unique water years and their boundaries
+        unique_wys, wy_indices = np.unique(water_years_arr, return_inverse=True)
+
+        for wy_idx, wy in enumerate(unique_wys):
+            mask = wy_indices == wy_idx
+            n_days = mask.sum()
+
+            if n_days < MIN_DAYS_FOR_COMPLETE_WATER_YEAR:
                 continue
 
             n_years_total += 1
@@ -200,13 +207,24 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
 
             n_years_filtered += 1
 
-            wy_series = pd.Series(group['contrib_pct'].values, index=group['doy'].values,
-                                  name=f"r{real_id}_wy{wy}")
-            wy_series = wy_series.sort_index()
-            all_series.append(wy_series)
+            # Scatter into a 366-element array by doy
+            col = np.full(366, np.nan)
+            wy_doy = doy_arr[mask]
+            wy_pct = contrib_pct[mask]
+            valid = (wy_doy >= 1) & (wy_doy <= 366)
+            col[wy_doy[valid] - 1] = wy_pct[valid]
+            col_arrays.append(col)
 
-    all_years_df = pd.concat(all_series, axis=1)
-    return all_years_df, n_years_total, n_years_filtered
+    # Build DataFrame in one shot from stacked array
+    if col_arrays:
+        result = pd.DataFrame(
+            np.column_stack(col_arrays),
+            index=np.arange(1, 367),
+        )
+    else:
+        result = pd.DataFrame(index=np.arange(1, 367))
+
+    return result, n_years_total, n_years_filtered
 
 
 def find_representative_year_for_zone(data, dataset_id, zone_filter=None):
