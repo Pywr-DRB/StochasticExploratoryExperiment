@@ -423,13 +423,20 @@ def load_satisficing_data(dataset_id, ssi_window):
     pd.DataFrame
         Satisficing results for years with droughts
     """
-    from methods.load import load_annual_satisficing
+    from methods.load import load_annual_metrics
 
     try:
-        df = load_annual_satisficing(dataset_id, ssi_window)
+        df = load_annual_metrics(dataset_id)
     except FileNotFoundError as e:
         print(f"  WARNING: {e}")
         return None
+
+    df = df[df['period'] == 'all'].copy()
+    df = df.rename(columns={'water_year': 'year', 'realization_id': 'realization'})
+    df['satisficing'] = (
+        (df['nyc_min_storage_pct'] >= 20.0) &
+        (df['montague_max_consec_shortage_days'] <= 3)
+    )
 
     # Filter to drought years only
     drought_df = df[df['n_droughts_in_year'] > 0].copy()
@@ -464,12 +471,12 @@ def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):
     colors = {True: '#2ecc71', False: '#e74c3c'}  # Green for satisficing, red for non-satisficing
     labels = {True: 'Satisficing', False: 'Non-satisficing'}
 
-    # Panel 1: NYC Inflow vs Montague Contribution
+    # Panel 1: NYC Contribution vs Montague Shortage
     for satisficing_status in [False, True]:  # Plot non-satisficing first, then satisficing
         subset = satisficing_data[satisficing_data['satisficing'] == satisficing_status]
         ax1.scatter(
-            subset['nyc_inflow'],
-            subset['montague_contrib'],
+            subset['nyc_contribution_mg'],
+            subset['montague_shortage_mg'],
             c=colors[satisficing_status],
             label=labels[satisficing_status],
             alpha=0.6,
@@ -478,9 +485,9 @@ def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):
             linewidth=0.5
         )
 
-    ax1.set_xlabel('NYC Inflow (MG)', fontsize=12, fontweight='bold')
-    ax1.set_ylabel('NYC Contribution to Montague (MG)', fontsize=12, fontweight='bold')
-    ax1.set_title('NYC Inflow vs Montague Contribution\n(Drought Years)', fontsize=13, fontweight='bold')
+    ax1.set_xlabel('NYC Contribution to Montague (MG)', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Montague Shortage (MG)', fontsize=12, fontweight='bold')
+    ax1.set_title('NYC Contribution vs Montague Shortage\n(Drought Years)', fontsize=13, fontweight='bold')
     ax1.legend(loc='best', fontsize=11, framealpha=0.9)
     ax1.grid(True, alpha=0.3, linestyle='--')
 
@@ -498,7 +505,7 @@ def create_satisficing_scatter_plots(satisficing_data, dataset_id, ssi_window):
     for satisficing_status in [False, True]:
         subset = satisficing_data[satisficing_data['satisficing'] == satisficing_status]
         ax2.scatter(
-            subset['nyc_event_min_storage_pct'],
+            subset['nyc_min_storage_pct'],
             subset['montague_max_consec_shortage_days'],
             c=colors[satisficing_status],
             label=labels[satisficing_status],

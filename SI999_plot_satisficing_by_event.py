@@ -28,7 +28,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
-from methods.load import load_annual_satisficing
+from methods.load import load_annual_metrics
 
 # Output directory
 FIG_DIR_SATISFICING = f"{FIG_DIR}/SI2_satisficing_by_event"
@@ -452,7 +452,13 @@ def main(dataset_id, ssi_window):
     # Load results
     print("\nLoading satisficing results:")
     print("-" * 80)
-    df = load_annual_satisficing(dataset_id, ssi_window)
+    df = load_annual_metrics(dataset_id)
+    df = df[df['period'] == 'all'].copy()
+    df = df.rename(columns={'water_year': 'year', 'realization_id': 'realization'})
+    df['satisficing'] = (
+        (df['nyc_min_storage_pct'] >= 20.0) &
+        (df['montague_max_consec_shortage_days'] <= 3)
+    )
     results = {
         'all_years': df,
         'drought': df[df['n_droughts_in_year'] > 0],
