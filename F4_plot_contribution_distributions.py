@@ -53,6 +53,9 @@ MIN_DAYS_FOR_COMPLETE_WATER_YEAR = 360
 #   [4, 5, 6]: Only years with Drought Warning, Watch, or Emergency
 FILTER_BY_ZONES = None #[4,5,6]  # Set to list of zones or None for all years
 
+# Multi-panel layout: 'side_by_side' (2-col) or 'stacked' (3-row vertical)
+MULTIPANEL_LAYOUT = 'stacked'
+
 # Representative year trace (shows contribution for year closest to mean)
 SHOW_REPRESENTATIVE_YEAR = True
 
@@ -605,15 +608,25 @@ def _load_and_process_dataset(args):
     return dataset_id, label, contrib_df, n_total, n_filtered
 
 
-def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
+def plot_multipanel_comparison(zone_filter=None, figsize=None, layout=None):
     """
     Create a 3-panel comparison figure.
 
-    Layout:
-    - Left panel: Stationary ensemble (absolute distribution)
-    - Right panels (stacked): Low on top, High on bottom (difference from stationary)
+    Parameters
+    ----------
+    zone_filter : list of int, optional
+        Drought zones to filter by.
+    figsize : tuple, optional
+        Figure size. If None, chosen based on layout.
+    layout : str, optional
+        'side_by_side' (stationary left, deltas stacked right) or
+        'stacked' (all 3 panels stacked vertically).
+        If None, uses module-level MULTIPANEL_LAYOUT.
     """
-    print("F4: Multi-panel contribution comparison")
+    if layout is None:
+        layout = MULTIPANEL_LAYOUT
+
+    print(f"F4: Multi-panel contribution comparison (layout={layout})")
 
     datasets = {
         'stationary_ensemble': DATASET_LABELS.get('stationary_ensemble', 'Stationary'),
@@ -624,8 +637,8 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     all_contrib_dfs = {}
 
     for dataset_id, label in datasets.items():
-        args = (dataset_id, label, zone_filter)
-        dataset_id, label, contrib_df, n_total, n_filtered = _load_and_process_dataset(args)
+        load_args = (dataset_id, label, zone_filter)
+        dataset_id, label, contrib_df, n_total, n_filtered = _load_and_process_dataset(load_args)
         all_contrib_dfs[dataset_id] = contrib_df
 
     stationary_percentiles = _calculate_percentiles(all_contrib_dfs['stationary_ensemble'])
@@ -639,23 +652,37 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
         all_contrib_dfs['climate_adjusted_high']
     )
 
-    fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1],
-                          hspace=0.08, wspace=0.25,
-                          left=0.08, right=0.95, top=0.95, bottom=0.12)
+    # ---- Layout-specific figure construction ----
+    if layout == 'stacked':
+        if figsize is None:
+            figsize = (12, 10)
+        fig, (ax_stat, ax_low, ax_high) = plt.subplots(
+            3, 1, figsize=figsize, sharex=True,
+            gridspec_kw={'hspace': 0.12,
+                         'left': 0.08, 'right': 0.95,
+                         'top': 0.96, 'bottom': 0.08},
+        )
+        # Hide x-tick labels on top two panels
+        plt.setp(ax_stat.get_xticklabels(), visible=False)
+        plt.setp(ax_low.get_xticklabels(), visible=False)
 
-    # Create axes
-    ax_stat = fig.add_subplot(gs[:, 0])  # Left panel spans both rows
-    ax_low = fig.add_subplot(gs[0, 1])   # Top right: climate_adjusted_low
-    ax_high = fig.add_subplot(gs[1, 1], sharex=ax_low)   # Bottom right: climate_adjusted_high
+    else:  # side_by_side (original)
+        if figsize is None:
+            figsize = (12, 6)
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], width_ratios=[1, 1],
+                              hspace=0.08, wspace=0.25,
+                              left=0.08, right=0.95, top=0.95, bottom=0.12)
+        ax_stat = fig.add_subplot(gs[:, 0])
+        ax_low = fig.add_subplot(gs[0, 1])
+        ax_high = fig.add_subplot(gs[1, 1], sharex=ax_low)
+        plt.setp(ax_low.get_xticklabels(), visible=False)
 
-    # Hide x-tick labels on top right panel
-    plt.setp(ax_low.get_xticklabels(), visible=False)
+    # ---- Panel content (shared across layouts) ----
 
-    # Left panel: Stationary distribution
+    # (a) Stationary distribution
     _plot_contribution_bands(ax_stat, stationary_percentiles, color=DATASET_COLORS['stationary_ensemble'])
     _format_xaxis(ax_stat)
-    ax_stat.set_xlabel('Month', fontsize=12)
     ax_stat.set_ylabel('NYC Contribution to Montague Flow (%)', fontsize=12)
     if Y_SCALE_FIXED:
         ax_stat.set_ylim(0, 100)
@@ -664,7 +691,7 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     stat_label = DATASET_LABELS.get('stationary_ensemble', 'Stationary')
     ax_stat.text(0.02, 0.97, f'(a) {stat_label}', transform=ax_stat.transAxes, fontsize=12, va='top', ha='left')
 
-    # Top right panel: Low climate difference
+    # (b) Low climate difference
     _plot_difference_bands(ax_low, diff_low, color=DATASET_COLORS['climate_adjusted_low'], label_prefix='')
     ax_low.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     ax_low.set_ylabel('Change in Distribution\nRelative to Baseline Ensemble', fontsize=10)
@@ -673,7 +700,7 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     low_label = DATASET_LABELS.get('climate_adjusted_low', 'Climate Low')
     ax_low.text(0.02, 0.97, f'(b) {low_label}', transform=ax_low.transAxes, fontsize=12, va='top', ha='left')
 
-    # Bottom right panel: High climate difference
+    # (c) High climate difference
     _plot_difference_bands(ax_high, diff_high, color=DATASET_COLORS['climate_adjusted_high'], label_prefix='')
     ax_high.axhline(y=0, color='black', linestyle='-', linewidth=0.8, alpha=0.5)
     _format_xaxis(ax_high)
@@ -684,7 +711,11 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     high_label = DATASET_LABELS.get('climate_adjusted_high', 'Climate High')
     ax_high.text(0.02, 0.97, f'(c) {high_label}', transform=ax_high.transAxes, fontsize=12, va='top', ha='left')
 
-    # Shared grey-scale legend (generic band descriptions)
+    # x-label only on stationary panel for side_by_side layout
+    if layout != 'stacked':
+        ax_stat.set_xlabel('Month', fontsize=12)
+
+    # Shared grey-scale legend
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
     legend_elements = [
@@ -694,7 +725,7 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
     ]
     fig.legend(handles=legend_elements, loc='lower center',
                ncol=3, fontsize=9, frameon=False,
-               bbox_to_anchor=(0.5, -0.06))
+               bbox_to_anchor=(0.5, -0.03))
 
     # Match y-axis limits for difference panels
     y_min = min(ax_high.get_ylim()[0], ax_low.get_ylim()[0])
@@ -704,7 +735,8 @@ def plot_multipanel_comparison(zone_filter=None, figsize=(12, 6)):
 
     # Save
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
-    fname = f"{FIG_OUTPUT_DIR}/F4_multipanel_contribution_comparison{zone_suffix}.png"
+    layout_suffix = f'_{layout}' if layout != 'side_by_side' else ''
+    fname = f"{FIG_OUTPUT_DIR}/F4_multipanel_contribution_comparison{layout_suffix}{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
 
