@@ -32,7 +32,7 @@ from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LABEL,
 )
-from methods.load import load_annual_satisficing, load_drought_events
+from methods.load import load_drought_satisficing
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/SI7_drought_satisficing"
@@ -42,10 +42,6 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-
-# Satisficing thresholds (used for categorization)
-STORAGE_THRESHOLD = 20.0       # Minimum storage % during drought
-VIOLATION_DAYS_THRESHOLD = 3   # Max consecutive Montague violation days
 
 # Datasets to analyze
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
@@ -74,78 +70,6 @@ SATISFICING_LABELS = {
 # ============================================================================
 # DATA LOADING
 # ============================================================================
-
-
-def _add_satisficing_category(df):
-    """Add satisficing category based on storage and montague thresholds."""
-    df['storage_pass'] = df['nyc_min_storage_pct'] >= STORAGE_THRESHOLD
-    df['montague_pass'] = df['montague_max_consec_shortage_days'] <= VIOLATION_DAYS_THRESHOLD
-
-    def get_category(row):
-        failures = []
-        if not row['storage_pass']:
-            failures.append('storage')
-        if not row['montague_pass']:
-            failures.append('montague')
-
-        if len(failures) == 0:
-            return 'all_pass'
-        elif len(failures) > 1:
-            return 'multiple_fail'
-        elif failures[0] == 'storage':
-            return 'storage_fail'
-        else:
-            return 'montague_fail'
-
-    df['satisficing_category'] = df.apply(get_category, axis=1)
-    return df
-
-
-def load_satisficing_data(dataset_id, ssi_window):
-    """
-    Load drought events merged with annual satisficing data.
-
-    Loads drought events CSV and annual satisficing CSV, merges on
-    (year, realization_id) to annotate each drought event with the
-    annual satisficing outcome for the year it started.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    ssi_window : int
-        SSI window (3, 6, or 12)
-
-    Returns
-    -------
-    pd.DataFrame or None
-        Drought events with satisficing columns, or None if files missing.
-    """
-    try:
-        events_df = load_drought_events(dataset_id, ssi_window)
-        annual_df = load_annual_satisficing(dataset_id, ssi_window)
-    except FileNotFoundError as e:
-        print(f"  {e}")
-        return None
-
-    # Extract start year for merge
-    events_df['start'] = pd.to_datetime(events_df['start'])
-    events_df['year'] = events_df['start'].dt.year
-
-    # Rename realization column for merge
-    annual_df = annual_df.rename(columns={'realization': 'realization_id'})
-
-    # Merge on year and realization
-    merged = events_df.merge(
-        annual_df[['year', 'realization_id', 'nyc_min_storage_pct', 'montague_max_consec_shortage_days', 'satisficing']],
-        on=['year', 'realization_id'],
-        how='left'
-    )
-    merged = merged.dropna(subset=['nyc_min_storage_pct'])
-    merged = _add_satisficing_category(merged)
-    print(f"    Merged {len(merged)} drought events with annual satisficing")
-
-    return merged
 
 
 # ============================================================================
@@ -230,7 +154,7 @@ def plot_multipanel_scatter(ssi_window=12, figsize=(16, 5)):
 
     for idx, dataset_id in enumerate(DATASETS):
         print(f"\nProcessing {dataset_id}...")
-        df = load_satisficing_data(dataset_id, ssi_window)
+        df = load_drought_satisficing(dataset_id, ssi_window)
 
         if df is not None:
             all_results[dataset_id] = df
@@ -299,7 +223,7 @@ def plot_combined_hexbin_scatter(ssi_window=12, figsize=(14, 10)):
     dataset_dfs = {}
 
     for dataset_id in DATASETS:
-        df = load_satisficing_data(dataset_id, ssi_window)
+        df = load_drought_satisficing(dataset_id, ssi_window)
         if df is not None:
             df['dataset_id'] = dataset_id
             all_data.append(df)

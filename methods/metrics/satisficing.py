@@ -23,6 +23,48 @@ NYC_STORAGE_CAPACITIES = {
 NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())
 
 
+def add_satisficing_category(df, storage_threshold=20.0, violation_days=3):
+    """
+    Annotate a DataFrame with satisficing pass/fail columns and a category label.
+
+    Adds boolean columns ``storage_pass`` and ``montague_pass``, plus a
+    ``satisficing_category`` column with one of:
+    ``'all_pass'``, ``'storage_fail'``, ``'montague_fail'``, ``'multiple_fail'``.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain ``nyc_min_storage_pct`` and
+        ``montague_max_consec_shortage_days`` columns.
+    storage_threshold : float
+        Minimum acceptable NYC storage percentage (default: 20%).
+    violation_days : int
+        Maximum acceptable consecutive Montague violation days (default: 3).
+
+    Returns
+    -------
+    pd.DataFrame
+        Input DataFrame with additional columns added in-place.
+    """
+    df['storage_pass'] = df['nyc_min_storage_pct'] >= storage_threshold
+    df['montague_pass'] = df['montague_max_consec_shortage_days'] <= violation_days
+
+    def _category(row):
+        failures = []
+        if not row['storage_pass']:
+            failures.append('storage')
+        if not row['montague_pass']:
+            failures.append('montague')
+        if len(failures) == 0:
+            return 'all_pass'
+        if len(failures) > 1:
+            return 'multiple_fail'
+        return 'storage_fail' if failures[0] == 'storage' else 'montague_fail'
+
+    df['satisficing_category'] = df.apply(_category, axis=1)
+    return df
+
+
 def calculate_annual_satisficing(data, dataset_id, drought_events_df=None,
                                  storage_threshold=20.0, violation_days=3):
     """

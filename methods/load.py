@@ -19,6 +19,7 @@ from methods.metrics.shortfall import (
     get_flow_and_target_values, add_trenton_equiv_flow,
     calculate_shortage_series,
 )
+from methods.metrics.satisficing import add_satisficing_category
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
@@ -826,36 +827,63 @@ def load_reservoir_storage(dataset_id):
     return data.res_storage[dataset_id]
 
 
-def load_annual_satisficing(dataset_id, ssi_window):
+def load_drought_satisficing(dataset_id, ssi_window,
+                             storage_threshold=20.0, violation_days=3):
     """
-    Load annual satisficing results (legacy format).
+    Load drought events merged with annual performance metrics and annotated
+    with satisficing categories.
+
+    Loads the drought events CSV and the annual metrics CSV, filters the
+    metrics to the whole-year period (``period == 'all'``), and merges on
+    ``(water_year, realization_id)`` so each drought event carries the
+    annual metrics for the year it started.  Satisficing category columns
+    are then added via :func:`add_satisficing_category`.
 
     Parameters
     ----------
     dataset_id : str
-        Dataset identifier
+        Dataset identifier (e.g. ``'stationary_ensemble'``).
     ssi_window : int
-        SSI window (3, 6, or 12 months)
+        SSI window (3, 6, or 12 months).
+    storage_threshold : float
+        Minimum acceptable NYC storage percentage (default: 20%).
+    violation_days : int
+        Maximum acceptable consecutive Montague violation days (default: 3).
 
     Returns
     -------
     pd.DataFrame
-        Annual satisficing DataFrame with columns: year, realization,
-        satisficing, nyc_min_storage_pct, montague_max_consec_shortage_days,
-        nyc_inflow, montague_contrib, n_droughts_in_year.
+        Drought events with additional columns:
+        ``nyc_min_storage_pct``, ``montague_max_consec_shortage_days``,
+        ``storage_pass``, ``montague_pass``, ``satisficing_category``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the drought events or annual metrics CSV is missing.
+        Run ``06_calculate_performance_metrics.py`` to generate the metrics.
     """
-    data_dir = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
-    fname = f"{data_dir}/{dataset_id}_ssi{ssi_window}_annual_satisficing.csv"
+    events_df = load_drought_events(dataset_id, ssi_window)
+    annual_df = load_annual_metrics(dataset_id)
 
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Annual satisficing file not found: {fname}\n"
-            "Legacy satisficing CSV not found. Satisficing is now computed from annual_metrics."
-        )
+    annual_df = (
+        annual_df[annual_df['period'] == 'all']
+        .rename(columns={'water_year': 'year'})
+    )
 
-    df = pd.read_csv(fname)
-    print(f"Loaded annual satisficing: {fname} ({len(df)} rows)")
-    return df
+    events_df['start'] = pd.to_datetime(events_df['start'])
+    events_df['year'] = events_df['start'].dt.year
+
+    merged = events_df.merge(
+        annual_df[['year', 'realization_id',
+                   'nyc_min_storage_pct', 'montague_max_consec_shortage_days']],
+        on=['year', 'realization_id'],
+        how='left',
+    )
+    merged = merged.dropna(subset=['nyc_min_storage_pct'])
+    merged = add_satisficing_category(merged, storage_threshold, violation_days)
+    print(f"    Merged {len(merged)} drought events with annual satisficing")
+    return merged
 
 
 def compute_event_exceedances(df, metric='severity', n_years=70):
