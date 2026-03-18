@@ -184,16 +184,16 @@ def plot_figure():
         color = DATASET_COLORS[did]
         ls = DATASET_LINESTYLES.get(did, '-')
 
-        # Very light 5-95 shading
-        ax_a.fill_between(w, sp['p5'], sp['p95'],
+        # Very light 1-99 shading
+        ax_a.fill_between(w, sp['p1'], sp['p99'],
                           color=color, alpha=0.07, linewidth=0)
 
         # Median (solid, thick)
         ax_a.plot(w, sp['p50'], color=color, linewidth=2.5,
                   linestyle=ls, alpha=0.95, zorder=6)
 
-        # 5th percentile (dashed)
-        ax_a.plot(w, sp['p5'], color=color, linewidth=1.5,
+        # 1st percentile (dashed)
+        ax_a.plot(w, sp['p1'], color=color, linewidth=1.5,
                   linestyle='--', alpha=0.6, zorder=5)
 
     ax_a.set_ylabel('Combined NYC Reservoir\nStorage (% of capacity)', fontsize=FONTSIZE_LABEL)
@@ -286,7 +286,7 @@ def plot_figure():
                alpha=0.9, label='Median'))
     handles.append(
         Line2D([0], [0], color='grey', linewidth=1.5, linestyle='--',
-               alpha=0.6, label='5th Percentile'))
+               alpha=0.6, label='1st Percentile'))
 
     fig.legend(handles=handles, loc='lower center', ncol=5,
                fontsize=10, frameon=False, bbox_to_anchor=(0.54, -0.01))
