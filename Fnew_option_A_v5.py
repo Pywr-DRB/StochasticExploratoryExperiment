@@ -41,24 +41,51 @@ WY_MONTH_LABELS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
                     'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
 
 
-def reindex_to_wy(df):
-    wy_order = list(range(23, 54)) + list(range(1, 23))
-    wy_order = [w for w in wy_order if w in df.index]
-    df_wy = df.loc[wy_order].copy()
-    df_wy.index = range(1, len(df_wy) + 1)
-    return df_wy
-
-
 def load_storage_percentiles(did):
-    return reindex_to_wy(pd.read_csv(
+    """Load storage percentiles — CSV period is already WY-ordered (period 1 = June)."""
+    return pd.read_csv(
         f'{ROOT_DIR}/pywrdrb/zone_probabilities/{did}_storage_percentiles_weekly.csv',
-        index_col='period'))
+        index_col='period')
 
 
 def load_zone_probs(did):
-    return reindex_to_wy(pd.read_csv(
+    """Load zone probabilities — CSV period is already WY-ordered (period 1 = June)."""
+    return pd.read_csv(
         f'{ROOT_DIR}/pywrdrb/zone_probabilities/{did}_zone_probs_weekly.csv',
-        index_col='period'))
+        index_col='period')
+
+
+def load_ffmp_boundaries_wy():
+    """Load FFMP zone boundaries as weekly water-year-ordered curves.
+
+    Returns dict with keys 'emergency' (level5), 'warning' (level4),
+    'watch' (level3), 'normal' (level2), each a Series indexed 1..52.
+    """
+    import pywrdrb
+    data = pywrdrb.Data(results_sets=['ffmp_level_boundaries'])
+    data.load_output(output_filenames=[f'{ROOT_DIR}/pywrdrb/outputs/reconstruction.hdf5'])
+    ffmp = data.ffmp_level_boundaries['reconstruction'][0] * 100  # to %
+
+    # Median by day-of-year
+    ffmp['doy'] = ffmp.index.dayofyear
+    num_cols = ['level5', 'level4', 'level3', 'level2']
+    daily_med = ffmp.groupby('doy')[num_cols].median()
+
+    # Reorder to water year (June 1 = WY day 1)
+    june1_doy = 152
+    wy_days = list(range(june1_doy, 366)) + list(range(1, june1_doy))
+    wy_daily = daily_med.loc[wy_days].copy()
+    wy_daily.index = range(1, len(wy_daily) + 1)
+
+    # Aggregate to weekly
+    wy_weekly = wy_daily.groupby((wy_daily.index - 1) // 7 + 1).mean()
+
+    return {
+        'emergency': wy_weekly['level5'],  # lower bound of emergency
+        'warning': wy_weekly['level4'],    # lower bound of warning
+        'watch': wy_weekly['level3'],      # lower bound of watch
+        'normal': wy_weekly['level2'],     # lower bound of normal
+    }
 
 
 def smooth(series, window=3):
@@ -78,12 +105,17 @@ def plot_figure():
 
     storage = {d: load_storage_percentiles(d) for d in DATASETS}
     zones = {d: load_zone_probs(d) for d in DATASETS}
+    ffmp = load_ffmp_boundaries_wy()
 
-    # P(Drought Zone) = P(Zone 4 OR Zone 5 OR Zone 6), smoothed
+    # P(FFMP Drought Zone) = P(zone_0 + zone_1 + zone_2)
+    # zone_0 = Emergency (storage < level5)
+    # zone_1 = Warning   (level5 <= storage < level4)
+    # zone_2 = Watch     (level4 <= storage < level3)
+    # Note: zone_5/zone_6 are HIGH storage zones (near/at capacity), NOT drought zones.
     p_drought = {}
     for d in DATASETS:
         zp = zones[d]
-        raw = zp['zone_4'] + zp['zone_5'] + zp['zone_6']
+        raw = zp['zone_0'] + zp['zone_1'] + zp['zone_2']
         p_drought[d] = smooth(raw, window=3)
 
     # ====================================================================
@@ -103,8 +135,49 @@ def plot_figure():
     plt.setp(ax_b.get_xticklabels(), visible=False)
 
     # ====================================================================
-    # PANEL (a): Storage percentile fans
+    # PANEL (a): FFMP zone bands (background) + Storage percentile fans
     # ====================================================================
+    # Plot FFMP zone bands FIRST as background so storage lines overlay
+    w_ffmp = ffmp['emergency'].index.values[:52]
+    emerg_vals = ffmp['emergency'].values[:52]
+    warn_vals = ffmp['warning'].values[:52]
+    watch_vals = ffmp['watch'].values[:52]
+    normal_vals = ffmp['normal'].values[:52]
+
+    # Zone colors (soft, distinct)
+    zone_colors = {
+        'emergency': '#d32f2f',   # red
+        'warning':   '#ef6c00',   # orange
+        'watch':     '#f9a825',   # amber
+        'normal':    '#66bb6a',   # green
+    }
+
+    # Zone boundary lines only (no fill)
+    ax_a.plot(w_ffmp, emerg_vals, color=zone_colors['emergency'],
+              linewidth=1.8, alpha=0.75, zorder=5)
+    ax_a.plot(w_ffmp, warn_vals, color=zone_colors['warning'],
+              linewidth=1.8, alpha=0.70, zorder=5)
+    ax_a.plot(w_ffmp, watch_vals, color=zone_colors['watch'],
+              linewidth=1.5, alpha=0.60, zorder=5)
+    ax_a.plot(w_ffmp, normal_vals, color=zone_colors['normal'],
+              linewidth=1.5, alpha=0.55, zorder=5)
+
+    # Zone labels at right edge (stagger to avoid overlap)
+    right_x = 52.8
+    ax_a.text(right_x, emerg_vals[-1] - 3, 'Emergency',
+              fontsize=7, color=zone_colors['emergency'], va='center', ha='left',
+              fontweight='bold', alpha=0.85)
+    ax_a.text(right_x, (emerg_vals[-1] + warn_vals[-1]) / 2, 'Warning',
+              fontsize=7, color=zone_colors['warning'], va='center', ha='left',
+              fontweight='bold', alpha=0.80)
+    ax_a.text(right_x, (warn_vals[-1] + watch_vals[-1]) / 2, 'Watch',
+              fontsize=7, color=zone_colors['watch'], va='center', ha='left',
+              fontweight='bold', alpha=0.75)
+    ax_a.text(right_x, (watch_vals[-1] + normal_vals[-1]) / 2, 'Normal',
+              fontsize=7, color=zone_colors['normal'], va='center', ha='left',
+              fontweight='bold', alpha=0.70)
+
+    # Storage percentile fans on top
     for did in DATASETS:
         sp = storage[did]
         w = sp.index.values
@@ -117,27 +190,11 @@ def plot_figure():
 
         # Median (solid, thick)
         ax_a.plot(w, sp['p50'], color=color, linewidth=2.5,
-                  linestyle=ls, alpha=0.95, zorder=4)
+                  linestyle=ls, alpha=0.95, zorder=6)
 
         # 5th percentile (dashed)
         ax_a.plot(w, sp['p5'], color=color, linewidth=1.5,
-                  linestyle='--', alpha=0.6, zorder=3)
-
-    # Seasonal context
-    ax_a.axvspan(1, 26, color='#FFF9C4', alpha=0.08, zorder=0)
-    ax_a.axvspan(26, 52, color='#E3F2FD', alpha=0.08, zorder=0)
-    ax_a.text(13, 2, 'Drawdown Season', fontsize=9, ha='center',
-              color='#5D4037', alpha=0.55, style='italic')
-    ax_a.text(39, 2, 'Refill Season', fontsize=9, ha='center',
-              color='#1565C0', alpha=0.50, style='italic')
-
-    # FFMP thresholds — clearer labels
-    ax_a.axhline(25, color='#c62828', linewidth=1.0, linestyle=':', alpha=0.50)
-    ax_a.axhline(40, color='#e65100', linewidth=1.0, linestyle=':', alpha=0.45)
-    ax_a.text(52.8, 25, 'FFMP\nEmergency', fontsize=7.5, color='#c62828',
-              va='center', ha='left', alpha=0.70, linespacing=0.9)
-    ax_a.text(52.8, 40, 'FFMP\nWarning', fontsize=7.5, color='#e65100',
-              va='center', ha='left', alpha=0.65, linespacing=0.9)
+                  linestyle='--', alpha=0.6, zorder=5)
 
     ax_a.set_ylabel('Combined NYC Reservoir\nStorage (% of capacity)', fontsize=FONTSIZE_LABEL)
     ax_a.set_ylim(0, 105)
@@ -169,14 +226,9 @@ def plot_figure():
             color=color, alpha=0.12, linewidth=0,
         )
 
-    # Annotate refill period
-    ax_b.axvspan(27, 32, color='#E3F2FD', alpha=0.20, zorder=0)
-    ax_b.text(29.5, 8, 'Reservoirs\nat capacity', fontsize=8, ha='center',
-              color='#1565C0', alpha=0.6, style='italic')
-
     # Explicit y-axis label defining the metric
     ax_b.set_ylabel('P(FFMP Drought Zone)\n(%)', fontsize=FONTSIZE_LABEL)
-    ax_b.set_ylim(0, 100)
+    ax_b.set_ylim(0, None)  # auto upper limit
     ax_b.grid(True, alpha=0.12, linestyle='--')
     ax_b.set_axisbelow(True)
     ax_b.text(0.015, 0.97, '(b)', transform=ax_b.transAxes,
@@ -209,24 +261,6 @@ def plot_figure():
                           color=color, alpha=0.10)
         ax_c.plot(w, delta.values, color=color,
                   linewidth=2.5, linestyle=ls, alpha=0.90, zorder=3)
-
-        # Peak annotation — clearly separated
-        peak_w = delta.idxmax()
-        peak_v = delta.max()
-        short_label = DATASET_LABELS[did]
-        if did == 'climate_adjusted_high':
-            x_off, y_off = 6, 4
-        else:
-            x_off, y_off = -7, 3
-        ax_c.annotate(
-            f'{short_label}\n+{peak_v:.0f} pp',
-            xy=(peak_w, peak_v),
-            xytext=(peak_w + x_off, peak_v + y_off),
-            fontsize=9, color=color, fontweight='bold',
-            ha='center', linespacing=0.9,
-            arrowprops=dict(arrowstyle='->', color=color,
-                            lw=1.0, alpha=0.6),
-        )
 
     ax_c.axhline(0, color='black', linewidth=0.8, alpha=0.35)
     ax_c.set_ylabel('Change in P(FFMP Drought\nZone) vs. Baseline (pp)', fontsize=FONTSIZE_LABEL)
