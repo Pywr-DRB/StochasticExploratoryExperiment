@@ -13,6 +13,16 @@ import numpy as np
 import pandas as pd
 
 from methods.config import NYC_RESERVOIRS, NYC_TOTAL_CAPACITY
+from methods.load import load_ffmp_boundaries
+
+
+def _build_ffmp_doy_lookup():
+    """Build day-of-year lookup table for FFMP zone boundaries (%)."""
+    fb = load_ffmp_boundaries()
+    fb['doy'] = fb.index.dayofyear
+    # level5 = Emergency, level4 = Warning, level3 = Watch
+    cols = ['level5', 'level4', 'level3']
+    return fb.groupby('doy')[cols].median()
 
 
 def calculate_all_event_metrics(data, dataset_id, drought_events_df,
@@ -44,6 +54,9 @@ def calculate_all_event_metrics(data, dataset_id, drought_events_df,
     drought_events_df['start'] = pd.to_datetime(drought_events_df['start'])
     drought_events_df['end'] = pd.to_datetime(drought_events_df['end'])
 
+    # Load FFMP boundaries once
+    ffmp_doy = _build_ffmp_doy_lookup()
+
     realizations = drought_events_df['realization_id'].unique()
     all_results = []
 
@@ -56,7 +69,7 @@ def calculate_all_event_metrics(data, dataset_id, drought_events_df,
 
         for idx, event in r_events.iterrows():
             metrics = _calculate_single_event(
-                event, ts, storage_threshold, violation_days
+                event, ts, storage_threshold, violation_days, ffmp_doy
             )
             all_results.append(metrics)
 
@@ -139,7 +152,7 @@ def _max_consecutive_positive(series, tolerance=0.0):
     return int(violations.groupby(groups).sum().max())
 
 
-def _calculate_single_event(event, ts, storage_threshold, violation_days):
+def _calculate_single_event(event, ts, storage_threshold, violation_days, ffmp_doy):
     """
     Compute all metrics for a single drought event over its exact window.
 
@@ -153,6 +166,8 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
         Satisficing storage threshold (%)
     violation_days : int
         Satisficing max consecutive violation days
+    ffmp_doy : pd.DataFrame
+        FFMP boundaries by day-of-year (columns: level5, level4, level3)
 
     Returns
     -------
@@ -200,7 +215,32 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
 
     # --- Metrics during drought window ---
     min_storage = stor.min()
+    min_storage_date = stor.idxmin()
+    min_storage_month = min_storage_date.month if pd.notna(min_storage_date) else np.nan
     storage_drawdown = storage_at_start - min_storage
+
+    # --- FFMP zone at min storage date (dynamic seasonal thresholds) ---
+    min_doy = min_storage_date.dayofyear if pd.notna(min_storage_date) else 1
+    # Handle leap year DOY > 365
+    if min_doy > 365:
+        min_doy = 365
+    if min_doy in ffmp_doy.index:
+        ffmp_at_min = ffmp_doy.loc[min_doy]
+    else:
+        ffmp_at_min = ffmp_doy.iloc[min(min_doy - 1, len(ffmp_doy) - 1)]
+
+    emergency_threshold = ffmp_at_min['level5']
+    warning_threshold = ffmp_at_min['level4']
+    watch_threshold = ffmp_at_min['level3']
+
+    if min_storage < emergency_threshold:
+        ffmp_zone_at_min = 'Emergency'
+    elif min_storage < warning_threshold:
+        ffmp_zone_at_min = 'Warning'
+    elif min_storage < watch_threshold:
+        ffmp_zone_at_min = 'Watch'
+    else:
+        ffmp_zone_at_min = 'Normal'
 
     total_contribution = contrib.sum()
     total_inflow = inflow.sum()
@@ -266,7 +306,13 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
         'nyc_diversion_sat_ratio': diversion_sat_ratio,
         # Outcome: storage
         'event_min_storage_pct': min_storage,
+        'min_storage_date': min_storage_date,
+        'min_storage_month': min_storage_month,
         'storage_drawdown_pct': storage_drawdown,
+        # FFMP zone classification at min storage (dynamic thresholds)
+        'ffmp_zone_at_min': ffmp_zone_at_min,
+        'ffmp_emergency_threshold': emergency_threshold,
+        'ffmp_warning_threshold': warning_threshold,
         # Outcome: NYC shortage
         'total_nyc_shortage_mg': total_nyc_shortage,
         'nyc_shortage_pct': nyc_shortage_pct,

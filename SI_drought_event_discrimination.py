@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
-from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -40,7 +40,7 @@ from methods.plotting.styles import (
 FIG_OUTPUT_DIR = f"{FIG_DIR}/SI_drought_discrimination"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-SSI_WINDOW = 6
+SSI_WINDOW = 3
 MIN_DURATION = 30
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
@@ -48,8 +48,9 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 ANTECEDENT = ['storage_at_start_pct', 'start_month']
 HAZARD = ['severity', 'magnitude', 'duration_days', 'severity_rate',
           'peak_severity_month', 'total_inflow_mg']
-ACTION = ['contribution_ratio', 'nyc_diversion_inflow_ratio', 'nyc_diversion_sat_ratio']
+ACTION = ['contribution_ratio', 'nyc_diversion_inflow_ratio']
 OUTCOME = ['event_min_storage_pct', 'storage_drawdown_pct',
+           'nyc_diversion_sat_ratio',
            'total_nyc_shortage_mg', 'nyc_shortage_pct',
            'max_consec_montague_days', 'total_montague_shortage_mg',
            'max_consec_trenton_days', 'total_trenton_shortage_mg']
@@ -83,15 +84,13 @@ def load_events(dataset_id):
     return df
 
 
-def classify_outcome(df, thresholds=(50, 25)):
-    """Classify events by min storage outcome."""
+def classify_outcome(df):
+    """Classify events using dynamic FFMP zone at min storage date."""
     df = df.copy()
-    t_stressed, t_severe = thresholds
-    df['outcome'] = f'Resilient (>{t_stressed}%)'
-    df.loc[df['event_min_storage_pct'] < t_stressed, 'outcome'] = f'Stressed ({t_severe}-{t_stressed}%)'
-    df.loc[df['event_min_storage_pct'] < t_severe, 'outcome'] = f'Severe (<{t_severe}%)'
-    df['is_severe'] = (df['event_min_storage_pct'] < t_severe).astype(int)
-    df['is_stressed'] = (df['event_min_storage_pct'] < t_stressed).astype(int)
+    # FFMP zone-based classification (dynamic seasonal thresholds)
+    df['is_severe'] = (df['ffmp_zone_at_min'] == 'Emergency').astype(int)
+    df['is_stressed'] = df['ffmp_zone_at_min'].isin(['Emergency', 'Warning']).astype(int)
+    df['outcome'] = df['ffmp_zone_at_min']
     return df
 
 
@@ -136,8 +135,8 @@ def run_decision_trees(df):
     feature_names = [FEATURE_SHORT.get(f, f) for f in VALID_PREDICTORS]
     results = {}
 
-    for label, target in [('Severe (<40%)', 'is_severe'),
-                           ('Stressed (<60%)', 'is_stressed')]:
+    for label, target in [('FFMP Emergency', 'is_severe'),
+                           ('FFMP Warning+Emergency', 'is_stressed')]:
         y = df[target].values
         n_pos = y.sum()
         if n_pos < 3:
@@ -166,6 +165,8 @@ def run_decision_trees(df):
             'n_pos': n_pos,
             'cart_importance': imp,
             'rf_importance': rf_imp,
+            'tree': dt,
+            'feature_names': feature_names,
         }
     return results
 
@@ -246,10 +247,10 @@ def main():
     print(f"Loading SSI-{SSI_WINDOW} events (duration >= {MIN_DURATION} days)...")
     df = load_events('stationary_ensemble')
     df = classify_outcome(df)
-    print(f"  {len(df)} events: "
-          f"{(df['outcome']=='Resilient (>60%)').sum()} resilient, "
-          f"{(df['outcome']=='Stressed (40-60%)').sum()} stressed, "
-          f"{(df['outcome']=='Severe (<40%)').sum()} severe")
+    zone_counts = df['ffmp_zone_at_min'].value_counts()
+    print(f"  {len(df)} events — FFMP zone at min storage:")
+    for z in ['Normal', 'Watch', 'Warning', 'Emergency']:
+        print(f"    {z}: {zone_counts.get(z, 0)}")
 
     # ================================================================
     # FIGURE 1: Correlation + Feature Importance (2-panel)
@@ -274,6 +275,37 @@ def main():
     for label, res in dt_results.items():
         print(f"\n  === CART: {label} (accuracy={res.get('accuracy',0):.1%}) ===")
         print(res.get('text', 'N/A'))
+
+    # ================================================================
+    # FIGURE 1b: Decision Tree Visualizations
+    # ================================================================
+    tree_entries = [(label, res) for label, res in dt_results.items() if 'tree' in res]
+    if tree_entries:
+        fig, axes = plt.subplots(len(tree_entries), 1,
+                                  figsize=(16, 5 * len(tree_entries)),
+                                  gridspec_kw={'hspace': 0.4})
+        if len(tree_entries) == 1:
+            axes = [axes]
+
+        for ax, (label, res) in zip(axes, tree_entries):
+            dt = res['tree']
+            feat_names = res['feature_names']
+            n_pos = res['n_pos']
+            n_total = len(df)
+            acc = res['accuracy']
+
+            plot_tree(dt, feature_names=feat_names,
+                      class_names=['Pass', 'Fail'],
+                      filled=True, rounded=True, fontsize=9,
+                      impurity=False, proportion=True, ax=ax)
+            ax.set_title(f'{label}  —  accuracy={acc:.1%}, '
+                         f'n_fail={n_pos}/{n_total}',
+                         fontsize=12, fontweight='bold')
+
+        fname = f"{FIG_OUTPUT_DIR}/discrimination_decision_trees.png"
+        fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"  Saved: {fname}")
+        plt.close()
 
     # ================================================================
     # FIGURE 2: Key interactions (2x2)

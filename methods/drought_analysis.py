@@ -14,18 +14,18 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from synhydro.droughts.ssi import SSIDroughtMetrics, SSI
+from synhydro.droughts.ssi import get_drought_metrics, SSI
 
 from scipy.stats import chi2_contingency, mannwhitneyu
 
-from .config import BASELINE_DATASET, NYC_RESERVOIRS
+from .config import BASELINE_DATASET, NYC_RESERVOIRS, SSI_NODE, SSI_NODE_CONFIGS
 from .load import load_baseline_historical_flow, load_wrf1960s_historical_flow
 from .metrics.satisficing import calculate_annual_satisficing
 from .print_summary import print_satisficing_summary
 from .save import save_annual_satisficing
 
 
-def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
+def fit_ssi_calculator(ssi_window, node=None):
     """
     Fit an SSI calculator on the baseline period (1980-2019) historical flow.
 
@@ -37,21 +37,29 @@ def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
     ----------
     ssi_window : int
         SSI timescale in months (e.g., 3, 6, 12).
-    node : str
-        Column name to fit SSI on (default: 'nyc_aggregate').
+    node : str or None
+        Column name to fit SSI on. If None, uses SSI_NODE from config.
 
     Returns
     -------
     ssi_calculator : SSI
         Fitted SSI calculator ready for .transform() calls.
     """
+    if node is None:
+        node = SSI_NODE
+    node_config = SSI_NODE_CONFIGS[node]
+
     Q_baseline = load_baseline_historical_flow(
-        gage_flow=False, period='full', flowtype=BASELINE_DATASET
+        gage_flow=node_config['historical_gage_flow'], period='baseline', flowtype=BASELINE_DATASET
     )
     Q_baseline.replace(0, np.nan, inplace=True)
-    Q_baseline.drop(columns=['delTrenton'], inplace=True)
+    for col in node_config['drop_columns']:
+        if col in Q_baseline.columns:
+            Q_baseline.drop(columns=[col], inplace=True)
 
-    Q_baseline[node] = Q_baseline[NYC_RESERVOIRS].sum(axis=1)
+    # If flow is nyc_aggregate then sum the individual reservoirs to get the aggregate flow for SSI fitting
+    if node_config['derived']:
+        Q_baseline[node] = Q_baseline[node_config['derive_from']].sum(axis=1)
 
     # Extract only the target node series before resampling/cleanup
     # to avoid dropna removing months due to NaN in unrelated columns
@@ -65,7 +73,7 @@ def fit_ssi_calculator(ssi_window, node='nyc_aggregate'):
     return ssi_calculator
 
 
-def calculate_historic_observed_droughts(ssi_windows, output_dir):
+def calculate_historic_observed_droughts(ssi_windows, output_dir, node=None):
     """
     Calculate SSI-based drought metrics for historic observed data.
 
@@ -75,36 +83,49 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
         SSI window sizes in months (e.g., [3, 6, 12])
     output_dir : str
         Directory to save drought metrics
+    node : str or None
+        Flow node for SSI calculation. If None, uses SSI_NODE from config.
 
     Returns
     -------
     bool
         True if successful
     """
+    if node is None:
+        node = SSI_NODE
+    node_config = SSI_NODE_CONFIGS[node]
+
     print("=" * 60)
-    print("CALCULATING HISTORIC OBSERVED DROUGHTS")
+    print(f"CALCULATING HISTORIC OBSERVED DROUGHTS (node={node})")
     print("=" * 60)
 
     # Load FULL historic record for transform (to find all droughts)
-    Q = load_baseline_historical_flow(gage_flow=False, period='full', flowtype=BASELINE_DATASET)
+    Q = load_baseline_historical_flow(
+        gage_flow=node_config['historical_gage_flow'], period='full', flowtype=BASELINE_DATASET
+    )
     Q.replace(0, np.nan, inplace=True)
-    Q.drop(columns=['delTrenton'], inplace=True)
+    for col in node_config['drop_columns']:
+        if col in Q.columns:
+            Q.drop(columns=[col], inplace=True)
 
     if BASELINE_DATASET == 'wrfaorc_withObsScaled':
-        Q_1960s = load_wrf1960s_historical_flow(gage_flow=False)
+        Q_1960s = load_wrf1960s_historical_flow(
+            gage_flow=node_config['historical_gage_flow']
+        )
         Q_1960s.replace(0, np.nan, inplace=True)
-        Q_1960s.drop(columns=['delTrenton'], inplace=True)
+        for col in node_config['drop_columns']:
+            if col in Q_1960s.columns:
+                Q_1960s.drop(columns=[col], inplace=True)
         Q_full = pd.concat([Q_1960s, Q], axis=0).sort_index()
         Q_full.replace(0, np.nan, inplace=True)
         Q_full.dropna(axis=0, how='any', inplace=True)
     else:
         Q_full = Q.copy()
 
-    node = 'nyc_aggregate'
-    Q_full[node] = Q_full[NYC_RESERVOIRS].sum(axis=1)
+    if node_config['derived']:
+        Q_full[node] = Q_full[node_config['derive_from']].sum(axis=1)
 
     # Extract only the target node series before resampling/cleanup
-    # to avoid dropna removing months due to NaN in unrelated columns
     node_daily = Q_full[node].copy()
     node_monthly = node_daily.resample('MS').sum()
     node_monthly.replace(0, np.nan, inplace=True)
@@ -121,11 +142,9 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir):
 
         # Fit SSI on baseline period (1980-2019)
         ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
-        drought_calculator = SSIDroughtMetrics()
-
         # Transform the FULL historic record
         ssi_obs = ssi_calculator.transform(node_monthly)
-        obs_droughts = drought_calculator.calculate_drought_metrics(ssi_obs)
+        obs_droughts = get_drought_metrics(ssi_obs)
 
         # Save observed drought metrics
         obs_droughts.reset_index(inplace=True, drop=True)

@@ -27,7 +27,7 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-from synhydro.droughts.ssi import SSIDroughtMetrics
+from synhydro.droughts.ssi import get_drought_metrics
 
 from methods.mpi_utils import get_comm, global_point_to_point_gather
 from methods.utils import distribute_realizations_across_ranks
@@ -61,9 +61,17 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Rank {rank} ERROR: File not found: {fname}")
         return False
 
+    # Determine SSI node and corresponding results_set from config
+    node = SSI_NODE
+    node_config = SSI_NODE_CONFIGS[node]
+    results_set_key = node_config['results_set']
+
+    if rank == 0:
+        print(f"  SSI node: {node} (results_set: {results_set_key})")
+
     # Each rank reads realization IDs from HDF5 metadata (fast, no data loaded)
     realization_ids = get_realization_ids_from_export(fname, dataset_id,
-                                                      results_set='inflow')
+                                                      results_set=results_set_key)
     n_realizations = len(realization_ids)
 
     # Determine this rank's assigned realizations
@@ -78,16 +86,17 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     # Each rank loads ONLY its assigned realizations (staggered I/O)
     print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
     local_data = load_rank_subset_from_export(
-        fname, my_realizations, ['inflow'], rank, size
+        fname, my_realizations, [results_set_key], rank, size
     )
 
-    # Extract local ensemble dict
-    local_syn_ensemble = local_data.inflow[dataset_id]
+    # Extract local ensemble dict from the configured results_set
+    local_syn_ensemble = getattr(local_data, results_set_key)[dataset_id]
     del local_data  # free wrapper
 
-    # Add NYC aggregate inflow for each realization
-    for real_id, df in local_syn_ensemble.items():
-        df['nyc_aggregate'] = df[NYC_RESERVOIRS].sum(axis=1)
+    # Derive the target node column if needed
+    if node_config['derived']:
+        for real_id, df in local_syn_ensemble.items():
+            df[node] = df[node_config['derive_from']].sum(axis=1)
 
     print(f"Rank {rank}: loaded {len(local_syn_ensemble)} realizations.")
 
@@ -100,11 +109,8 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         if rank == 0:
             print(f"\nProcessing SSI window: {ssi_window} months")
 
-        node = 'nyc_aggregate'
-
         # Each rank fits SSI calculator independently (uses historical obs data)
         ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
-        drought_calculator = SSIDroughtMetrics()
 
         if rank == 0:
             print(f"  Rank {rank} processing {len(my_realizations)} realizations")
@@ -122,7 +128,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
             local_ssi_data[str(real_id)] = ssi_values
 
             # Calculate drought metrics
-            drought_chars = drought_calculator.calculate_drought_metrics(ssi_values)
+            drought_chars = get_drought_metrics(ssi_values)
             if not drought_chars.empty:
                 drought_chars['realization_id'] = real_id
                 local_drought_data.append(drought_chars)

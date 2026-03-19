@@ -35,6 +35,31 @@ PERIOD_ORIGIN = 'june1'
 # SSI (Standardized Streamflow Index) window sizes in months
 SSI_WINDOWS = (3, 6, 12)
 
+# SSI target node: which flow node is used for drought identification.
+# 'nyc_aggregate' = sum of cannonsville + pepacton + neversink catchment inflows
+# 'delMontague' = full natural flow at Montague gage
+SSI_NODE = 'nyc_aggregate'
+
+SSI_NODE_CONFIGS = {
+    'nyc_aggregate': {
+        'historical_gage_flow': False,
+        'derived': True,
+        'derive_from': ['cannonsville', 'pepacton', 'neversink'],
+        'results_set': 'inflow',
+        'drop_columns': ['delTrenton'],
+    },
+    'delMontague': {
+        'historical_gage_flow': True,
+        'derived': False,
+        'derive_from': None,
+        'results_set': 'major_flow',
+        'drop_columns': [],
+    },
+}
+
+assert SSI_NODE in SSI_NODE_CONFIGS, \
+    f"SSI_NODE '{SSI_NODE}' not in SSI_NODE_CONFIGS. Must be one of {list(SSI_NODE_CONFIGS.keys())}"
+
 # Validation checks
 assert TOTAL_REALIZATIONS % N_REALIZATIONS_PER_ENSEMBLE_SET == 0, \
     "TOTAL_REALIZATIONS must be divisible by N_REALIZATIONS_PER_ENSEMBLE_SET"
