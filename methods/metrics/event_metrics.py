@@ -82,6 +82,7 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
         storage_pct = 100.0 * storage_raw / NYC_TOTAL_CAPACITY
 
         montague_shortage = data.shortage[dataset_id][realization_id]['delMontague']
+        trenton_shortage = data.shortage[dataset_id][realization_id]['delTrenton']
         nyc_inflow = data.inflow[dataset_id][realization_id]['nyc']
         contribution = data.contribution[dataset_id][realization_id]
 
@@ -96,6 +97,7 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
         # Align to common index (same pattern as satisficing.py lines 98-108)
         common_idx = storage_pct.index
         montague_shortage = montague_shortage.reindex(common_idx, fill_value=0)
+        trenton_shortage = trenton_shortage.reindex(common_idx, fill_value=0)
         nyc_inflow = nyc_inflow.reindex(common_idx, fill_value=0)
         contribution = contribution.reindex(common_idx, fill_value=0)
         nyc_diversion = nyc_diversion.reindex(common_idx, fill_value=0)
@@ -104,6 +106,7 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
         return {
             'storage_pct': storage_pct,
             'montague_shortage': montague_shortage,
+            'trenton_shortage': trenton_shortage,
             'nyc_inflow': nyc_inflow,
             'contribution': contribution,
             'nyc_diversion': nyc_diversion,
@@ -176,7 +179,8 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
         )
 
     stor = ts['storage_pct'][mask]
-    short = ts['montague_shortage'][mask]
+    mont_short = ts['montague_shortage'][mask]
+    tren_short = ts['trenton_shortage'][mask]
     inflow = ts['nyc_inflow'][mask]
     contrib = ts['contribution'][mask]
     diversion = ts['nyc_diversion'][mask]
@@ -186,28 +190,47 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
     duration_days = (end - start).days
     start_month = start.month
 
+    # --- Peak severity date and month ---
+    max_severity_date = pd.Timestamp(event.get('max_severity_date', pd.NaT))
+    peak_severity_month = max_severity_date.month if pd.notna(max_severity_date) else np.nan
+
     # --- Storage at drought onset ---
     start_idx = ts['storage_pct'].index.searchsorted(start)
     storage_at_start = ts['storage_pct'].iloc[min(start_idx, len(ts['storage_pct']) - 1)]
 
     # --- Metrics during drought window ---
     min_storage = stor.min()
+    storage_drawdown = storage_at_start - min_storage
+
     total_contribution = contrib.sum()
     total_inflow = inflow.sum()
     contribution_ratio = total_contribution / total_inflow if total_inflow > 0 else 0.0
-    total_montague_shortage = short.sum()
 
-    # Max consecutive Montague shortage days (same as satisficing._evaluate_period)
-    max_consec = _max_consecutive_positive(short)
+    # Hazard rate
+    severity_rate = float(event.get('magnitude', 0)) / duration_days if duration_days > 0 else 0.0
 
-    # NYC diversion satisfaction ratio
+    # --- System action: NYC diversions ---
     total_diversion = diversion.sum()
     total_demand = demand.sum()
     diversion_sat_ratio = total_diversion / total_demand if total_demand > 0 else 1.0
+    diversion_inflow_ratio = total_diversion / total_inflow if total_inflow > 0 else 0.0
 
-    # --- Classifications (matching F11 satisficing_category logic) ---
+    # --- Outcome: NYC shortage ---
+    nyc_shortage = (demand - diversion).clip(lower=0)
+    total_nyc_shortage = nyc_shortage.sum()
+    nyc_shortage_pct = 100.0 * total_nyc_shortage / total_demand if total_demand > 0 else 0.0
+
+    # --- Outcome: Montague shortage ---
+    total_montague_shortage = mont_short.sum()
+    max_consec_montague = _max_consecutive_positive(mont_short)
+
+    # --- Outcome: Trenton shortage ---
+    total_trenton_shortage = tren_short.sum()
+    max_consec_trenton = _max_consecutive_positive(tren_short)
+
+    # --- Classifications (matching satisficing_category logic) ---
     storage_ok = bool(min_storage >= storage_threshold)
-    montague_ok = bool(max_consec <= violation_days)
+    montague_ok = bool(max_consec_montague <= violation_days)
 
     if storage_ok and montague_ok:
         classification = 'all_pass'
@@ -219,22 +242,41 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days):
         classification = 'montague_fail'
 
     return {
+        # Identity
         'realization_id': event['realization_id'],
         'start': start,
         'end': end,
-        'duration_days': duration_days,
+        # Antecedent
+        'storage_at_start_pct': storage_at_start,
         'start_month': start_month,
+        # Hazard
+        'duration_days': duration_days,
         'severity': event.get('severity', np.nan),
         'magnitude': event.get('magnitude', np.nan),
         'avg_severity': event.get('avg_severity', np.nan),
-        'storage_at_start_pct': storage_at_start,
-        'event_min_storage_pct': min_storage,
-        'total_nyc_contribution_mg': total_contribution,
+        'severity_rate': severity_rate,
+        'peak_severity_month': peak_severity_month,
         'total_inflow_mg': total_inflow,
+        # Action
+        'total_nyc_contribution_mg': total_contribution,
         'contribution_ratio': contribution_ratio,
-        'max_consec_montague_days': int(max_consec),
-        'total_montague_shortage_mg': total_montague_shortage,
+        'total_nyc_diversion_mg': total_diversion,
+        'total_nyc_demand_mg': total_demand,
+        'nyc_diversion_inflow_ratio': diversion_inflow_ratio,
         'nyc_diversion_sat_ratio': diversion_sat_ratio,
+        # Outcome: storage
+        'event_min_storage_pct': min_storage,
+        'storage_drawdown_pct': storage_drawdown,
+        # Outcome: NYC shortage
+        'total_nyc_shortage_mg': total_nyc_shortage,
+        'nyc_shortage_pct': nyc_shortage_pct,
+        # Outcome: Montague
+        'max_consec_montague_days': int(max_consec_montague),
+        'total_montague_shortage_mg': total_montague_shortage,
+        # Outcome: Trenton
+        'max_consec_trenton_days': int(max_consec_trenton),
+        'total_trenton_shortage_mg': total_trenton_shortage,
+        # Classification
         'storage_ok': storage_ok,
         'montague_ok': montague_ok,
         'classification': classification,
