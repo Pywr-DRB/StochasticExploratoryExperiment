@@ -42,23 +42,22 @@ from methods.plotting.styles import (
     DPI_HIGH,
 )
 
-# Classification colors & draw order (same as sankey_parallel)
-CLASSIFICATION_COLORS = {
-    'all_pass': '#888888',
+# Storage threshold for highlighting (%)
+STORAGE_FAIL_THRESHOLD = 20.0
+
+# Colors: pass vs storage failure only
+HIGHLIGHT_COLORS = {
+    'pass': '#888888',
     'storage_fail': '#ff7f0e',
-    'montague_fail': '#d62728',
-    'both_fail': '#7f0000',
 }
 
-CLASSIFICATION_LABELS = {
-    'all_pass': 'Satisficing',
-    'storage_fail': 'Storage Failure',
-    'montague_fail': 'Montague Failure',
-    'both_fail': 'Both Fail',
+HIGHLIGHT_LABELS = {
+    'pass': 'Storage > 20%',
+    'storage_fail': 'Storage < 20%',
 }
 
 # Draw order: pass first (background), failures on top
-CLASSIFICATION_DRAW_ORDER = ['all_pass', 'storage_fail', 'montague_fail', 'both_fail']
+HIGHLIGHT_DRAW_ORDER = ['pass', 'storage_fail']
 
 # =============================================================================
 # OUTPUT / INPUT DIRECTORIES
@@ -168,7 +167,10 @@ def plot_parallel_coordinates(metrics_df, dataset_id, ssi_window, output_path=No
 
     n_axes = len(AXIS_DEFS)
     n_events = len(metrics_df)
-    classifications = metrics_df['classification']
+
+    # Binary classification: storage < 20% or not
+    is_fail = metrics_df['event_min_storage_pct'] < STORAGE_FAIL_THRESHOLD
+    highlight = np.where(is_fail, 'storage_fail', 'pass')
 
     # --- Resolve axis ranges (with optional percentile clipping) ---
     axis_ranges = []
@@ -226,19 +228,19 @@ def plot_parallel_coordinates(metrics_df, dataset_id, ssi_window, output_path=No
         denom = hi - lo if hi != lo else 1.0
         norm_x[:, j] = np.clip((vals - lo) / denom, 0, 1)
 
-    # --- Draw lines in classification order (pass first) ---
+    # --- Draw lines: pass first (background), then failures on top ---
     line_alpha_pass = 0.08
     line_alpha_fail = 0.45
     linewidth_pass = 0.5
     linewidth_fail = 1.0
 
-    for cls in CLASSIFICATION_DRAW_ORDER:
-        mask = classifications.values == cls
+    for cls in HIGHLIGHT_DRAW_ORDER:
+        mask = highlight == cls
         if not mask.any():
             continue
 
-        is_pass = (cls == 'all_pass')
-        color = CLASSIFICATION_COLORS[cls]
+        is_pass = (cls == 'pass')
+        color = HIGHLIGHT_COLORS[cls]
         alpha = line_alpha_pass if is_pass else line_alpha_fail
         lw = linewidth_pass if is_pass else linewidth_fail
 
@@ -324,11 +326,11 @@ def plot_parallel_coordinates(metrics_df, dataset_id, ssi_window, output_path=No
 
     # --- Legend ---
     legend_handles = []
-    for cls in CLASSIFICATION_DRAW_ORDER:
-        if cls in classifications.values:
-            color = CLASSIFICATION_COLORS[cls]
-            label = CLASSIFICATION_LABELS[cls]
-            alpha = line_alpha_pass + 0.15 if cls == 'all_pass' else line_alpha_fail + 0.15
+    for cls in HIGHLIGHT_DRAW_ORDER:
+        if cls in highlight:
+            color = HIGHLIGHT_COLORS[cls]
+            label = HIGHLIGHT_LABELS[cls]
+            alpha = line_alpha_pass + 0.15 if cls == 'pass' else line_alpha_fail + 0.15
             patch = mpatches.Patch(facecolor=color, edgecolor='none',
                                    alpha=min(alpha, 1.0), label=label)
             legend_handles.append(patch)
@@ -344,10 +346,10 @@ def plot_parallel_coordinates(metrics_df, dataset_id, ssi_window, output_path=No
         )
 
     # --- Sample count ---
-    n_fail = (classifications != 'all_pass').sum()
+    n_fail = is_fail.sum()
     axes[0].text(
         0.0, 1.15,
-        f"N = {n_events} drought events  ({n_fail} non-satisficing)",
+        f"N = {n_events} drought events  ({n_fail} with storage < {STORAGE_FAIL_THRESHOLD:.0f}%)",
         transform=axes[0].transAxes,
         fontsize=FONTSIZE_SMALL, fontstyle='italic',
         va='bottom', ha='left',
