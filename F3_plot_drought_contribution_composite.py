@@ -39,6 +39,7 @@ from methods.config import (
 )
 from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
+    FFMP_ZONE_COLORS, FFMP_ZONE_COLORS_INT,
     FONTSIZE_SMALL, FONTSIZE_LABEL, FONTSIZE_MEDIUM,
     ALPHA_LINE,
     apply_publication_style,
@@ -57,6 +58,12 @@ from methods.plotting.water_balance_by_drought_zone import (
     MIN_INFLOW_THRESHOLD,
     XLIM_MAX_MANUAL,
 )
+
+# Override DROUGHT_CATEGORIES colors to match FFMP_ZONE_COLORS from styles
+DROUGHT_CATEGORIES['emergency']['color'] = FFMP_ZONE_COLORS_INT[6]   # '#d32f2f'
+DROUGHT_CATEGORIES['watch']['color'] = FFMP_ZONE_COLORS_INT[5]       # '#ef6c00'
+DROUGHT_CATEGORIES['warning']['color'] = FFMP_ZONE_COLORS_INT[4]     # '#f9a825'
+DROUGHT_CATEGORIES['other']['color'] = 'limegreen'
 
 # ============================================================================
 # CONFIGURATION
@@ -332,6 +339,38 @@ PERCENTILES = [5, 50, 95]
 
 HISTORIC_N_YEARS = 77  # Number of years in the historic reconstruction
 
+def style_boxplot(bp, colors_all, data_all, ax):
+    """
+    Style boxplot elements: color whiskers/caps/fliers by dataset,
+    keep medians black, and add circle markers for means.
+    """
+    for i, color in enumerate(colors_all):
+        # Box face
+        bp['boxes'][i].set_facecolor(color)
+        bp['boxes'][i].set_alpha(0.7)
+
+        # Whiskers (2 per box: lower, upper)
+        bp['whiskers'][2 * i].set_color(color)
+        bp['whiskers'][2 * i + 1].set_color(color)
+
+        # Caps (2 per box)
+        bp['caps'][2 * i].set_color(color)
+        bp['caps'][2 * i + 1].set_color(color)
+
+        # Fliers / outliers
+        bp['fliers'][i].set_markeredgecolor(color)
+        bp['fliers'][i].set_markerfacecolor(color)
+        bp['fliers'][i].set_alpha(0.5)
+
+        # Mean circle marker
+        vals = data_all[i]
+        if len(vals) > 0:
+            mean_val = np.mean(vals)
+            ax.scatter(bp['medians'][i].get_xdata().mean(), mean_val,
+                       marker='o', s=25, color=color, edgecolors='white',
+                       linewidths=0.8, zorder=10)
+
+
 def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
     """
     Plot Panel B1: Frequency box plot showing distribution across realizations.
@@ -386,12 +425,10 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
                     whiskerprops=dict(linewidth=1.2),
                     capprops=dict(linewidth=1.2),
                     medianprops=dict(linewidth=1.5, color='black'),
-                    flierprops=dict(marker='o', markersize=3, alpha=0.5))
+                    flierprops=dict(marker='o', markersize=3))
 
-    # Color the boxes
-    for patch, color in zip(bp['boxes'], colors_all):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
+    # Style: dataset-colored whiskers/caps/fliers, mean markers
+    style_boxplot(bp, colors_all, data_all, ax)
 
     # Format axes
     ax.set_xticks(range(n_zones))
@@ -470,12 +507,10 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True):
                     whiskerprops=dict(linewidth=1.2),
                     capprops=dict(linewidth=1.2),
                     medianprops=dict(linewidth=1.5, color='black'),
-                    flierprops=dict(marker='o', markersize=3, alpha=0.5))
+                    flierprops=dict(marker='o', markersize=3))
 
-    # Color the boxes
-    for patch, color in zip(bp['boxes'], colors_all):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
+    # Style: dataset-colored whiskers/caps/fliers, mean markers
+    style_boxplot(bp, colors_all, data_all, ax)
 
     # Historic markers
     if show_historic:
@@ -535,6 +570,11 @@ def add_boxplot_legend(fig):
         legend_elements.append(Patch(facecolor=DATASET_COLORS[dataset_id], alpha=0.7,
                                       edgecolor='black', linewidth=1.2,
                                       label=DATASET_LABELS[dataset_id]))
+
+    # Mean marker
+    legend_elements.append(Line2D([0], [0], color='gray', marker='o', linestyle='None',
+                                   markersize=6, markeredgecolor='white',
+                                   markeredgewidth=0.8, label='Mean'))
 
     # Historic marker
     legend_elements.append(Line2D([0], [0], color='black', marker='^', linestyle='None',

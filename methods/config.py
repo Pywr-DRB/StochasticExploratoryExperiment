@@ -149,7 +149,7 @@ class WorkflowFlags:
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/outputs/")
 from datetime import datetime as _dt
-FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures_{_dt.now().strftime('%m%d%Y')}/")
+FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
 
 # Base ensemble directory
 ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
