@@ -46,6 +46,7 @@ from methods.config import (
 )
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
+    FFMP_ZONE_COLORS_INT,
     DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LARGE
 )
 
@@ -53,14 +54,14 @@ from methods.plotting.styles import (
 FIG_OUTPUT_DIR = f"{FIG_DIR}/SI5_NYC_shortage_by_zone"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-# Zone definitions
+# Zone definitions (colors from centralized styles)
 ZONE_DEFINITIONS = {
-    6: {'name': 'Emergency', 'color': '#8B0000', 'label': 'Emergency (Zone 6)'},
-    5: {'name': 'Warning', 'color': '#FF4500', 'label': 'Warning (Zone 5)'},
-    4: {'name': 'Watch', 'color': '#FFA500', 'label': 'Watch (Zone 4)'},
-    3: {'name': 'Normal', 'color': '#32CD32', 'label': 'Normal (Zone 3)'},
-    2: {'name': 'Flood', 'color': '#4169E1', 'label': 'Flood (Zones 1-2)'},
-    1: {'name': 'Flood', 'color': '#4169E1', 'label': 'Flood (Zones 1-2)'},
+    6: {'name': 'Emergency', 'color': FFMP_ZONE_COLORS_INT[6], 'label': 'Emergency (Zone 6)'},
+    5: {'name': 'Warning', 'color': FFMP_ZONE_COLORS_INT[5], 'label': 'Warning (Zone 5)'},
+    4: {'name': 'Watch', 'color': FFMP_ZONE_COLORS_INT[4], 'label': 'Watch (Zone 4)'},
+    3: {'name': 'Normal', 'color': FFMP_ZONE_COLORS_INT[3], 'label': 'Normal (Zone 3)'},
+    2: {'name': 'Flood', 'color': FFMP_ZONE_COLORS_INT[2], 'label': 'Flood (Zones 1-2)'},
+    1: {'name': 'Flood', 'color': FFMP_ZONE_COLORS_INT[1], 'label': 'Flood (Zones 1-2)'},
 }
 
 # Drought zones for analysis

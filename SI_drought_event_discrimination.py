@@ -20,7 +20,6 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from sklearn.tree import DecisionTreeClassifier, export_text, plot_tree
@@ -33,6 +32,7 @@ warnings.filterwarnings("ignore")
 from methods.config import ROOT_DIR, FIG_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
+    FFMP_ZONE_COLORS,
     FONTSIZE_LABEL, FONTSIZE_MEDIUM,
     DPI_HIGH, apply_publication_style,
 )
@@ -56,6 +56,8 @@ OUTCOME = ['event_min_storage_pct', 'storage_drawdown_pct',
            'max_consec_trenton_days', 'total_trenton_shortage_mg']
 
 VALID_PREDICTORS = ANTECEDENT + HAZARD + ACTION
+
+FFMP_ZONE_ORDER = ['Normal', 'Watch', 'Warning', 'Emergency']
 
 # Short labels for plots
 FEATURE_SHORT = {
@@ -198,45 +200,44 @@ def plot_feature_importance(dt_results, ax, title=''):
 
 def plot_interaction_scatter(df, ax):
     """Key interaction: start month × start storage → min storage outcome."""
-    cmap = cm.RdYlBu
-    norm = plt.Normalize(vmin=15, vmax=90)
     sizes = 12 + 8 * df['magnitude']
-
-    sc = ax.scatter(df['start_month'], df['storage_at_start_pct'],
-                    s=sizes, c=df['event_min_storage_pct'],
-                    cmap=cmap, norm=norm, alpha=0.7,
-                    edgecolors='black', linewidths=0.4, zorder=3)
+    for zone in FFMP_ZONE_ORDER:
+        m = df['ffmp_zone_at_min'] == zone
+        if m.sum() == 0:
+            continue
+        ax.scatter(df.loc[m, 'start_month'], df.loc[m, 'storage_at_start_pct'],
+                   s=sizes[m], c=FFMP_ZONE_COLORS[zone], alpha=0.7,
+                   edgecolors='black', linewidths=0.4, zorder=3, label=zone)
 
     ax.set_xticks(range(1, 13))
     ax.set_xticklabels(['J','F','M','A','M','J','J','A','S','O','N','D'], fontsize=8)
     ax.set_xlabel('Drought Start Month')
     ax.set_ylabel('Storage at Start (%)')
     ax.set_title('(c) Start Month x Start Storage', fontsize=11, fontweight='bold')
+    ax.legend(fontsize=7.5, framealpha=0.9, edgecolor='#ccc', loc='lower left')
     ax.grid(alpha=0.12, linestyle='--')
     ax.set_axisbelow(True)
-    return sc
 
 
 def plot_peak_vs_outcome(df, ax):
-    """Peak severity month vs min storage, sized by magnitude, colored by contribution."""
-    cmap_c = cm.YlOrRd
-    norm_c = plt.Normalize(vmin=0, vmax=50)
+    """Peak severity month vs min storage, sized by magnitude, colored by FFMP zone."""
     sizes = 12 + 8 * df['magnitude']
-    contrib_pct = (df['contribution_ratio'] * 100).clip(0, 50)
+    for zone in FFMP_ZONE_ORDER:
+        m = df['ffmp_zone_at_min'] == zone
+        if m.sum() == 0:
+            continue
+        ax.scatter(df.loc[m, 'peak_severity_month'], df.loc[m, 'event_min_storage_pct'],
+                   s=sizes[m], c=FFMP_ZONE_COLORS[zone], alpha=0.7,
+                   edgecolors='black', linewidths=0.4, zorder=3, label=zone)
 
-    sc = ax.scatter(df['peak_severity_month'], df['event_min_storage_pct'],
-                    s=sizes, c=contrib_pct, cmap=cmap_c, norm=norm_c,
-                    alpha=0.7, edgecolors='black', linewidths=0.4, zorder=3)
-
-    ax.axhline(40, color='red', linestyle=':', alpha=0.4)
     ax.set_xticks(range(1, 13))
     ax.set_xticklabels(['J','F','M','A','M','J','J','A','S','O','N','D'], fontsize=8)
     ax.set_xlabel('Peak Severity Month')
     ax.set_ylabel('Min Storage (%)')
-    ax.set_title('(d) Peak Timing → Outcome', fontsize=11, fontweight='bold')
+    ax.set_title('(d) Peak Timing \u2192 Outcome', fontsize=11, fontweight='bold')
+    ax.legend(fontsize=7.5, framealpha=0.9, edgecolor='#ccc', loc='lower left')
     ax.grid(alpha=0.12, linestyle='--')
     ax.set_axisbelow(True)
-    return sc
 
 
 def main():
@@ -314,10 +315,8 @@ def main():
     gs = gridspec.GridSpec(2, 2, hspace=0.32, wspace=0.30,
                             left=0.08, right=0.97, top=0.94, bottom=0.06)
 
-    # (a) Start storage vs magnitude, color=min storage, size=duration, shape=peak season
+    # (a) Start storage vs magnitude, color=FFMP zone, size=duration, shape=peak season
     ax = fig.add_subplot(gs[0, 0])
-    cmap_out = cm.RdYlBu
-    norm_out = plt.Normalize(vmin=15, vmax=90)
     peak_markers = {
         'Winter peak': ('D', [12,1,2]),
         'Spring peak': ('^', [3,4,5]),
@@ -326,62 +325,60 @@ def main():
     }
     sizes_a = 12 + 0.12 * df['duration_days']
     for label, (marker, months) in peak_markers.items():
-        m = df['peak_severity_month'].isin(months)
-        if m.sum() == 0:
-            continue
-        ax.scatter(df.loc[m, 'storage_at_start_pct'], df.loc[m, 'magnitude'],
-                   s=sizes_a[m], c=df.loc[m, 'event_min_storage_pct'],
-                   cmap=cmap_out, norm=norm_out, alpha=0.7, marker=marker,
-                   edgecolors='black', linewidths=0.4, zorder=3, label=label)
-    cbar = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_out, norm=norm_out),
-                         ax=ax, pad=0.02, shrink=0.85)
-    cbar.set_label('Min Storage (%)', fontsize=9)
+        for zone in FFMP_ZONE_ORDER:
+            m = df['peak_severity_month'].isin(months) & (df['ffmp_zone_at_min'] == zone)
+            if m.sum() == 0:
+                continue
+            ax.scatter(df.loc[m, 'storage_at_start_pct'], df.loc[m, 'magnitude'],
+                       s=sizes_a[m], c=FFMP_ZONE_COLORS[zone], alpha=0.7, marker=marker,
+                       edgecolors='black', linewidths=0.4, zorder=3)
+    # Season shape legend
+    for label, (marker, _) in peak_markers.items():
+        ax.scatter([], [], marker=marker, c='grey', s=30, edgecolors='black',
+                   linewidths=0.3, label=label)
     for dur, lab in [(90, '90d'), (365, '1yr'), (1000, '3yr')]:
         s = 12 + 0.12 * dur
-        ax.scatter([], [], s=s, c='grey', alpha=0.4, edgecolors='black',
+        ax.scatter([], [], s=s, marker='o', c='grey', alpha=0.4, edgecolors='black',
                    linewidths=0.3, label=lab)
     ax.legend(fontsize=6.5, framealpha=0.9, edgecolor='#ccc', ncol=2, loc='upper right',
               title='Peak Season / Duration', title_fontsize=7)
     ax.set_xlabel('Storage at Drought Start (%)')
-    ax.set_ylabel('Drought Magnitude (SSI-6)')
+    ax.set_ylabel(f'Drought Magnitude (SSI-{SSI_WINDOW})')
     ax.grid(alpha=0.12, linestyle='--')
     ax.set_axisbelow(True)
-    ax.text(0.02, 0.97, '(a) Antecedent × Hazard', transform=ax.transAxes,
+    ax.text(0.02, 0.97, '(a) Antecedent \u00d7 Hazard', transform=ax.transAxes,
             fontsize=10, va='top', fontweight='bold')
 
-    # (b) Duration vs magnitude, color=min storage, size=contribution
+    # (b) Duration vs magnitude, color=FFMP zone, size=contribution
     ax = fig.add_subplot(gs[0, 1])
     contrib_pct = (df['contribution_ratio'] * 100).clip(0, 100)
     sizes_b = np.where(contrib_pct < 5, 10, 10 + 3.5 * (contrib_pct - 5))
-    sc = ax.scatter(df['duration_days'], df['magnitude'],
-                    s=sizes_b, c=df['event_min_storage_pct'],
-                    cmap=cmap_out, norm=norm_out, alpha=0.7,
-                    edgecolors='black', linewidths=0.4, zorder=3)
-    cbar = fig.colorbar(sc, ax=ax, pad=0.02, shrink=0.85)
-    cbar.set_label('Min Storage (%)', fontsize=9)
+    for zone in FFMP_ZONE_ORDER:
+        m = df['ffmp_zone_at_min'] == zone
+        if m.sum() == 0:
+            continue
+        ax.scatter(df.loc[m, 'duration_days'], df.loc[m, 'magnitude'],
+                   s=sizes_b[m], c=FFMP_ZONE_COLORS[zone], alpha=0.7,
+                   edgecolors='black', linewidths=0.4, zorder=3, label=zone)
     for pct, lab in [(5, '<5%'), (20, '20%'), (50, '50%')]:
         s = 10 if pct < 5 else 10 + 3.5 * (pct - 5)
         ax.scatter([], [], s=s, c='grey', alpha=0.4, edgecolors='black',
                    linewidths=0.3, label=f'{lab} contrib')
-    ax.legend(fontsize=7, framealpha=0.9, edgecolor='#ccc', loc='upper left')
+    ax.legend(fontsize=7, framealpha=0.9, edgecolor='#ccc', loc='upper left', ncol=2)
     ax.set_xlabel('Duration (days)')
-    ax.set_ylabel('Drought Magnitude (SSI-6)')
+    ax.set_ylabel(f'Drought Magnitude (SSI-{SSI_WINDOW})')
     ax.grid(alpha=0.12, linestyle='--')
     ax.set_axisbelow(True)
-    ax.text(0.35, 0.04, '(b) Duration × Magnitude', transform=ax.transAxes,
+    ax.text(0.35, 0.04, '(b) Duration \u00d7 Magnitude', transform=ax.transAxes,
             fontsize=10, va='bottom', fontweight='bold')
 
     # (c) Start month × start storage → outcome
     ax = fig.add_subplot(gs[1, 0])
-    sc = plot_interaction_scatter(df, ax)
-    cbar = fig.colorbar(sc, ax=ax, pad=0.02, shrink=0.85)
-    cbar.set_label('Min Storage (%)', fontsize=9)
+    plot_interaction_scatter(df, ax)
 
     # (d) Peak timing → outcome
     ax = fig.add_subplot(gs[1, 1])
-    sc = plot_peak_vs_outcome(df, ax)
-    cbar = fig.colorbar(sc, ax=ax, pad=0.02, shrink=0.85)
-    cbar.set_label('Contribution / Inflow (%)', fontsize=9)
+    plot_peak_vs_outcome(df, ax)
     for mag, lab in [(3, '3'), (10, '10'), (25, '25')]:
         s = 12 + 8 * mag
         ax.scatter([], [], s=s, c='grey', alpha=0.4, edgecolors='black',
@@ -408,23 +405,34 @@ def main():
         label = DATASET_LABELS[did]
 
         sizes = 12 + 0.12 * d['duration_days']
-        sc = ax.scatter(d['storage_at_start_pct'], d['magnitude'],
-                        s=sizes, c=d['event_min_storage_pct'],
-                        cmap=cmap_out, norm=norm_out, alpha=0.7,
-                        edgecolors='black', linewidths=0.4, zorder=3)
+        for zone in FFMP_ZONE_ORDER:
+            m = d['ffmp_zone_at_min'] == zone
+            if m.sum() == 0:
+                continue
+            ax.scatter(d.loc[m, 'storage_at_start_pct'], d.loc[m, 'magnitude'],
+                       s=sizes[m], c=FFMP_ZONE_COLORS[zone], alpha=0.7,
+                       edgecolors='black', linewidths=0.4, zorder=3,
+                       label=zone if i == 0 else '_')
 
-        n_sev = (d['event_min_storage_pct'] < 40).sum()
-        n_str = (d['event_min_storage_pct'] < 60).sum()
-        ax.set_title(f'{label}\n(n={len(d)}, stressed={n_str}, severe={n_sev})',
+        n_warn = d['ffmp_zone_at_min'].isin(['Warning', 'Emergency']).sum()
+        n_watch = d['ffmp_zone_at_min'].isin(['Watch', 'Warning', 'Emergency']).sum()
+        ax.set_title(f'{label}\n(n={len(d)}, Watch+={n_watch}, Warn+={n_warn})',
                      fontsize=10, fontweight='bold')
         ax.set_xlabel('Storage at Start (%)')
         if i == 0:
-            ax.set_ylabel('Drought Magnitude (SSI-6)')
+            ax.set_ylabel(f'Drought Magnitude (SSI-{SSI_WINDOW})')
         ax.grid(alpha=0.12, linestyle='--')
         ax.set_axisbelow(True)
 
-    cbar = fig.colorbar(sc, ax=axes, pad=0.02, shrink=0.85)
-    cbar.set_label('Min Storage (%)', fontsize=10)
+    # Shared FFMP zone legend
+    zone_handles = [
+        Line2D([0], [0], marker='o', color='none', markerfacecolor=FFMP_ZONE_COLORS[z],
+               markeredgecolor='black', markeredgewidth=0.4, markersize=8, label=z)
+        for z in FFMP_ZONE_ORDER
+    ]
+    fig.legend(handles=zone_handles, loc='lower center', ncol=4,
+               fontsize=9, frameon=True, framealpha=0.9, edgecolor='#ccc',
+               bbox_to_anchor=(0.5, -0.05))
     fname = f"{FIG_OUTPUT_DIR}/discrimination_cross_scenario.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"  Saved: {fname}")

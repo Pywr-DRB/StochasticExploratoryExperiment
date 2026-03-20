@@ -39,6 +39,7 @@ from methods.config import (
 )
 from methods.plotting.styles import (
     DATASET_LABELS,
+    FFMP_ZONE_COLORS_INT,
     DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LARGE,
 )
 
@@ -64,15 +65,15 @@ LOCATION_LABELS = {
 # zones 1-2 are merged into zone 2 during data loading)
 ZONE_DEFINITIONS = {
     7: {'name': f'Emergency\n(<{EMERGENCY_STORAGE_THRESHOLD_PCT:.0f}%)',
-        'color': '#4B0082',
+        'color': FFMP_ZONE_COLORS_INT[7],
         'label': f'Drought Emergency Storage <{EMERGENCY_STORAGE_THRESHOLD_PCT:.0f}%'},
     6: {'name': f'Emergency\n(\u2265{EMERGENCY_STORAGE_THRESHOLD_PCT:.0f}%)',
-        'color': '#8B0000',
+        'color': FFMP_ZONE_COLORS_INT[6],
         'label': f'Emergency (\u2265{EMERGENCY_STORAGE_THRESHOLD_PCT:.0f}%)'},
-    5: {'name': 'Warning', 'color': '#FF4500', 'label': 'Warning (Zone 5)'},
-    4: {'name': 'Watch',   'color': '#FFA500', 'label': 'Watch (Zone 4)'},
-    3: {'name': 'Normal',  'color': '#32CD32', 'label': 'Normal (Zone 3)'},
-    2: {'name': 'Flood',   'color': '#4169E1', 'label': 'Flood (Zones 1-2)'},
+    5: {'name': 'Warning', 'color': FFMP_ZONE_COLORS_INT[5], 'label': 'Warning (Zone 5)'},
+    4: {'name': 'Watch',   'color': FFMP_ZONE_COLORS_INT[4], 'label': 'Watch (Zone 4)'},
+    3: {'name': 'Normal',  'color': FFMP_ZONE_COLORS_INT[3], 'label': 'Normal (Zone 3)'},
+    2: {'name': 'Flood',   'color': FFMP_ZONE_COLORS_INT[2], 'label': 'Flood (Zones 1-2)'},
 }
 
 # Ordered list of zones to plot (most severe first)

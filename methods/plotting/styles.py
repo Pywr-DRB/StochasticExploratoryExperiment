@@ -17,14 +17,14 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
 # DATASET COLORS
 # =============================================================================
 
-# Primary color scheme for datasets - Colorblind-friendly palette
-# Based on Wong (2011) "Points of view: Color blindness" Nature Methods
-# These colors are distinguishable for deuteranopia, protanopia, and tritanopia
+# Primary color scheme for datasets
+# Chosen to avoid conflict with FFMP zone colors (green/yellow/orange/red)
+# and observed data (black/gray).
 DATASET_COLORS = {
-    'stationary_ensemble': '#0072B2',           # Blue (baseline/reference)
-    'climate_adjusted_low': '#D55E00',          # Vermilion/Orange (Dry scenario)
+    'stationary_ensemble': '#42A5F5',           # Sky blue (baseline/reference)
+    'climate_adjusted_low': '#8E24AA',          # Plum (Dry scenario)
     'climate_adjusted_medium': '#CC79A7',       # Reddish purple (Medium scenario)
-    'climate_adjusted_high': '#009E73',         # Bluish green (Wet scenario)
+    'climate_adjusted_high': '#009E73',         # Teal green (Wet scenario)
 }
 
 # Alternative color scheme - also colorblind-friendly
@@ -38,6 +38,28 @@ DATASET_COLORS_ALT = {
 
 # Historic/observed data color
 HISTORIC_COLOR = '#000000'  # Black
+
+# =============================================================================
+# FFMP DROUGHT ZONE COLORS
+# =============================================================================
+
+FFMP_ZONE_COLORS = {
+    'Normal': '#A8D84E',            # Light lime green
+    'Watch': '#f9a825',             # Yellow
+    'Warning': '#ef6c00',           # Orange
+    'Emergency': '#d32f2f',         # Red
+}
+
+# Integer-keyed variant (for zone levels 1-7)
+FFMP_ZONE_COLORS_INT = {
+    1: '#42A5F5',                   # Flood — sky blue
+    2: '#42A5F5',                   # Flood — sky blue
+    3: '#A8D84E',                   # Normal — light lime green
+    4: '#f9a825',                   # Watch — yellow
+    5: '#ef6c00',                   # Warning — orange
+    6: '#d32f2f',                   # Emergency — red
+    7: '#4B0082',                   # Emergency sub-zone (severe) — indigo
+}
 
 # =============================================================================
 # DATASET LABELS

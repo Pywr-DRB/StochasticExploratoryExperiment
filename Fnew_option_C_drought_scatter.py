@@ -22,6 +22,7 @@ warnings.filterwarnings("ignore")
 from methods.config import ROOT_DIR, FIG_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
+    FFMP_ZONE_COLORS,
     FONTSIZE_LABEL, FONTSIZE_MEDIUM,
     DPI_HIGH, apply_publication_style,
 )
@@ -32,12 +33,6 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 SSI_WINDOW = 3
 MIN_DURATION = 30
 
-FFMP_ZONE_COLORS = {
-    'Normal': '#2196F3',
-    'Watch': '#FFC107',
-    'Warning': '#FF9800',
-    'Emergency': '#D32F2F',
-}
 FFMP_ZONE_ORDER = ['Normal', 'Watch', 'Warning', 'Emergency']
 
 PEAK_MARKERS = {

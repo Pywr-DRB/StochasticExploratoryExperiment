@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore")
 from methods.config import ROOT_DIR, FIG_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS, DATASET_LINESTYLES,
+    FFMP_ZONE_COLORS,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LARGE, FONTSIZE_LABEL,
     LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_HIGH, apply_publication_style,
@@ -144,13 +145,8 @@ def plot_figure():
     watch_vals = ffmp['watch'].values[:52]
     normal_vals = ffmp['normal'].values[:52]
 
-    # Zone colors (soft, distinct)
-    zone_colors = {
-        'emergency': '#d32f2f',   # red
-        'warning':   '#ef6c00',   # orange
-        'watch':     '#f9a825',   # amber
-        'normal':    '#66bb6a',   # green
-    }
+    # Zone colors from centralized styles (lowercase keys for this script)
+    zone_colors = {k.lower(): v for k, v in FFMP_ZONE_COLORS.items()}
 
     # Zone boundary lines only (no fill)
     ax_a.plot(w_ffmp, emerg_vals, color=zone_colors['emergency'],
