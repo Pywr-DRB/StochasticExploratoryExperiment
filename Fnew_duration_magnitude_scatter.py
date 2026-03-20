@@ -61,16 +61,17 @@ def load_events(dataset_id):
     return df
 
 
-# Y-axis metric configurations: (column, label, log_scale)
-Y_METRICS = {
-    'magnitude': ('magnitude', f'Magnitude', True),
-    'severity':  ('severity_abs', f'Severity (min SSI)', False),
-    'avg_severity': ('avg_severity', f'Avg Severity (mag/dur)', False),
-}
+# Figure versions: (x_col, x_label, x_log, y_col, y_label, y_log, filename)
+FIGURE_VERSIONS = [
+    ('duration_days', 'Duration (days)', True, 'magnitude', 'Magnitude', True, 'duration_magnitude'),
+    ('duration_days', 'Duration (days)', True, 'severity_abs', 'Severity (min SSI)', False, 'duration_severity'),
+    ('duration_days', 'Duration (days)', True, 'avg_severity', 'Avg Severity (mag/dur)', False, 'duration_avg_severity'),
+    ('magnitude', 'Magnitude', False, 'severity_abs', 'Severity (min SSI)', False, 'magnitude_severity'),
+]
 
 
-def plot_version(all_dfs, y_key, y_label, y_log, output_fname):
-    """Plot one 4x3 figure for a given y-axis metric."""
+def plot_version(all_dfs, x_key, x_label, x_log, y_key, y_label, y_log, output_fname):
+    """Plot one 4x3 figure for a given x/y-axis metric pair."""
     n_rows = len(SEASON_MARKERS)
     n_cols = len(DATASETS)
     season_list = list(SEASON_MARKERS.keys())
@@ -97,11 +98,12 @@ def plot_version(all_dfs, y_key, y_label, y_log, output_fname):
                 m = df_s['ffmp_zone_at_min'] == zone
                 if m.sum() == 0:
                     continue
-                ax.scatter(df_s.loc[m, 'duration_days'], df_s.loc[m, y_key],
+                ax.scatter(df_s.loc[m, x_key], df_s.loc[m, y_key],
                            s=sizes[m.values], c=FFMP_ZONE_COLORS[zone], alpha=0.7,
                            marker=marker, edgecolors='black', linewidths=0.4, zorder=3)
 
-            ax.set_xscale('log')
+            if x_log:
+                ax.set_xscale('log')
             if y_log:
                 ax.set_yscale('log')
             ax.grid(alpha=0.15, linestyle='--')
@@ -118,7 +120,7 @@ def plot_version(all_dfs, y_key, y_label, y_log, output_fname):
 
             # X-axis label on bottom row only
             if row == n_rows - 1:
-                ax.set_xlabel('Duration (days)')
+                ax.set_xlabel(x_label)
 
             # Event count annotation
             ax.text(0.97, 0.03, f'n={len(df_s)}', transform=ax.transAxes,
@@ -162,11 +164,11 @@ def plot_figure():
         all_dfs[dataset_id] = load_events(dataset_id)
         print(f"{dataset_id}: {len(all_dfs[dataset_id])} events")
 
-    # Generate all three versions
-    for version_key, (y_col, y_label, y_log) in Y_METRICS.items():
-        fname = f"{FIG_OUTPUT_DIR}/duration_{version_key}_scatter.png"
-        print(f"\nGenerating: duration vs {version_key}")
-        plot_version(all_dfs, y_col, y_label, y_log, fname)
+    # Generate all versions
+    for x_col, x_label, x_log, y_col, y_label, y_log, name in FIGURE_VERSIONS:
+        fname = f"{FIG_OUTPUT_DIR}/{name}_scatter.png"
+        print(f"\nGenerating: {name}")
+        plot_version(all_dfs, x_col, x_label, x_log, y_col, y_label, y_log, fname)
 
 
 if __name__ == '__main__':
