@@ -371,8 +371,8 @@ def main():
     parser = argparse.ArgumentParser(
         description='Generate continuous parallel coordinates figures'
     )
-    parser.add_argument('--ssi_window', type=int, default=6,
-                        help='SSI window (default: 6)')
+    parser.add_argument('--ssi_window', type=int, default=3,
+                        help='SSI window (default: 3)')
     parser.add_argument('--datasets', nargs='+', type=str,
                         default=list(DATASET_CONFIGS.keys()),
                         help='Dataset IDs to process')
