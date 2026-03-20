@@ -192,7 +192,8 @@ def plot_figure():
                    linewidths=0.3, label=f'{lab} contrib')
     ax.legend(fontsize=7, framealpha=0.9, edgecolor='#ccc', loc='upper left',
               ncol=2, columnspacing=0.8)
-
+    ax.set_yscale('log')
+    ax.set_xscale('log')
     ax.set_xlabel('Duration (days)')
     ax.set_ylabel(f'Drought Magnitude (SSI-{SSI_WINDOW})')
     ax.grid(alpha=0.12, linestyle='--')

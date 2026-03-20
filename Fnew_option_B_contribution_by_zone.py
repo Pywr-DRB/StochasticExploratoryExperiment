@@ -47,10 +47,10 @@ WINDOW = '270d'  # 9-month window prior to min storage date
 # ── Mode switch ──────────────────────────────────────────────────────
 # 'annual'     : original behavior (contribution_ratio_270d grouped by FFMP zone)
 # 'ssi_events' : SSI drought event contribution_ratio grouped by FFMP zone at min storage
-MODE = 'annual'
+MODE = 'ssi_events'
 
 # ── SSI event mode settings ──────────────────────────────────────────
-SSI_WINDOW = 3
+SSI_WINDOW = 6
 MIN_DURATION = 30
 
 EVENT_ZONE_ORDER = ['Normal', 'Watch', 'Warning', 'Emergency']

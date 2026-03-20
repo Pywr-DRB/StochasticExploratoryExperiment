@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=perf
-#SBATCH --output=./logs/perf_%x.out
-#SBATCH --error=./logs/perf_%x.err
+#SBATCH --output=./logs/%x.out
+#SBATCH --error=./logs/%x.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=20
 #SBATCH --exclusive

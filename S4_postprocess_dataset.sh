@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=post
-#SBATCH --output=./logs/post_%x.out
-#SBATCH --error=./logs/post_%x.err
+#SBATCH --output=./logs/%x.out
+#SBATCH --error=./logs/%x.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=20
 #SBATCH --exclusive
