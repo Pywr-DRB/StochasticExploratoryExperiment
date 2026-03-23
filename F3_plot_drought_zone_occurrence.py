@@ -30,8 +30,8 @@ from methods.plotting.styles import (
     apply_publication_style,
 )
 
-# Reuse boxplot functions from the original F3
-from F3_plot_drought_contribution_composite import (
+# Drought zone boxplots (modular, in methods/plotting/)
+from methods.plotting.drought_zone_boxplots import (
     plot_frequency_boxplot,
     plot_duration_boxplot,
 )
