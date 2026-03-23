@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from methods.config import (
     NYC_TOTAL_CAPACITY, NYC_RESERVOIRS,
-    FIG_DIR, N_YEARS,
+    FIG_DIR,
     verify_dataset_id,
 )
 from methods.plotting.styles import (
@@ -59,11 +59,8 @@ from methods.plotting.water_balance_by_drought_zone import (
     XLIM_MAX_MANUAL,
 )
 
-# Override DROUGHT_CATEGORIES colors to match FFMP_ZONE_COLORS from styles
-DROUGHT_CATEGORIES['emergency']['color'] = FFMP_ZONE_COLORS_INT[6]   # '#d32f2f'
-DROUGHT_CATEGORIES['watch']['color'] = FFMP_ZONE_COLORS_INT[5]       # '#ef6c00'
-DROUGHT_CATEGORIES['warning']['color'] = FFMP_ZONE_COLORS_INT[4]     # '#f9a825'
-DROUGHT_CATEGORIES['other']['color'] = 'limegreen'
+# KDE plotting (extracted to reusable module)
+from methods.plotting.contribution_kde import plot_kde_panel, KDE_CATEGORIES
 
 # ============================================================================
 # CONFIGURATION
@@ -76,10 +73,6 @@ WINDOW_MONTHS = [3, 6, 9]
 
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F3_composite_figures"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-
-# KDE categories to plot (excluding 'other' / Normal keeps Panel A focused on drought)
-KDE_CATEGORIES = ['emergency', 'watch', 'warning', 'other']
-
 
 # ============================================================================
 # DATA LOADING
@@ -261,72 +254,6 @@ def get_ffmp_zone_medians():
 
 
 # ============================================================================
-# PANEL A: KDE of contribution ratio by drought zone
-# ============================================================================
-
-def plot_panel_A(ax, categorized_data, n_months_prior=None):
-    """
-    KDE of NYC contributions / inflow ratio by drought zone (stationary ensemble).
-
-    Returns dict of legend handles.
-    """
-    if n_months_prior is None:
-        n_months_prior = N_MONTHS_PRIOR
-    categories = KDE_CATEGORIES
-    category_data = {}
-
-    for cat in categories:
-        cat_info = DROUGHT_CATEGORIES[cat]
-        df = categorized_data[cat].copy()
-        if len(df) == 0:
-            continue
-        df_filtered = df[df['inflow_total'] > MIN_INFLOW_THRESHOLD]
-        if len(df_filtered) == 0:
-            continue
-        ratio = 100.0 * df_filtered['contribution_total'] / df_filtered['inflow_total']
-        category_data[cat] = {'ratio': ratio, 'n': len(df_filtered)}
-
-    # Determine x-axis max
-    xlim_max = XLIM_MAX_MANUAL if XLIM_MAX_MANUAL is not None else 100
-
-    # Plot KDEs
-    for cat in categories:
-        if cat not in category_data:
-            continue
-        cat_info = DROUGHT_CATEGORIES[cat]
-        ratio = category_data[cat]['ratio']
-        n = category_data[cat]['n']
-
-        label = f"{cat_info['label']} (n={n})" if cat != 'other' else f"Normal or Above (n={n})"
-        ratio.plot.kde(ax=ax, color=cat_info['color'], linewidth=2.5, alpha=ALPHA_LINE, label=label)
-        mean_val = ratio.mean()
-        ax.axvline(mean_val, color=cat_info['color'], linestyle='--', linewidth=1.5, alpha=0.7)
-
-    # Dummy for mean legend entry
-    ax.axvline(np.nan, color='gray', linestyle='--', linewidth=1.5, alpha=0.7, label='Mean')
-
-    # 1964 reconstruction
-    reconstruction_ratio = calculate_reconstruction_contribution_ratio()
-    if reconstruction_ratio is not None:
-        ax.axvline(reconstruction_ratio, color='black', linestyle='-', linewidth=2.5, alpha=0.9, label='1964 Drought')
-        if reconstruction_ratio > xlim_max:
-            xlim_max = reconstruction_ratio * 1.1
-
-    xlabel = f'NYC contributions / total inflow\n({n_months_prior}-mo prior to min zone, %)'
-    ax.set_xlabel(xlabel, fontsize=FONTSIZE_LABEL)
-    ax.set_ylabel('Density', fontsize=FONTSIZE_LABEL)
-    ax.set_xlim(left=0, right=xlim_max)
-    ax.set_ylim(bottom=0)
-    ax.grid(True, alpha=0.3, linestyle='--')
-    ax.set_axisbelow(True)
-
-    # Panel label
-    ax.text(-0.05, 1.02, 'a)', transform=ax.transAxes, fontsize=14, va='bottom', ha='right')
-
-    return ax.get_legend_handles_labels()
-
-
-# ============================================================================
 # PANEL B: Scatter with regression + FFMP bands
 # ============================================================================
 
@@ -397,7 +324,7 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
             counts = df_all.groupby('realization_id').apply(
                 lambda g: (g['max_zone'] == zv).sum()
             )
-            freq_data[label] = counts.values / N_YEARS
+            freq_data[label] = counts.values
         all_freq_data[dataset_id] = freq_data
 
     # Set up grouped box plot positions
@@ -433,7 +360,7 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True):
     # Format axes
     ax.set_xticks(range(n_zones))
     ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_SMALL)
-    ax.set_ylabel('Fraction of years', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Number of Realization Years\nZone Experienced (out of 70)', fontsize=FONTSIZE_LABEL)
     ax.set_ylim(bottom=0)
     ax.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -526,7 +453,7 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True):
     # Format axes
     ax.set_xticks(range(n_zones))
     ax.set_xticklabels([zone_labels_map[z] for z in zone_order], fontsize=FONTSIZE_SMALL)
-    ax.set_ylabel('Time in Storage Zone\n(months)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Time Spent in Zone\nBefore Recovery (months)', fontsize=FONTSIZE_LABEL)
     ax.set_ylim(bottom=0, top=24)
     ax.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -671,7 +598,7 @@ def create_figure_simplified(n_mo, all_categorized,
     ax_B2 = fig.add_subplot(gs[1, 1])    # Duration bar chart (bottom right)
 
     # Panel A: KDE
-    plot_panel_A(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
+    plot_kde_panel(ax_A, all_categorized['stationary_ensemble'], n_months_prior=n_mo)
 
     # Panel B1: Frequency box plot
     plot_frequency_boxplot(ax_B1, panel_label='b)', show_historic=show_historic)
