@@ -1,9 +1,11 @@
 """
 F1: Ensemble validation figure.
 
-Two-panel figure showing:
-- (A) Weekly streamflow percentiles (5th-95th + median) for synthetic vs historic
+Four-panel figure showing:
+- (A) Autocorrelation comparison for synthetic vs historic
 - (B) Annual flow duration curve ranges for synthetic vs historic
+- (C) Weekly streamflow percentile bands for synthetic vs historic
+- (D) Levene & Wilcoxon p-values by month
 
 Usage:
     python F1_plot_ensemble_diagnostics.py <dataset_id>

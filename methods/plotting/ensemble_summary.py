@@ -365,13 +365,13 @@ def plot_autocorrelation_comparison(
     return ax
 
 
-def plot_monthly_streamflow_percentiles(
+def plot_weekly_streamflow_percentiles(
     Q_historic: pd.DataFrame,
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
     ylabel: str = 'Streamflow (MGD)',
-    xlabel: str = 'Month',
+    xlabel: str = 'Week of Year',
     percentiles: tuple = (5, 95),
     show_legend: bool = False,
     synthetic_color: str = None,
@@ -380,7 +380,7 @@ def plot_monthly_streamflow_percentiles(
     _syn_agg: dict = None,
 ):
     """
-    Plot monthly streamflow percentile bands for synthetic vs historic data.
+    Plot weekly streamflow percentile bands for synthetic vs historic data.
 
     Parameters
     ----------
@@ -423,78 +423,80 @@ def plot_monthly_streamflow_percentiles(
     if _syn_agg is None:
         _syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    # Process historic data to monthly
-    Q_hist_monthly = _hist_agg.resample('M').mean()
-    hist_months = Q_hist_monthly.index.month
-    hist_values = Q_hist_monthly.values
+    n_weeks = 52
+    weeks = np.arange(1, n_weeks + 1)
 
-    months = np.arange(1, 13)
-    hist_median = np.empty(12)
-    hist_p_low = np.empty(12)
-    hist_p_high = np.empty(12)
-    for m in months:
-        vals = hist_values[hist_months == m]
+    # Process historic data to weekly
+    Q_hist_weekly = _hist_agg.resample('W').mean()
+    hist_weeks = Q_hist_weekly.index.isocalendar().week.values.astype(int)
+    hist_values = Q_hist_weekly.values
+
+    hist_median = np.empty(n_weeks)
+    hist_p_low = np.empty(n_weeks)
+    hist_p_high = np.empty(n_weeks)
+    for w in weeks:
+        vals = hist_values[hist_weeks == w]
         vals = vals[~np.isnan(vals)]
         if len(vals) > 0:
-            hist_median[m - 1] = np.median(vals)
-            hist_p_low[m - 1] = np.percentile(vals, percentiles[0])
-            hist_p_high[m - 1] = np.percentile(vals, percentiles[1])
+            hist_median[w - 1] = np.median(vals)
+            hist_p_low[w - 1] = np.percentile(vals, percentiles[0])
+            hist_p_high[w - 1] = np.percentile(vals, percentiles[1])
         else:
-            hist_median[m - 1] = hist_p_low[m - 1] = hist_p_high[m - 1] = np.nan
+            hist_median[w - 1] = hist_p_low[w - 1] = hist_p_high[w - 1] = np.nan
 
-    # Process synthetic data: collect all monthly values by month
-    syn_monthly_by_month = {m: [] for m in range(1, 13)}
+    # Process synthetic data: collect all weekly values by week
+    syn_weekly_by_week = {w: [] for w in range(1, n_weeks + 1)}
     for real_id, flow_series in _syn_agg.items():
-        monthly = flow_series.resample('M').mean()
-        m_arr = monthly.index.month
-        v_arr = monthly.values
-        for m in months:
-            vals = v_arr[m_arr == m]
+        weekly = flow_series.resample('W').mean()
+        w_arr = weekly.index.isocalendar().week.values.astype(int)
+        v_arr = weekly.values
+        for w in weeks:
+            vals = v_arr[w_arr == w]
             vals = vals[~np.isnan(vals)]
             if len(vals) > 0:
-                syn_monthly_by_month[m].append(vals)
+                syn_weekly_by_week[w].append(vals)
 
-    syn_median = np.empty(12)
-    syn_p_low = np.empty(12)
-    syn_p_high = np.empty(12)
-    for m in months:
-        if syn_monthly_by_month[m]:
-            all_vals = np.concatenate(syn_monthly_by_month[m])
-            syn_median[m - 1] = np.median(all_vals)
-            syn_p_low[m - 1] = np.percentile(all_vals, percentiles[0])
-            syn_p_high[m - 1] = np.percentile(all_vals, percentiles[1])
+    syn_median = np.empty(n_weeks)
+    syn_p_low = np.empty(n_weeks)
+    syn_p_high = np.empty(n_weeks)
+    for w in weeks:
+        if syn_weekly_by_week[w]:
+            all_vals = np.concatenate(syn_weekly_by_week[w])
+            syn_median[w - 1] = np.median(all_vals)
+            syn_p_low[w - 1] = np.percentile(all_vals, percentiles[0])
+            syn_p_high[w - 1] = np.percentile(all_vals, percentiles[1])
         else:
-            syn_median[m - 1] = syn_p_low[m - 1] = syn_p_high[m - 1] = np.nan
+            syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
 
     # Plot synthetic range and median
     ax.fill_between(
-        months, syn_p_low, syn_p_high,
+        weeks, syn_p_low, syn_p_high,
         alpha=ALPHA_FILL, color=synthetic_color,
         label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
     )
     ax.plot(
-        months, syn_median,
+        weeks, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
         label=f'{synthetic_label} (median)'
     )
 
     # Plot historic range and median
     ax.fill_between(
-        months, hist_p_low, hist_p_high,
+        weeks, hist_p_low, hist_p_high,
         alpha=ALPHA_FILL * 0.7, color=HISTORIC_COLOR,
         label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'
     )
     ax.plot(
-        months, hist_median,
+        weeks, hist_median,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
         label=f'{HISTORIC_LABEL} (median)'
     )
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_xlim(0.5, 12.5)
-    ax.set_ylim(bottom=0)
-    ax.set_xticks(months)
+    ax.set_xlim(1, n_weeks)
+    ax.set_yscale('log')
+    ax.set_xticks(MONTH_WEEK_STARTS)
     ax.set_xticklabels(MONTH_LABELS)
 
     if show_legend:
@@ -641,11 +643,11 @@ def plot_ensemble_summary_figure(
 ):
     """
     Create 4-panel summary figure for manuscript with autocorrelation, FDC,
-    monthly flow ranges, and statistical test p-values.
+    weekly flow ranges, and statistical test p-values.
 
     Layout (2, 1, 1):
     - Top row: Autocorrelation (left), FDC ranges (right)
-    - Middle row: Monthly flow ranges (full width)
+    - Middle row: Weekly flow ranges (full width)
     - Bottom row: Levene & Wilcoxon p-values bar chart (full width)
 
     Uses aggregate flow from NYC reservoirs (sum of cannonsville, pepacton, neversink).
@@ -706,6 +708,8 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
+    ax_autocorr.text(-0.05, 1.02, 'a)', transform=ax_autocorr.transAxes,
+                     fontsize=14, va='bottom', ha='right')
 
     # Panel B: FDC percentile comparison
     plot_fdc_percentile_comparison(
@@ -715,15 +719,19 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
+    ax_fdc.text(-0.05, 1.02, 'b)', transform=ax_fdc.transAxes,
+                fontsize=14, va='bottom', ha='right')
 
-    # Panel C: Monthly streamflow percentiles
-    plot_monthly_streamflow_percentiles(
+    # Panel C: Weekly streamflow percentiles
+    plot_weekly_streamflow_percentiles(
         Q_historic, Q_synthetic,
         ax=ax_monthly, percentiles=percentiles,
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
+    ax_monthly.text(-0.03, 1.02, 'c)', transform=ax_monthly.transAxes,
+                    fontsize=14, va='bottom', ha='right')
 
     # Panel D: Levene & Wilcoxon p-values
     plot_pvalue_comparison(
@@ -733,6 +741,8 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
+    ax_pvalues.text(-0.03, 1.02, 'd)', transform=ax_pvalues.transAxes,
+                    fontsize=14, va='bottom', ha='right')
 
     # Shared legend
     legend_handles = [
