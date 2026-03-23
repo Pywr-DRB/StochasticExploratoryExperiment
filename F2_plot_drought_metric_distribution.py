@@ -403,9 +403,29 @@ def plot_drought_manuscript_figure(
                 delta_bands = _compute_delta_bands(
                     df, baseline_med, metric, N_YEARS, x,
                 )
-                ax.fill_between(x, delta_bands[0], delta_bands[100],
+
+                # Grey zone: where scenario has no droughts but
+                # baseline may still have events (Δ=0 is misleading)
+                scenario_max = df[metric].max()
+                baseline_df = ensemble_data['stationary_ensemble']['droughts']
+                baseline_max = baseline_df[metric].max()
+
+                # Truncate bands/line at scenario data extent
+                if scenario_max < baseline_max:
+                    valid_mask = x <= scenario_max
+                    ax.axvspan(scenario_max, x[-1],
+                               facecolor='#d0d0d0', alpha=0.3,
+                               hatch='///', edgecolor='grey',
+                               linewidth=0.5, zorder=2)
+                else:
+                    valid_mask = np.ones(len(x), dtype=bool)
+
+                xv = x[valid_mask]
+                ax.fill_between(xv,
+                                delta_bands[0][valid_mask],
+                                delta_bands[100][valid_mask],
                                 color=color, alpha=0.2, zorder=4)
-                ax.plot(x, delta_bands[50],
+                ax.plot(xv, delta_bands[50][valid_mask],
                         color=color,
                         linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
                         linewidth=LINEWIDTH_MEDIUM, zorder=5)
@@ -566,6 +586,10 @@ def plot_drought_manuscript_figure(
         baseline_handle = mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8)
         legend_handles.append(baseline_handle)
         legend_labels.append('Baseline (stationary median)')
+        no_data_handle = mpatches.Patch(facecolor='#d0d0d0', alpha=0.3,
+                                         hatch='///', edgecolor='grey', linewidth=0.5)
+        legend_handles.append(no_data_handle)
+        legend_labels.append('No scenario droughts beyond this value')
 
     # Place legend in the bottom-right cell
     ax_legend.legend(

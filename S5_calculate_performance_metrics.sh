@@ -4,7 +4,7 @@
 #
 # Usage: bash S5_calculate_performance_metrics.sh
 
-DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")
+DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high" "reconstruction")
 
 mkdir -p logs
 

@@ -69,7 +69,14 @@ def main(dataset_id, ssi_windows):
         print("=" * 80)
 
     # Each rank checks file existence independently
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    # For reconstruction: data lives inside an ensemble's postprocessed file
+    is_reconstruction = (dataset_id == 'reconstruction')
+    if is_reconstruction:
+        # Use stationary_ensemble's postprocessed file (reconstruction is embedded)
+        fname = './pywrdrb/outputs/stationary_ensemble_with_postprocessing.hdf5'
+    else:
+        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+
     if not os.path.exists(fname):
         print(f"Rank {rank} ERROR: Postprocessed data not found: {fname}")
         return
@@ -105,7 +112,15 @@ def main(dataset_id, ssi_windows):
     # Per-SSI-window event metrics are computed separately for each window.
     # =========================================================================
     primary_ssi_window = ssi_windows[0]
-    primary_drought_events = load_drought_events(dataset_id, primary_ssi_window)
+    if is_reconstruction:
+        # Use observed drought events for the reconstruction simulation
+        primary_drought_events = load_drought_events(dataset_id, primary_ssi_window,
+                                                      observed=True)
+        # Tag all events with realization_id=0 (single reconstruction run)
+        if primary_drought_events is not None and 'realization_id' not in primary_drought_events.columns:
+            primary_drought_events['realization_id'] = 0
+    else:
+        primary_drought_events = load_drought_events(dataset_id, primary_ssi_window)
 
     if primary_drought_events is None or len(primary_drought_events) == 0:
         print(f"Rank {rank} ERROR: No SSI-{primary_ssi_window} drought events found. "
@@ -175,7 +190,13 @@ def main(dataset_id, ssi_windows):
     # =========================================================================
     gathered_event_metrics = {}
     for ssi_window in ssi_windows:
-        drought_events_df = load_drought_events(dataset_id, ssi_window)
+        if is_reconstruction:
+            drought_events_df = load_drought_events(dataset_id, ssi_window,
+                                                     observed=True)
+            if drought_events_df is not None and 'realization_id' not in drought_events_df.columns:
+                drought_events_df['realization_id'] = 0
+        else:
+            drought_events_df = load_drought_events(dataset_id, ssi_window)
         if drought_events_df is None or len(drought_events_df) == 0:
             print(f"Rank {rank}: WARNING - No SSI-{ssi_window} drought events, skipping.")
             continue

@@ -263,6 +263,11 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days, ffmp_d
     # --- Outcome: Montague shortage ---
     total_montague_shortage = mont_short.sum()
     max_consec_montague = _max_consecutive_positive(mont_short)
+    # Peak 3-day rolling average shortage (MGD)
+    if len(mont_short) >= 3:
+        max_3day_avg_montague = mont_short.rolling(window=3, min_periods=1).mean().max()
+    else:
+        max_3day_avg_montague = mont_short.max() if len(mont_short) > 0 else 0.0
 
     # --- Outcome: Trenton shortage ---
     total_trenton_shortage = tren_short.sum()
@@ -318,6 +323,7 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days, ffmp_d
         'nyc_shortage_pct': nyc_shortage_pct,
         # Outcome: Montague
         'max_consec_montague_days': int(max_consec_montague),
+        'max_3day_avg_montague_mgd': float(max_3day_avg_montague),
         'total_montague_shortage_mg': total_montague_shortage,
         # Outcome: Trenton
         'max_consec_trenton_days': int(max_consec_trenton),

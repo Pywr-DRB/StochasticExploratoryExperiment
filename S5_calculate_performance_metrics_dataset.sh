@@ -21,6 +21,11 @@ DATASET_ID="${1:?Usage: sbatch S5_calculate_performance_metrics_dataset.sh <data
 # make directories
 mkdir -p logs figures
 
+# Reconstruction has only 1 realization — use 1 rank
+if [ "$DATASET_ID" = "reconstruction" ]; then
+    np=1
+fi
+
 echo "========================================"
 echo "Calculating performance metrics for $DATASET_ID with MPI ($np ranks)..."
 echo "========================================"

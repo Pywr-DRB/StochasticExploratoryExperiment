@@ -16,13 +16,12 @@ mkdir -p logs figures
 
 # Workflow flags
 PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
-PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-true}
+PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_CONTRIBUTION_KDE=${PLOT_CONTRIBUTION_KDE:-true}
-PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-true}
-PLOT_PERFORMANCE_OUTCOMES=${PLOT_PERFORMANCE_OUTCOMES:-true}
+PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
+PLOT_PERFORMANCE_OUTCOMES=${PLOT_PERFORMANCE_OUTCOMES:-false}
 
 # Under development still...
-PLOT_SANKEY_PARALLEL=${PLOT_SANKEY_PARALLEL:-False}
 
 
 # Ensemble flow distribution and verification plots
@@ -70,14 +69,3 @@ fi
 
 
 
-if [ "$PLOT_SANKEY_PARALLEL" = true ]; then
-    echo "========================================"
-    echo "Running CART diagnostics for bin selection..."
-    echo "========================================"
-    # python3 diagnostics_cart_bin_selection.py --ssi_window 3 --datasets stationary_ensemble
-
-    echo "========================================"
-    echo "Generating Sankey-Parallel Coordinate figures..."
-    echo "========================================"
-    python3 F6_plot_sankey_parallel_coordinates.py --versions default quantile cart --ssi_window 3 --datasets stationary_ensemble
-fi

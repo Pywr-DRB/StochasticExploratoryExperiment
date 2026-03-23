@@ -32,7 +32,7 @@ from methods.plotting.styles import (
     DPI_HIGH, apply_publication_style,
 )
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/Fnew_duration_magnitude"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI12_duration_magnitude"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SSI_WINDOW = 3

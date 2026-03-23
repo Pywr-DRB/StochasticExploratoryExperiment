@@ -1,10 +1,11 @@
 """
-SI: NYC Diversion Shortage Analysis by FFMP Zone
+SI: Shortage Analysis by FFMP Zone
 
-Diagnostic script to investigate when NYC diversion shortages occur
-relative to FFMP drought zone levels.
+Diagnostic script to investigate when shortages occur relative to
+FFMP drought zone levels for NYC diversions, Montague flow target,
+and Trenton flow target.
 
-Key question: Are NYC diversion shortages only during drought
+Key question: Are shortages only during drought
 (Watch/Warning/Emergency) periods, or do they also occur during "normal"
 periods?
 
@@ -15,17 +16,17 @@ FFMP Zone Definitions:
   - Zone 3: Normal operations
   - Zones 1-2: Flood conditions (high storage)
 
-NYC Diversion Limit:
-  - Base limit: 800 MGD (running average from June 1st)
-  - Decreases when NYC storage enters drought zones
-  - Shortage = Demand - Actual Diversion (when positive)
+Shortage types analyzed:
+  - NYC Diversion: Demand - Actual Diversion (when positive)
+  - Montague: MRF target - actual flow at Montague (when positive)
+  - Trenton: MRF target - actual flow at Trenton (when positive)
 
 Usage:
-    python SI_NYC_diversion_shortage_by_zone.py [dataset_id]
+    python SI5_plot_nyc_diversion_shortage_by_zone.py [dataset_id]
 
 Examples:
-    python SI_NYC_diversion_shortage_by_zone.py stationary_ensemble
-    python SI_NYC_diversion_shortage_by_zone.py climate_adjusted_low
+    python SI5_plot_nyc_diversion_shortage_by_zone.py stationary_ensemble
+    python SI5_plot_nyc_diversion_shortage_by_zone.py climate_adjusted_low
 """
 
 import sys
@@ -69,10 +70,18 @@ DROUGHT_ZONES = [4, 5, 6]  # Warning, Watch, Emergency
 NORMAL_ZONE = 3
 FLOOD_ZONES = [1, 2]
 
+# Shortage analyses to run: (column_name, display_label)
+SHORTAGE_ANALYSES = [
+    ('nyc_shortage', 'NYC Diversion'),
+    ('delMontague_shortage', 'Montague Flow Target'),
+    ('delTrenton_shortage', 'Trenton Flow Target'),
+]
+
 
 def load_shortage_and_zone_data(dataset_id):
     """
-    Load NYC diversion shortage and FFMP zone level data.
+    Load shortage and FFMP zone level data for NYC diversions,
+    Montague flow target, and Trenton flow target.
 
     Parameters
     ----------
@@ -86,6 +95,8 @@ def load_shortage_and_zone_data(dataset_id):
         - nyc_diversion: actual NYC diversion (MGD)
         - nyc_demand: NYC demand (MGD)
         - nyc_shortage: shortage = max(0, demand - diversion)
+        - delMontague_shortage: Montague flow target shortage (MGD)
+        - delTrenton_shortage: Trenton flow target shortage (MGD)
         - nyc_zone: FFMP zone level (1-6)
         - nyc_storage_pct: NYC aggregate storage (%)
     """
@@ -101,7 +112,8 @@ def load_shortage_and_zone_data(dataset_id):
     data = pywrdrb.Data()
     data.load_from_export(
         fname,
-        results_sets=['ibt_diversions', 'ibt_demands', 'res_level', 'res_storage']
+        results_sets=['ibt_diversions', 'ibt_demands', 'res_level',
+                      'res_storage', 'shortage']
     )
 
     realizations = sorted(data.ibt_diversions[dataset_id].keys())
@@ -116,6 +128,10 @@ def load_shortage_and_zone_data(dataset_id):
         nyc_shortage = (nyc_demand - nyc_diversion).clip(lower=0)
         nyc_shortage[nyc_shortage < 0.1] = 0.0  # Filter out negligible shortages
 
+        # Pre-calculated Montague and Trenton shortages from postprocessing
+        delMontague_shortage = data.shortage[dataset_id][r]['delMontague']
+        delTrenton_shortage = data.shortage[dataset_id][r]['delTrenton']
+
         # NYC zone level
         nyc_zone = data.res_level[dataset_id][r]['nyc']
 
@@ -128,6 +144,8 @@ def load_shortage_and_zone_data(dataset_id):
             'nyc_diversion': nyc_diversion,
             'nyc_demand': nyc_demand,
             'nyc_shortage': nyc_shortage,
+            'delMontague_shortage': delMontague_shortage,
+            'delTrenton_shortage': delTrenton_shortage,
             'nyc_zone': nyc_zone,
             'nyc_storage_pct': nyc_storage_pct
         })
@@ -137,55 +155,56 @@ def load_shortage_and_zone_data(dataset_id):
     return shortage_zone_data
 
 
-def analyze_shortage_by_zone(shortage_zone_data):
+def analyze_shortage_by_zone(shortage_zone_data, shortage_col='nyc_shortage',
+                             shortage_label='NYC Diversion'):
     """
-    Analyze NYC diversion shortages by FFMP zone.
+    Analyze shortages by FFMP zone.
 
     Parameters
     ----------
     shortage_zone_data : dict
         Dictionary mapping realization_id to shortage/zone DataFrame
+    shortage_col : str
+        Column name for shortage values
+    shortage_label : str
+        Display label for the shortage type
 
     Returns
     -------
     pd.DataFrame
-        Summary statistics with columns:
-        - zone: FFMP zone number
-        - n_shortage_days: total number of days with shortage in this zone
-        - total_shortage_mg: total shortage volume in this zone (MG)
-        - mean_shortage_mg: mean daily shortage when shortage occurs (MG)
-        - pct_of_all_shortage_days: percentage of all shortage days in this zone
-        - pct_of_all_shortage_volume: percentage of total shortage volume in this zone
+        Summary statistics by zone
+    pd.DataFrame
+        All shortage day records
     """
     # Aggregate across all realizations
     all_shortage_days = []
 
     for r, df in shortage_zone_data.items():
         # Filter to days with shortage
-        shortage_days = df[df['nyc_shortage'] > 0].copy()
+        shortage_days = df[df[shortage_col] > 0].copy()
         shortage_days['realization_id'] = r
         all_shortage_days.append(shortage_days)
 
     if len(all_shortage_days) == 0:
-        print("  Warning: No shortage days found!")
-        return pd.DataFrame()
+        print(f"  Warning: No {shortage_label} shortage days found!")
+        return pd.DataFrame(), pd.DataFrame()
 
     all_shortages = pd.concat(all_shortage_days, ignore_index=True)
 
-    print(f"\nTotal shortage days across all realizations: {len(all_shortages):,}")
+    print(f"\n{shortage_label} - Total shortage days across all realizations: {len(all_shortages):,}")
 
     # Calculate statistics by zone
     zone_stats = []
 
     total_shortage_days = len(all_shortages)
-    total_shortage_volume = all_shortages['nyc_shortage'].sum()
+    total_shortage_volume = all_shortages[shortage_col].sum()
 
     for zone_num in sorted(ZONE_DEFINITIONS.keys(), reverse=True):
         zone_shortages = all_shortages[all_shortages['nyc_zone'] == zone_num]
 
         n_days = len(zone_shortages)
-        total_vol = zone_shortages['nyc_shortage'].sum()
-        mean_shortage = zone_shortages['nyc_shortage'].mean() if n_days > 0 else 0
+        total_vol = zone_shortages[shortage_col].sum()
+        mean_shortage = zone_shortages[shortage_col].mean() if n_days > 0 else 0
         pct_days = 100.0 * n_days / total_shortage_days if total_shortage_days > 0 else 0
         pct_vol = 100.0 * total_vol / total_shortage_volume if total_shortage_volume > 0 else 0
 
@@ -204,9 +223,16 @@ def analyze_shortage_by_zone(shortage_zone_data):
     return stats_df, all_shortages
 
 
-def calculate_realization_statistics(shortage_zone_data):
+def calculate_realization_statistics(shortage_zone_data, shortage_col='nyc_shortage'):
     """
     Calculate per-realization statistics on shortage by zone.
+
+    Parameters
+    ----------
+    shortage_zone_data : dict
+        Dictionary mapping realization_id to shortage/zone DataFrame
+    shortage_col : str
+        Column name for shortage values
 
     Returns
     -------
@@ -219,13 +245,13 @@ def calculate_realization_statistics(shortage_zone_data):
         stats = {'realization_id': r}
 
         # Total days with shortage
-        total_shortage_days = (df['nyc_shortage'] > 0).sum()
+        total_shortage_days = (df[shortage_col] > 0).sum()
         stats['total_shortage_days'] = total_shortage_days
 
         if total_shortage_days > 0:
             # Shortage days by zone
             for zone_num in sorted(ZONE_DEFINITIONS.keys(), reverse=True):
-                zone_shortage_days = ((df['nyc_shortage'] > 0) &
+                zone_shortage_days = ((df[shortage_col] > 0) &
                                      (df['nyc_zone'] == zone_num)).sum()
                 pct = 100.0 * zone_shortage_days / total_shortage_days
                 stats[f'pct_shortage_days_zone{zone_num}'] = pct
@@ -238,7 +264,8 @@ def calculate_realization_statistics(shortage_zone_data):
     return pd.DataFrame(realization_stats)
 
 
-def plot_shortage_by_zone_summary(stats_df, dataset_id, fname=None):
+def plot_shortage_by_zone_summary(stats_df, dataset_id,
+                                  shortage_label='NYC Diversion', fname=None):
     """
     Create summary figure showing shortage distribution by zone.
 
@@ -258,7 +285,7 @@ def plot_shortage_by_zone_summary(stats_df, dataset_id, fname=None):
     bars1 = ax_days.bar(zone_names, pct_days, color=colors, alpha=0.8, edgecolor='black')
     ax_days.set_ylabel('% of All Shortage Days', fontsize=FONTSIZE_MEDIUM)
     ax_days.set_xlabel('FFMP Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_days.set_title('NYC Diversion Shortage Days by Zone', fontsize=FONTSIZE_LARGE)
+    ax_days.set_title(f'{shortage_label} Shortage Days by Zone', fontsize=FONTSIZE_LARGE)
     ax_days.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax_days.set_axisbelow(True)
 
@@ -275,7 +302,7 @@ def plot_shortage_by_zone_summary(stats_df, dataset_id, fname=None):
     bars2 = ax_volume.bar(zone_names, pct_vol, color=colors, alpha=0.8, edgecolor='black')
     ax_volume.set_ylabel('% of Total Shortage Volume', fontsize=FONTSIZE_MEDIUM)
     ax_volume.set_xlabel('FFMP Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_volume.set_title('NYC Diversion Shortage Volume by Zone', fontsize=FONTSIZE_LARGE)
+    ax_volume.set_title(f'{shortage_label} Shortage Volume by Zone', fontsize=FONTSIZE_LARGE)
     ax_volume.grid(True, axis='y', alpha=0.3, linestyle='--')
     ax_volume.set_axisbelow(True)
 
@@ -289,20 +316,25 @@ def plot_shortage_by_zone_summary(stats_df, dataset_id, fname=None):
 
     # Add dataset label
     dataset_label = DATASET_LABELS.get(dataset_id, dataset_id)
-    fig.suptitle(f'NYC Diversion Shortage Analysis: {dataset_label}',
+    fig.suptitle(f'{shortage_label} Shortage Analysis: {dataset_label}',
                  fontsize=FONTSIZE_LARGE, y=0.98)
 
     plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{dataset_id}.png"
+        # Create filename-safe version of shortage label
+        label_slug = shortage_label.replace(' ', '_').lower()
+        fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"\nSaved figure: {fname}")
     plt.close()
 
 
-def plot_shortage_magnitude_distributions(all_shortages, dataset_id, fname=None):
+def plot_shortage_magnitude_distributions(all_shortages, dataset_id,
+                                          shortage_col='nyc_shortage',
+                                          shortage_label='NYC Diversion',
+                                          fname=None):
     """
     Plot distributions of shortage magnitudes by zone.
 
@@ -327,7 +359,7 @@ def plot_shortage_magnitude_distributions(all_shortages, dataset_id, fname=None)
     zone_colors_list = []
 
     for zone_num, color, label in zip(zones_to_plot, zone_colors, zone_labels):
-        zone_data = all_shortages[all_shortages['nyc_zone'] == zone_num]['nyc_shortage']
+        zone_data = all_shortages[all_shortages['nyc_zone'] == zone_num][shortage_col]
         if len(zone_data) > 0:
             zone_data_list.append(zone_data)
             zone_labels_list.append(f'{label} (n={len(zone_data):,})')
@@ -340,7 +372,7 @@ def plot_shortage_magnitude_distributions(all_shortages, dataset_id, fname=None)
 
     ax_hist.set_xlabel('Shortage Magnitude (MGD)', fontsize=FONTSIZE_MEDIUM)
     ax_hist.set_ylabel('Frequency (days)', fontsize=FONTSIZE_MEDIUM)
-    ax_hist.set_title('Distribution of NYC Diversion Shortage Magnitudes by Zone',
+    ax_hist.set_title(f'Distribution of {shortage_label} Shortage Magnitudes by Zone',
                      fontsize=FONTSIZE_LARGE)
     ax_hist.legend(fontsize=FONTSIZE_SMALL, loc='upper right')
     ax_hist.grid(True, axis='y', alpha=0.3, linestyle='--')
@@ -353,7 +385,7 @@ def plot_shortage_magnitude_distributions(all_shortages, dataset_id, fname=None)
     box_colors = []
 
     for zone_num, color, label in zip(zones_to_plot, zone_colors, zone_labels):
-        zone_data = all_shortages[all_shortages['nyc_zone'] == zone_num]['nyc_shortage']
+        zone_data = all_shortages[all_shortages['nyc_zone'] == zone_num][shortage_col]
         if len(zone_data) > 0:
             box_data.append(zone_data.values)
             box_labels.append(label)
@@ -378,33 +410,35 @@ def plot_shortage_magnitude_distributions(all_shortages, dataset_id, fname=None)
 
     # Add dataset label
     dataset_label = DATASET_LABELS.get(dataset_id, dataset_id)
-    fig.suptitle(f'NYC Diversion Shortage Magnitude Analysis: {dataset_label}',
+    fig.suptitle(f'{shortage_label} Shortage Magnitude Analysis: {dataset_label}',
                  fontsize=FONTSIZE_LARGE, y=0.995)
 
     plt.tight_layout()
 
     if fname is None:
-        fname = f"{FIG_OUTPUT_DIR}/shortage_magnitude_distribution_{dataset_id}.png"
+        label_slug = shortage_label.replace(' ', '_').lower()
+        fname = f"{FIG_OUTPUT_DIR}/shortage_magnitude_distribution_{label_slug}_{dataset_id}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved figure: {fname}")
     plt.close()
 
 
-def analyze_shortage_magnitude_distribution(all_shortages):
+def analyze_shortage_magnitude_distribution(all_shortages, shortage_col='nyc_shortage',
+                                             shortage_label='NYC Diversion'):
     """
     Analyze the distribution of shortage magnitudes by zone.
 
     Returns statistics on shortage magnitudes for each zone.
     """
     print("\n" + "="*80)
-    print("SHORTAGE MAGNITUDE DISTRIBUTION BY ZONE")
+    print(f"{shortage_label.upper()} SHORTAGE MAGNITUDE DISTRIBUTION BY ZONE")
     print("="*80)
 
     stats_by_zone = []
 
     for zone_num in sorted(ZONE_DEFINITIONS.keys(), reverse=True):
-        zone_shortages = all_shortages[all_shortages['nyc_zone'] == zone_num]['nyc_shortage']
+        zone_shortages = all_shortages[all_shortages['nyc_zone'] == zone_num][shortage_col]
 
         if len(zone_shortages) == 0:
             continue
@@ -462,10 +496,10 @@ def analyze_shortage_magnitude_distribution(all_shortages):
     return pd.DataFrame(stats_by_zone)
 
 
-def print_summary_statistics(stats_df, dataset_id):
+def print_summary_statistics(stats_df, dataset_id, shortage_label='NYC Diversion'):
     """Print summary statistics to console."""
     print(f"\n{'='*80}")
-    print(f"NYC DIVERSION SHORTAGE ANALYSIS: {DATASET_LABELS.get(dataset_id, dataset_id)}")
+    print(f"{shortage_label.upper()} SHORTAGE ANALYSIS: {DATASET_LABELS.get(dataset_id, dataset_id)}")
     print(f"{'='*80}")
 
     print("\nShortage Distribution by FFMP Zone:")
@@ -515,7 +549,7 @@ def print_summary_statistics(stats_df, dataset_id):
 
 
 def main():
-    """Run NYC diversion shortage analysis."""
+    """Run shortage-by-zone analysis for NYC diversions, Montague, and Trenton."""
     # Get dataset from command line or use default
     if len(sys.argv) > 1:
         dataset_id = sys.argv[1]
@@ -526,46 +560,67 @@ def main():
     verify_dataset_id(dataset_id)
 
     print(f"\n{'='*80}")
-    print(f"NYC DIVERSION SHORTAGE BY FFMP ZONE ANALYSIS")
+    print(f"SHORTAGE BY FFMP ZONE ANALYSIS")
     print(f"Dataset: {dataset_id}")
     print(f"{'='*80}\n")
 
-    # Load data
+    # Load data (includes NYC, Montague, and Trenton shortages)
     shortage_zone_data = load_shortage_and_zone_data(dataset_id)
 
-    # Analyze shortages by zone
-    stats_df, all_shortages = analyze_shortage_by_zone(shortage_zone_data)
+    # Run analysis for each shortage type
+    for shortage_col, shortage_label in SHORTAGE_ANALYSES:
+        print(f"\n{'#'*80}")
+        print(f"# Analyzing: {shortage_label}")
+        print(f"{'#'*80}")
 
-    if len(stats_df) == 0:
-        print("No shortages found in this dataset!")
-        return
+        label_slug = shortage_label.replace(' ', '_').lower()
 
-    # Analyze shortage magnitude distributions
-    magnitude_stats = analyze_shortage_magnitude_distribution(all_shortages)
+        # Analyze shortages by zone
+        stats_df, all_shortages = analyze_shortage_by_zone(
+            shortage_zone_data, shortage_col=shortage_col,
+            shortage_label=shortage_label
+        )
 
-    # Print summary statistics
-    print_summary_statistics(stats_df, dataset_id)
+        if len(stats_df) == 0:
+            print(f"No {shortage_label} shortages found in this dataset!")
+            continue
 
-    # Create visualizations
-    plot_shortage_by_zone_summary(stats_df, dataset_id)
-    plot_shortage_magnitude_distributions(all_shortages, dataset_id)
+        # Analyze shortage magnitude distributions
+        magnitude_stats = analyze_shortage_magnitude_distribution(
+            all_shortages, shortage_col=shortage_col,
+            shortage_label=shortage_label
+        )
 
-    # Calculate per-realization statistics
-    print("\nCalculating per-realization statistics...")
-    realization_stats = calculate_realization_statistics(shortage_zone_data)
+        # Print summary statistics
+        print_summary_statistics(stats_df, dataset_id,
+                                shortage_label=shortage_label)
 
-    # Save detailed statistics to CSV
-    csv_fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{dataset_id}_summary.csv"
-    stats_df.to_csv(csv_fname, index=False)
-    print(f"Saved summary CSV: {csv_fname}")
+        # Create visualizations
+        plot_shortage_by_zone_summary(stats_df, dataset_id,
+                                     shortage_label=shortage_label)
+        plot_shortage_magnitude_distributions(
+            all_shortages, dataset_id,
+            shortage_col=shortage_col, shortage_label=shortage_label
+        )
 
-    csv_fname_real = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{dataset_id}_per_realization.csv"
-    realization_stats.to_csv(csv_fname_real, index=False)
-    print(f"Saved per-realization CSV: {csv_fname_real}")
+        # Calculate per-realization statistics
+        print(f"\nCalculating per-realization statistics for {shortage_label}...")
+        realization_stats = calculate_realization_statistics(
+            shortage_zone_data, shortage_col=shortage_col
+        )
 
-    csv_fname_mag = f"{FIG_OUTPUT_DIR}/shortage_magnitude_stats_{dataset_id}.csv"
-    magnitude_stats.to_csv(csv_fname_mag, index=False)
-    print(f"Saved magnitude statistics CSV: {csv_fname_mag}")
+        # Save detailed statistics to CSV
+        csv_fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_summary.csv"
+        stats_df.to_csv(csv_fname, index=False)
+        print(f"Saved summary CSV: {csv_fname}")
+
+        csv_fname_real = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_per_realization.csv"
+        realization_stats.to_csv(csv_fname_real, index=False)
+        print(f"Saved per-realization CSV: {csv_fname_real}")
+
+        csv_fname_mag = f"{FIG_OUTPUT_DIR}/shortage_magnitude_stats_{label_slug}_{dataset_id}.csv"
+        magnitude_stats.to_csv(csv_fname_mag, index=False)
+        print(f"Saved magnitude statistics CSV: {csv_fname_mag}")
 
     print(f"\n{'='*80}")
     print("ANALYSIS COMPLETE")
