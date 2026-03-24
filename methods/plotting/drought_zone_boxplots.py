@@ -14,6 +14,7 @@ from methods.config import N_YEARS, RECONSTRUCTION_N_YEARS
 from methods.plotting.styles import (
     DATASET_COLORS,
     FONTSIZE_SMALL, FONTSIZE_LABEL,
+    label_panel,
 )
 
 # Default scenarios
@@ -165,8 +166,7 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
     for sep_x in [0.5, 1.5]:
         ax.axvline(sep_x, color='grey', linewidth=0.8, alpha=0.4, zorder=0)
 
-    ax.text(-0.08, 1.02, panel_label, transform=ax.transAxes,
-            fontsize=14, va='bottom', ha='right')
+    label_panel(ax, panel_label.rstrip(')'))
 
 
 def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
@@ -279,5 +279,4 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
     for sep_x in [0.5, 1.5]:
         ax.axvline(sep_x, color='grey', linewidth=0.8, alpha=0.4, zorder=0)
 
-    ax.text(-0.08, 1.02, panel_label, transform=ax.transAxes,
-            fontsize=14, va='bottom', ha='right')
+    label_panel(ax, panel_label.rstrip(')'))

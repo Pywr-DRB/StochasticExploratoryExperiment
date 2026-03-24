@@ -27,7 +27,7 @@ from methods.plotting.styles import (
     DPI_HIGH,
     DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_SMALL, FONTSIZE_LABEL, FONTSIZE_MEDIUM,
-    apply_publication_style,
+    apply_publication_style, label_panel,
 )
 
 # Drought zone boxplots (modular, in methods/plotting/)
@@ -109,9 +109,8 @@ def plot_panel_A_zone_probability(ax):
     format_wy_xaxis(ax)
     ax.set_xlabel('Month', fontsize=FONTSIZE_LABEL)
 
-    # Panel label
-    ax.text(-0.05, 1.02, 'a)', transform=ax.transAxes,
-            fontsize=14, va='bottom', ha='right')
+    # Panel label (inside axes, matching F4 style)
+    label_panel(ax, 'a')
 
 
 
