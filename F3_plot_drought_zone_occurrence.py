@@ -229,7 +229,7 @@ def main():
     print("F3 (alt): Drought zone occurrence figure")
     print("=" * 70)
 
-    fig = create_figure(show_historic=True)
+    fig = create_figure(show_historic=False)
 
     fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')

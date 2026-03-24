@@ -15,9 +15,9 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
 PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
-PLOT_ZONE_OCCURRENCE=${PLOT_ZONE_OCCURRENCE:-true}
+PLOT_ZONE_OCCURRENCE=${PLOT_ZONE_OCCURRENCE:-false}
 PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-true}
 PLOT_PERFORMANCE_OUTCOMES=${PLOT_PERFORMANCE_OUTCOMES:-false}
 
@@ -53,8 +53,9 @@ if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
     echo "========================================"
     echo "F4: Generating contribution distribution figures..."
     echo "========================================"
-    python3 F4_plot_contribution_distributions.py --combined
-    python3 F4_plot_contribution_distributions.py --montague
+    # python3 F4_plot_contribution_distributions.py --combined
+    # python3 F4_plot_contribution_distributions.py --montague
+    python3 F4_plot_contribution_distributions.py --montague --layout side_by_side
 fi
 
 # F5: Performance outcome comparison
