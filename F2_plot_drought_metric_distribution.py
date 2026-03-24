@@ -53,7 +53,7 @@ ALL_DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted
 
 
 def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
-                                           percentiles=(0, 50, 100)):
+                                           percentiles=(1, 25, 50, 75, 99)):
     """Compute exceedance-rate bands across realizations.
 
     For each realization, builds a step-function exceedance curve
@@ -100,7 +100,7 @@ def _compute_realization_exceedance_bands(df, metric, n_years, n_grid=200,
     return x_grid, bands
 
 
-def _compute_exceedance_on_grid(df, metric, n_years, x_grid, percentiles=(0, 50, 100)):
+def _compute_exceedance_on_grid(df, metric, n_years, x_grid, percentiles=(1, 25, 50, 75, 99)):
     """
     Compute exceedance-rate bands on a provided x_grid using vectorised searchsorted.
 
@@ -134,7 +134,7 @@ def _compute_exceedance_on_grid(df, metric, n_years, x_grid, percentiles=(0, 50,
 
 
 def _compute_delta_bands(df_scenario, baseline_median, metric, n_years, x_grid,
-                         percentiles=(0, 50, 100)):
+                         percentiles=(1, 25, 50, 75, 99)):
     """
     Compute change in exceedance rate per realization vs. a fixed baseline curve.
 
@@ -422,12 +422,16 @@ def plot_drought_manuscript_figure(
 
                 xv = x[valid_mask]
                 ax.fill_between(xv,
-                                delta_bands[0][valid_mask],
-                                delta_bands[100][valid_mask],
-                                color=color, alpha=0.2, zorder=4)
+                                delta_bands[1][valid_mask],
+                                delta_bands[99][valid_mask],
+                                color=color, alpha=0.15, linewidth=0, zorder=4)
+                ax.fill_between(xv,
+                                delta_bands[25][valid_mask],
+                                delta_bands[75][valid_mask],
+                                color=color, alpha=0.35, linewidth=0, zorder=4)
                 ax.plot(xv, delta_bands[50][valid_mask],
                         color=color,
-                        linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                        linestyle='-',
                         linewidth=LINEWIDTH_MEDIUM, zorder=5)
 
                 ax.axhline(0, color='gray', linestyle='--', linewidth=0.8,
@@ -453,11 +457,13 @@ def plot_drought_manuscript_figure(
                         df, metric, n_years=N_YEARS,
                     )
 
-                ax.fill_between(x, bands[0], bands[100],
-                                color=color, alpha=0.2, zorder=4)
+                ax.fill_between(x, bands[1], bands[99],
+                                color=color, alpha=0.15, linewidth=0, zorder=4)
+                ax.fill_between(x, bands[25], bands[75],
+                                color=color, alpha=0.35, linewidth=0, zorder=4)
                 ax.plot(x, bands[50],
                         color=color,
-                        linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                        linestyle='-',
                         linewidth=LINEWIDTH_MEDIUM, zorder=5)
 
                 # Historic markers (all rows for absolute; baseline only for relative change)
@@ -576,12 +582,13 @@ def plot_drought_manuscript_figure(
     legend_labels = [h.get_label() for h in legend_handles]
     for dataset_id in ALL_DATASETS:
         color = DATASET_COLORS[dataset_id]
-        patch = mpatches.Patch(facecolor=color, alpha=0.2)
+        patch_outer = mpatches.Patch(facecolor=color, alpha=0.15)
+        patch_inner = mpatches.Patch(facecolor=color, alpha=0.35)
         line = mlines.Line2D([], [], color=color,
-                             linestyle=DATASET_LINESTYLES.get(dataset_id, '-'),
+                             linestyle='-',
                              linewidth=LINEWIDTH_MEDIUM)
-        legend_handles.append((patch, line))
-        legend_labels.append(f'{DATASET_LABELS.get(dataset_id, dataset_id)} (range and median)')
+        legend_handles.append((patch_outer, patch_inner, line))
+        legend_labels.append(f'{DATASET_LABELS.get(dataset_id, dataset_id)} (1-99th, 25-75th %ile, median)')
     if plot_relative_change:
         baseline_handle = mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8)
         legend_handles.append(baseline_handle)
