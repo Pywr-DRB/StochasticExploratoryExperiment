@@ -42,7 +42,7 @@ from methods.plotting.drought_zone_boxplots import (
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F3_composite_figures"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F3_zone_occurence"
 
 # Water-year axis constants (Jun-May)
 WY_MONTH_STARTS = [1, 5, 9, 14, 18, 23, 27, 32, 36, 40, 45, 49]
@@ -119,7 +119,7 @@ def plot_panel_A_zone_probability(ax):
 # LEGEND
 # ============================================================================
 
-def add_combined_legend(fig):
+def add_combined_legend(fig, show_historic=False):
     """
     Shared legend for all three panels.
 
@@ -151,9 +151,10 @@ def add_combined_legend(fig):
                markeredgewidth=0.8, label='Mean'))
 
     # Historic marker
-    legend_elements.append(
-        Line2D([0], [0], color='black', marker='^', linestyle='None',
-               markersize=8, label='Historic'))
+    if show_historic:
+        legend_elements.append(
+            Line2D([0], [0], color='black', marker='^', linestyle='None',
+                markersize=8, label='Historic'))
 
     fig.legend(handles=legend_elements, loc='lower center',
                ncol=4, fontsize=FONTSIZE_SMALL,
@@ -165,7 +166,7 @@ def add_combined_legend(fig):
 # FIGURE ASSEMBLY
 # ============================================================================
 
-def create_figure():
+def create_figure(show_historic=False):
     """
     Create the 3-panel drought zone occurrence figure.
 
@@ -191,11 +192,11 @@ def create_figure():
     # Panel A: P(FFMP Drought Zone) temporal plot
     plot_panel_A_zone_probability(ax_A)
 
-    # Panel B1: Frequency boxplot (from F3)
-    plot_frequency_boxplot(ax_B1, panel_label='b)', show_historic=False)
+    # Panel B1: Frequency boxplot
+    plot_frequency_boxplot(ax_B1, panel_label='b)', show_historic=show_historic)
 
-    # Panel B2: Duration boxplot (from F3)
-    plot_duration_boxplot(ax_B2, panel_label='c)', show_historic=False)
+    # Panel B2: Duration boxplot
+    plot_duration_boxplot(ax_B2, panel_label='c)', show_historic=show_historic)
 
     # Shared x-axis label for right-side panels
     ax_B2.set_xlabel('NYC Reservoir Storage Zone', fontsize=FONTSIZE_LABEL)
@@ -206,7 +207,7 @@ def create_figure():
         ax.yaxis.set_label_coords(label_x, 0.5)
 
     # Combined legend
-    add_combined_legend(fig)
+    add_combined_legend(fig, show_historic=show_historic)
 
     return fig
 
@@ -229,7 +230,7 @@ def main():
     print("F3 (alt): Drought zone occurrence figure")
     print("=" * 70)
 
-    fig = create_figure()
+    fig = create_figure(show_historic=True)
 
     fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')

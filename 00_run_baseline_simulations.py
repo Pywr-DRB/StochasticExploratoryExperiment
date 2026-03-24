@@ -1,26 +1,23 @@
+import sys
 import pywrdrb
-from mpi4py import MPI
+from methods.mpi_utils import get_comm
 
-# Set warning level to error
 import warnings
 warnings.filterwarnings("ignore")
 
-# MPI initialization
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-size = comm.Get_size()
+# MPI initialization (falls back to serial when mpi4py is unavailable)
+comm, rank, size = get_comm()
 
-# Flow scenarios
+# Flow scenarios (optionally filtered by command-line args)
 model_date_ranges = pywrdrb.utils.dates.model_date_ranges
-flowtypes = list(model_date_ranges.keys())
+flowtypes = sys.argv[1:] if len(sys.argv) > 1 else list(model_date_ranges.keys())
 
 # Split flowtypes among MPI ranks
-# size >> len(flowtypes), so many ranks will not have any flowtypes
 rank_flowtypes = flowtypes[rank::size] if rank < len(flowtypes) else []
 
 
 if __name__ == "__main__":
-    
+
     for flow in rank_flowtypes:
         print(f"Rank {rank} running pywrdrb with flow type: {flow}")
 
@@ -36,7 +33,8 @@ if __name__ == "__main__":
         mb = pywrdrb.ModelBuilder(
             inflow_type=flow,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            options={"flow_prediction_mode": "perfect_foresight"},
         )
         mb.make_model()
         mb.write_model(model_filename)

@@ -20,7 +20,7 @@ import matplotlib.patches as mpatches
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import FIG_DIR, N_YEARS, SSI_WINDOWS
+from methods.config import FIG_DIR, N_YEARS, RECONSTRUCTION_N_YEARS, SSI_WINDOWS
 from methods.load import load_drought_events
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
@@ -45,8 +45,8 @@ METRIC_AXIS_LABELS = {
 
 PANEL_LETTERS = list('abcdefghij')
 
-# Number of years for exceedance rate normalization
-HISTORIC_N_YEARS = 77
+# Number of years for exceedance rate normalization (from config)
+HISTORIC_N_YEARS = RECONSTRUCTION_N_YEARS
 
 # All datasets for right-panel rows (stationary first, then low, then high)
 ALL_DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']

@@ -236,6 +236,35 @@ def get_dataset_label(dataset_id, style='standard'):
     return labels.get(dataset_id, dataset_id)
 
 
+def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
+                x=0.02, y=0.97):
+    """
+    Add a panel label inside the top-left of the axes.
+
+    Produces text like 'a) Baseline Climate' when dataset_id is given,
+    or 'a) Custom text' when label is given, or just 'a)' when neither.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    letter : str
+        Panel letter (e.g. 'a', 'b').
+    dataset_id : str, optional
+        Dataset identifier — resolved via DATASET_LABELS.
+    label : str, optional
+        Explicit label text (takes precedence over dataset_id).
+    fontsize : int
+    x, y : float
+        Position in axes coordinates.
+    """
+    if label is None and dataset_id is not None:
+        label = DATASET_LABELS.get(dataset_id, dataset_id)
+
+    text = f'{letter}) {label}' if label else f'{letter})'
+    ax.text(x, y, text, transform=ax.transAxes,
+            fontsize=fontsize, va='top', ha='left')
+
+
 def apply_publication_style():
     """
     Apply publication-quality style settings to matplotlib.
@@ -374,10 +403,8 @@ Y_AXIS_LABELS = {
     'value': 'Value',  # Generic fallback
 }
 
-# Reconstruction scaling — no longer needed for annual metrics
-# (annual metrics are per water year, not aggregated counts)
-RECONSTRUCTION_YEARS = 79
-ENSEMBLE_YEARS = 70
+# Reconstruction scaling — use centralized year counts from config
+from methods.config import N_YEARS as ENSEMBLE_YEARS, RECONSTRUCTION_N_YEARS as RECONSTRUCTION_YEARS
 RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS
 
 # Metrics that need scaling when comparing reconstruction to ensemble

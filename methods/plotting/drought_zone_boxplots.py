@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from methods.load import load_annual_metrics
+from methods.config import N_YEARS, RECONSTRUCTION_N_YEARS
 from methods.plotting.styles import (
     DATASET_COLORS,
     FONTSIZE_SMALL, FONTSIZE_LABEL,
@@ -91,18 +92,24 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
         all_freq_data[dataset_id] = freq_data
 
     # Set up grouped box plot positions
+    # When show_historic, reserve a slot for the historic marker so the
+    # full group (historic + boxplots) is centered within each zone.
     n_zones = len(zone_labels)
     n_datasets = len(scenarios)
+    n_slots = n_datasets + (1 if show_historic else 0)
+
+    group_width = 0.8
+    box_width = group_width / (n_slots + 0.5)
+    slot_center = (n_slots - 1) / 2
+    ds_start = 1 if show_historic else 0  # scenario slots start after historic
+
     positions_all = []
     colors_all = []
     data_all = []
 
-    group_width = 0.8
-    box_width = group_width / (n_datasets + 0.5)
-
     for zone_idx, label in enumerate(zone_labels):
         for ds_idx, dataset_id in enumerate(scenarios):
-            x_pos = zone_idx + (ds_idx - 1) * box_width
+            x_pos = zone_idx + (ds_start + ds_idx - slot_center) * box_width
             positions_all.append(x_pos)
             colors_all.append(DATASET_COLORS[dataset_id])
             data_all.append(all_freq_data[dataset_id][label])
@@ -122,11 +129,37 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
     ax.set_xticks(range(n_zones))
     ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_SMALL)
     ax.tick_params(axis='x', length=0)
-    ax.set_ylabel('Number of Realization Years\nZone Experienced (out of 70)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel(f'Number of Realization Years\nZone Experienced (out of {N_YEARS})', fontsize=FONTSIZE_LABEL)
     ax.set_xlim(-0.5, n_zones - 0.5)
     ax.set_ylim(bottom=0)
     ax.grid(False)
     ax.set_axisbelow(True)
+
+    # Historic markers (scaled to ensemble year count for fair comparison)
+    if show_historic:
+        scale = N_YEARS / RECONSTRUCTION_N_YEARS
+        hist_slot_x = (0 - slot_center) * box_width + box_width * 0.15
+        try:
+            hist_annual = load_annual_metrics('reconstruction')
+            hist_all = hist_annual[hist_annual['period'] == 'all'].copy()
+            for zone_idx, (zv, label) in enumerate(zip(zone_values, zone_labels)):
+                hist_count = (hist_all['max_zone'] == zv).sum() * scale
+                ax.scatter(zone_idx + hist_slot_x, hist_count, marker='^', s=60,
+                           color='black', edgecolors='white', linewidths=0.5, zorder=10)
+        except FileNotFoundError:
+            hist_csv = './pywrdrb/performance_metrics/reconstruction_performance_metrics.csv'
+            if os.path.exists(hist_csv):
+                hist_perf = pd.read_csv(hist_csv)
+                hist_col_map = {
+                    'Watch': 'years_exactly_watch',
+                    'Warning': 'years_exactly_warning',
+                    'Emergency': 'years_exactly_emergency',
+                }
+                for zone_idx, label in enumerate(zone_labels):
+                    col = hist_col_map[label]
+                    hist_count = hist_perf[col].values[0] * scale
+                    ax.scatter(zone_idx + hist_slot_x, hist_count, marker='^', s=60,
+                               color='black', edgecolors='white', linewidths=0.5, zorder=10)
 
     # Vertical separators between zone groups
     for sep_x in [0.5, 1.5]:
@@ -185,18 +218,24 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
         all_duration_data[dataset_id] = dataset_durations
 
     # Set up grouped box plot positions
+    # When show_historic, reserve a slot for the historic markers so the
+    # full group (historic + boxplots) is centered within each zone.
     n_zones = len(zone_order)
     n_datasets = len(scenarios)
+    n_slots = n_datasets + (1 if show_historic else 0)
+
+    group_width = 0.8
+    box_width = group_width / (n_slots + 0.5)
+    slot_center = (n_slots - 1) / 2
+    ds_start = 1 if show_historic else 0
+
     positions_all = []
     colors_all = []
     data_all = []
 
-    group_width = 0.8
-    box_width = group_width / (n_datasets + 0.5)
-
     for zone_idx, zone_num in enumerate(zone_order):
         for ds_idx, dataset_id in enumerate(scenarios):
-            x_pos = zone_idx + (ds_idx - 1) * box_width
+            x_pos = zone_idx + (ds_start + ds_idx - slot_center) * box_width
             positions_all.append(x_pos)
             colors_all.append(DATASET_COLORS[dataset_id])
 
@@ -216,13 +255,14 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
 
     # Historic markers
     if show_historic:
+        hist_slot_x = (0 - slot_center) * box_width + box_width * 0.15
         hist_csv = './pywrdrb/performance_metrics/reconstruction_zone_duration_events.csv'
         if os.path.exists(hist_csv):
             hist_events = pd.read_csv(hist_csv)
             for zone_idx, zone_num in enumerate(zone_order):
                 hist_durations = (hist_events[hist_events['max_zone'] == zone_num]['duration_days'] / 30.44).values
                 for d in hist_durations:
-                    ax.scatter(zone_idx, d, marker='^', s=60,
+                    ax.scatter(zone_idx + hist_slot_x, d, marker='^', s=60,
                                color='black', edgecolors='white', linewidths=0.5, zorder=10)
 
     # Format axes

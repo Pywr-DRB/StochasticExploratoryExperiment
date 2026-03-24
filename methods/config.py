@@ -11,21 +11,42 @@ from methods.verification import verify_dataset_id
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 2000
+TOTAL_REALIZATIONS = 5
 BASELINE_DATASET =  'pub_nhmv10_BC_withObsScaled' # 'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
-N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
+N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
 # Pywr-DRB simulation batching (within each ensemble set)
-N_REALIZATIONS_PER_PYWRDRB_BATCH = 10 # Simulation memory limits
+N_REALIZATIONS_PER_PYWRDRB_BATCH = 5 # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
-N_YEARS = 70
 START_DATE = '2030-01-01'
 END_DATE = '2099-12-31'
+
+# Compute water-year counts from actual simulation date ranges.
+# Water year X runs June 1 of year X through May 31 of year X+1.
+# Months >= June belong to that calendar year's WY; Jan-May belong to previous year's WY.
+def _count_water_years(start_date, end_date, min_days=300):
+    """Count full water years in a simulation date range.
+
+    Only water years with at least `min_days` days are counted,
+    excluding partial years at the start/end of the simulation.
+    """
+    idx = pd.date_range(start_date, end_date, freq='D')
+    wy = np.where(idx.month >= 6, idx.year, idx.year - 1)
+    unique_wys, counts = np.unique(wy, return_counts=True)
+    return int(np.sum(counts >= min_days))
+
+N_YEARS = _count_water_years(START_DATE, END_DATE)
+
+# Reconstruction simulation date range and year count
+_reconstruction_dates = pywrdrb.utils.dates.model_date_ranges[BASELINE_DATASET]
+RECONSTRUCTION_START_DATE = _reconstruction_dates[0]
+RECONSTRUCTION_END_DATE = _reconstruction_dates[1]
+RECONSTRUCTION_N_YEARS = _count_water_years(RECONSTRUCTION_START_DATE, RECONSTRUCTION_END_DATE)
 
 # Period origin for analysis
 # 'jan1' = calendar year (Jan 1 - Dec 31), aligns with FFMP boundaries

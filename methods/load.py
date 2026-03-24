@@ -13,6 +13,7 @@ from methods.config import (
     RECONSTRUCTION_OUTPUT_FNAME, WRFAORC_OUTPUT_FNAME, WRF1960s_OUTPUT_FNAME,
     ENSEMBLE_SETS, ROOT_DIR,
     N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET,
+    N_YEARS,
     get_ensemble_set_spec,
 )
 from methods.metrics.shortfall import (
@@ -886,7 +887,7 @@ def load_drought_satisficing(dataset_id, ssi_window,
     return merged
 
 
-def compute_event_exceedances(df, metric='severity', n_years=70):
+def compute_event_exceedances(df, metric='severity', n_years=N_YEARS):
     """
     Compute exceedance rates for each drought event across the entire ensemble.
 
