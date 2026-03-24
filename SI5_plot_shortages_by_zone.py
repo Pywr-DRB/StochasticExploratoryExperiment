@@ -610,16 +610,16 @@ def main():
         )
 
         # Save detailed statistics to CSV
-        csv_fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_summary.csv"
-        stats_df.to_csv(csv_fname, index=False)
+        # csv_fname = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_summary.csv"
+        # stats_df.to_csv(csv_fname, index=False)
         print(f"Saved summary CSV: {csv_fname}")
 
-        csv_fname_real = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_per_realization.csv"
-        realization_stats.to_csv(csv_fname_real, index=False)
+        # csv_fname_real = f"{FIG_OUTPUT_DIR}/shortage_by_zone_{label_slug}_{dataset_id}_per_realization.csv"
+        # realization_stats.to_csv(csv_fname_real, index=False)
         print(f"Saved per-realization CSV: {csv_fname_real}")
 
-        csv_fname_mag = f"{FIG_OUTPUT_DIR}/shortage_magnitude_stats_{label_slug}_{dataset_id}.csv"
-        magnitude_stats.to_csv(csv_fname_mag, index=False)
+        # csv_fname_mag = f"{FIG_OUTPUT_DIR}/shortage_magnitude_stats_{label_slug}_{dataset_id}.csv"
+        # magnitude_stats.to_csv(csv_fname_mag, index=False)
         print(f"Saved magnitude statistics CSV: {csv_fname_mag}")
 
     print(f"\n{'='*80}")

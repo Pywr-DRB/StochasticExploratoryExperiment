@@ -16,17 +16,18 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
-PLOT_SHORTAGE_OCCURRENCE=${PLOT_SHORTAGE_OCCURRENCE:-true}
-PLOT_DIVERSION_DIAGNOSTICS=${PLOT_DIVERSION_DIAGNOSTICS:-true}
-PLOT_STORAGE_ZONE_PROBABILITIES=${PLOT_STORAGE_ZONE_PROBABILITIES:-true}
-PLOT_NYC_DIVERSION_BY_ZONE=${PLOT_NYC_DIVERSION_BY_ZONE:-true}
-PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-true}
-PLOT_DROUGHT_SATISFICING=${PLOT_DROUGHT_SATISFICING:-true}
-PLOT_STORAGE_EXCEEDANCE=${PLOT_STORAGE_EXCEEDANCE:-true}
-PLOT_METRIC_DISTRIBUTIONS=${PLOT_METRIC_DISTRIBUTIONS:-true}
-PLOT_SHORTAGE_BY_ZONE=${PLOT_SHORTAGE_BY_ZONE:-true}
-PLOT_LOWER_BASIN_STORAGE=${PLOT_LOWER_BASIN_STORAGE:-true}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
+PLOT_SHORTAGE_OCCURRENCE=${PLOT_SHORTAGE_OCCURRENCE:-false}
+PLOT_DIVERSION_DIAGNOSTICS=${PLOT_DIVERSION_DIAGNOSTICS:-false}
+PLOT_STORAGE_ZONE_PROBABILITIES=${PLOT_STORAGE_ZONE_PROBABILITIES:-false}
+PLOT_NYC_DIVERSION_BY_ZONE=${PLOT_NYC_DIVERSION_BY_ZONE:-false}
+PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
+PLOT_DROUGHT_SATISFICING=${PLOT_DROUGHT_SATISFICING:-false}
+PLOT_STORAGE_EXCEEDANCE=${PLOT_STORAGE_EXCEEDANCE:-false}
+PLOT_METRIC_DISTRIBUTIONS=${PLOT_METRIC_DISTRIBUTIONS:-false}
+PLOT_SHORTAGE_BY_ZONE=${PLOT_SHORTAGE_BY_ZONE:-false}
+PLOT_DROUGHT_HEATMAP=${PLOT_DROUGHT_HEATMAP:-true}
+PLOT_LOWER_BASIN_STORAGE=${PLOT_LOWER_BASIN_STORAGE:-false}
 
 
 ### SI0: Detailed stationary ensemble diagnostics
@@ -73,7 +74,7 @@ if [ "$PLOT_NYC_DIVERSION_BY_ZONE" = true ]; then
     echo "========================================"
     echo "SI5: Generating NYC diversion shortage by zone figures..."
     echo "========================================"
-    python3 SI5_plot_nyc_diversion_shortage_by_zone.py stationary_ensemble
+    python3 SI5_plot_shortages_by_zone.py stationary_ensemble
 fi
 
 
@@ -134,4 +135,11 @@ if [ "$PLOT_LOWER_BASIN_STORAGE" = true ]; then
 fi
 
 
+### SI13: Drought outcome heatmaps (severity x magnitude)
+if [ "$PLOT_DROUGHT_HEATMAP" = true ]; then
+    echo "========================================"
+    echo "SI13: Generating drought outcome heatmap figures..."
+    echo "========================================"
+    python3 SI13_plot_drought_heatmap_with_storage_outcomes.py 3
+fi
 
