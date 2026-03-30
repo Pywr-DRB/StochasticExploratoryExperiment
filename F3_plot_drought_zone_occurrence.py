@@ -205,6 +205,21 @@ def create_figure(show_historic=False):
     for ax in [ax_B1, ax_B2]:
         ax.yaxis.set_label_coords(label_x, 0.5)
 
+    # When historic markers are shown, expand y-axis limits to include
+    # the full historic data range (boxplot functions may set tight limits).
+    if show_historic:
+        for ax in [ax_B1, ax_B2]:
+            all_y = []
+            for coll in ax.collections:
+                offsets = coll.get_offsets()
+                if len(offsets) > 0:
+                    all_y.extend(offsets[:, 1].tolist())
+            if all_y:
+                current_top = ax.get_ylim()[1]
+                data_max = max(all_y)
+                if data_max > current_top:
+                    ax.set_ylim(bottom=0, top=data_max * 1.1)
+
     # Combined legend
     add_combined_legend(fig, show_historic=show_historic)
 
@@ -229,15 +244,22 @@ def main():
     print("F3 (alt): Drought zone occurrence figure")
     print("=" * 70)
 
+    # Version without historic data
     fig = create_figure(show_historic=False)
-
     fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
+    # Version with historic data
+    fig = create_figure(show_historic=True)
+    fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence_with_historic.png"
+    fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    print(f"Saved: {fname}")
+    plt.close(fig)
+
     print("\n" + "=" * 70)
-    print("F3 zone occurrence figure generated successfully!")
+    print("F3 zone occurrence figures generated successfully!")
     print("=" * 70)
 
 

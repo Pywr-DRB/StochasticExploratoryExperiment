@@ -267,6 +267,7 @@ def plot_autocorrelation_comparison(
     max_lag: int = 30,
     ylabel: str = 'Autocorrelation',
     xlabel: str = 'Lag (days)',
+    percentiles: tuple = (1, 99),
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
@@ -334,10 +335,10 @@ def plot_autocorrelation_comparison(
     # Plot synthetic range and median
     ax.fill_between(
         lag_range,
-        np.nanmin(syn_autocorr, axis=0),
-        np.nanmax(syn_autocorr, axis=0),
+        np.nanpercentile(syn_autocorr, percentiles[0], axis=0),
+        np.nanpercentile(syn_autocorr, percentiles[1], axis=0),
         alpha=ALPHA_FILL, color=synthetic_color,
-        label=f'{synthetic_label} (range)'
+        label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
     )
     ax.plot(
         lag_range, np.nanmedian(syn_autocorr, axis=0),
@@ -703,7 +704,7 @@ def plot_ensemble_summary_figure(
     # Panel A: Autocorrelation comparison
     plot_autocorrelation_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_autocorr, max_lag=max_lag,
+        ax=ax_autocorr, max_lag=max_lag, percentiles=percentiles,
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
@@ -747,11 +748,11 @@ def plot_ensemble_summary_figure(
     # Shared legend
     legend_handles = [
         Patch(facecolor=synthetic_color, alpha=ALPHA_FILL,
-              label=f'{synthetic_label} (range)'),
+              label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'),
         Line2D([0], [0], color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
                linestyle='-', label=f'{synthetic_label} (median)'),
         Patch(facecolor=HISTORIC_COLOR, alpha=ALPHA_FILL * 0.7,
-              label=f'{HISTORIC_LABEL} (range)'),
+              label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'),
         Line2D([0], [0], color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK,
                linestyle='--', label=f'{HISTORIC_LABEL} (median)'),
         Patch(facecolor=wilcoxon_color, label='Wilcoxon p'),

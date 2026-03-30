@@ -21,10 +21,10 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
 # Chosen to avoid conflict with FFMP zone colors (green/yellow/orange/red)
 # and observed data (black/gray).
 DATASET_COLORS = {
-    'stationary_ensemble': '#42A5F5',           # Sky blue (baseline/reference)
-    'climate_adjusted_low': '#8E24AA',          # Plum (Dry scenario)
+    'stationary_ensemble': '#0073e6',           # Deep blue (historic baseline)
+    'climate_adjusted_low': '#e6308a',          # Purple (wetter winter, drier summer)
     'climate_adjusted_medium': '#CC79A7',       # Reddish purple (Medium scenario)
-    'climate_adjusted_high': '#009E73',         # Teal green (Wet scenario)
+    'climate_adjusted_high': '#89ce00',         # Green (wetter winter)
 }
 
 # Alternative color scheme - also colorblind-friendly
@@ -67,26 +67,26 @@ FFMP_ZONE_COLORS_INT = {
 
 # Standard labels for datasets
 DATASET_LABELS = {
-    'stationary_ensemble': 'Baseline Climate',
-    'climate_adjusted_low': 'Mixed Future Climate',
+    'stationary_ensemble': 'Historic Baseline',
+    'climate_adjusted_low': 'Wetter Winter, Drier Summer',
     'climate_adjusted_medium': 'Climate Medium',
-    'climate_adjusted_high': 'Wet Future Climate',
+    'climate_adjusted_high': 'Wetter Winter',
 }
 
 # Short labels (for tight layouts)
 DATASET_LABELS_SHORT = {
-    'stationary_ensemble': 'Stationary',
-    'climate_adjusted_low': 'Low',
+    'stationary_ensemble': 'Baseline',
+    'climate_adjusted_low': 'Wet/Dry',
     'climate_adjusted_medium': 'Medium',
-    'climate_adjusted_high': 'High',
+    'climate_adjusted_high': 'Wetter',
 }
 
 # Descriptive labels (for titles/captions)
 DATASET_LABELS_DESCRIPTIVE = {
-    'stationary_ensemble': 'Stationary Ensemble (Historical Statistics)',
-    'climate_adjusted_low': 'Climate Adjusted - Low (Driest Scenario)',
+    'stationary_ensemble': 'Historic Baseline (Stationary Ensemble)',
+    'climate_adjusted_low': 'Wetter Winter, Drier Summer (Climate Adjusted)',
     'climate_adjusted_medium': 'Climate Adjusted - Medium (Mid-range Scenario)',
-    'climate_adjusted_high': 'Climate Adjusted - High (Wettest Scenario)',
+    'climate_adjusted_high': 'Wetter Winter (Climate Adjusted)',
 }
 
 # Historic/observed label

@@ -15,11 +15,11 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 mkdir -p logs figures
 
 # Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
+PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-true}
 PLOT_DROUGHT_DISTRIBUTION=${PLOT_DROUGHT_DISTRIBUTION:-false}
 PLOT_ZONE_OCCURRENCE=${PLOT_ZONE_OCCURRENCE:-false}
-PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-true}
-PLOT_PERFORMANCE_OUTCOMES=${PLOT_PERFORMANCE_OUTCOMES:-false}
+PLOT_CONTRIBUTION_DISTRIBUTIONS=${PLOT_CONTRIBUTION_DISTRIBUTIONS:-false}
+PLOT_SATISFICING_HEATMAP=${PLOT_SATISFICING_HEATMAP:-false}
 
 
 # F1: Ensemble flow distribution and verification plots
@@ -48,21 +48,18 @@ if [ "$PLOT_ZONE_OCCURRENCE" = true ]; then
     python3 F3_plot_drought_zone_occurrence.py
 fi
 
-# F4: NYC contribution timeseries
-if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
+# F4: NYC contribution distributions
+if [ "$PLOT_CONTRIBUTION_DISTRIBUTIONS" = true ]; then
     echo "========================================"
     echo "F4: Generating contribution distribution figures..."
     echo "========================================"
-    # python3 F4_plot_contribution_distributions.py --combined
-    # python3 F4_plot_contribution_distributions.py --montague
     python3 F4_plot_contribution_distributions.py --montague --layout side_by_side
 fi
 
-# F5: Performance outcome comparison
-if [ "$PLOT_PERFORMANCE_OUTCOMES" = true ]; then
+# F5: Drought satisficing heatmaps (severity × magnitude)
+if [ "$PLOT_SATISFICING_HEATMAP" = true ]; then
     echo "========================================"
-    echo "F5: Generating performance bar figures..."
+    echo "F5: Generating drought satisficing heatmap figures..."
     echo "========================================"
-    python3 F5_plot_performance_outcomes.py
+    python3 F5_plot_drought_satisficing_heatmap.py 3
 fi
-

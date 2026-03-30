@@ -983,3 +983,40 @@ def load_contribution_metrics(dataset_id):
         df['annual_max_zone_date'] = pd.to_datetime(df['annual_max_zone_date'])
 
     return df
+
+
+def load_event_metrics(dataset_id, ssi_window, min_duration=30):
+    """Load per-drought-event metrics CSV for a given dataset and SSI window.
+
+    These CSVs are produced by ``08_calculate_event_metrics.py`` and contain
+    one row per drought event with hazard characteristics, system actions,
+    and outcome metrics (storage, shortage, FFMP zone at minimum, etc.).
+
+    Parameters
+    ----------
+    dataset_id : str
+        Dataset identifier (e.g. ``'stationary_ensemble'``).
+    ssi_window : int
+        SSI window (3, 6, or 12 months).
+    min_duration : int
+        Minimum event duration in days to retain (default: 30).
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered event-level metrics.
+    """
+    EVENT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/event_metrics"
+    fname = f"{EVENT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_event_metrics.csv"
+
+    if not os.path.exists(fname):
+        raise FileNotFoundError(
+            f"Event metrics not found: {fname}\n"
+            "Run 08_calculate_event_metrics.py first!"
+        )
+
+    df = pd.read_csv(fname)
+    df = df[df['duration_days'] >= min_duration].copy()
+    df['severity'] = df['severity'].abs()
+    df['magnitude'] = df['magnitude'].abs()
+    return df

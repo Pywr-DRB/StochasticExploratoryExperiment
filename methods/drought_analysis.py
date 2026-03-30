@@ -50,7 +50,8 @@ def fit_ssi_calculator(ssi_window, node=None):
     node_config = SSI_NODE_CONFIGS[node]
 
     Q_baseline = load_baseline_historical_flow(
-        gage_flow=node_config['historical_gage_flow'], period='baseline', flowtype=BASELINE_DATASET
+        gage_flow=node_config['historical_gage_flow'], 
+        period='full', flowtype=BASELINE_DATASET
     )
     Q_baseline.replace(0, np.nan, inplace=True)
     for col in node_config['drop_columns']:
