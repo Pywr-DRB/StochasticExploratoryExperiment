@@ -34,27 +34,14 @@ S3=$(sbatch --parsable --dependency=afterok:$S1:$S2 S3_calculate_ssi.sh)
 echo "S3 SSI metrics:      job $S3 (after S1,S2)"
 
 # --- S4: Postprocess each dataset (parallel, after S3) ---
-DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high")
-S4_IDS=()
-for DATASET_ID in "${DATASETS[@]}"; do
-    JID=$(sbatch --parsable --dependency=afterok:$S3 \
-        --job-name="post_${DATASET_ID}" \
-        S4_postprocess_dataset.sh "$DATASET_ID")
-    S4_IDS+=($JID)
-    echo "S4 post $DATASET_ID: job $JID (after S3)"
-done
+S4=$(sbatch --parsable --dependency=afterok:$S3 S4_postprocess_all.sh)
+echo "S4 postprocess:      job $S4 (after S3)"
 
-S4_DEP=$(IFS=:; echo "${S4_IDS[*]}")
 
 # --- S5: Performance metrics per dataset (parallel, after all S4 jobs) ---
-S5_IDS=()
-for DATASET_ID in "${DATASETS[@]}"; do
-    JID=$(sbatch --parsable --dependency=afterok:$S4_DEP \
-        --job-name="perf_${DATASET_ID}" \
-        S5_calculate_performance_metrics_dataset.sh "$DATASET_ID")
-    S5_IDS+=($JID)
-    echo "S5 perf $DATASET_ID: job $JID (after S4)"
-done
+S5=$(sbatch --parsable --dependency=afterok:$S4 S5_calculate_performance_metrics.sh)
+echo "S5 performance metrics:      job $S5 (after S4)"
+
 
 S5_DEP=$(IFS=:; echo "${S5_IDS[*]}")
 

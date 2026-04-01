@@ -10,6 +10,6 @@ mkdir -p logs
 
 for DATASET_ID in "${DATASETS[@]}"; do
     JOB_ID=$(sbatch --job-name="post_${DATASET_ID}" --parsable \
-        S4_postprocess_dataset.sh "$DATASET_ID")
+        postprocess_dataset.sh "$DATASET_ID")
     echo "Submitted $DATASET_ID: job $JOB_ID"
 done

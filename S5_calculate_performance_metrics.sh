@@ -10,6 +10,6 @@ mkdir -p logs
 
 for DATASET_ID in "${DATASETS[@]}"; do
     JOB_ID=$(sbatch --job-name="perf_${DATASET_ID}" --parsable \
-        S5_calculate_performance_metrics_dataset.sh "$DATASET_ID")
+        performance_metrics_dataset.sh "$DATASET_ID")
     echo "Submitted $DATASET_ID: job $JOB_ID"
 done
