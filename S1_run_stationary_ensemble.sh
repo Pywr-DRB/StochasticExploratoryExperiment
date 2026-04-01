@@ -14,6 +14,9 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # (OpenMPI 4.0.5 + libfabric 1.12.1 verbs/RDMA crashes at scale)
 export FI_PROVIDER=tcp
 
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 # Workflow flags
 DATASET_ID="${1:-stationary_ensemble}"
 GENERATE=${GENERATE:-true}
@@ -21,7 +24,7 @@ PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
 # Create directories
-mkdir -p logs pywrdrb/{inputs,outputs,models} figures
+mkdir -p logs pywrdrb/inputs
 
 echo "Running $DATASET_ID with $np ranks on $SLURM_NNODES nodes"
 

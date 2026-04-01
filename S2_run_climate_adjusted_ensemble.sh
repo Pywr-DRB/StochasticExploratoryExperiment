@@ -13,6 +13,9 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # MPI transport: force libfabric TCP provider instead of RDMA verbs
 export FI_PROVIDER=tcp
 
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 # Workflow flags
 GENERATE=${GENERATE:-true}
 PREP=${PREP:-true}
@@ -21,7 +24,7 @@ SIMULATE=${SIMULATE:-true}
 DATASETS=("climate_adjusted_low" "climate_adjusted_high")
 
 # Create directories
-mkdir -p logs pywrdrb/{inputs,outputs,models} figures
+mkdir -p logs pywrdrb/inputs
 
 echo "========================================"
 echo "Running climate-adjusted ensemble workflow"

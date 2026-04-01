@@ -20,13 +20,13 @@ from synhydro.core.ensemble import Ensemble
 from methods.load import load_baseline_historical_flow
 from methods.config import (
     DATASET_CONFIGS,
-    get_ensemble_set_spec,
     N_YEARS,
     START_DATE,
     BASELINE_DATASET,
     pywrdrb_nodes_to_generate,
     pywrdrb_nodes_to_regress
 )
+from methods.ensemble_utils import get_ensemble_set_spec
 
 from methods.mpi_utils import (
     MPI_AVAILABLE,

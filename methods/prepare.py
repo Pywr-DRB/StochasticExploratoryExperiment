@@ -13,7 +13,7 @@ from pywrdrb.pre import (
     PredictedDiversionEnsemblePreprocessor
 )
 
-from methods.config import get_ensemble_set_spec
+from methods.ensemble_utils import get_ensemble_set_spec
 
 # Conditional MPI import
 try:

@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import (
-    FIG_DIR, DATASET_CONFIGS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
+    FIG_DIR, OUTPUT_DIR, DATASET_CONFIGS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
     verify_dataset_id,
 )
 from methods.plotting.styles import DPI_HIGH, DATASET_LABELS
@@ -258,7 +258,7 @@ def plot_contribution_storage_timeseries(
 
     # Load data
     print(f"Loading data for {dataset_id}...")
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
 
@@ -361,7 +361,7 @@ def plot_multipanel_comparison(figsize=(14, 12), max_years=MAX_YEARS_TO_PLOT,
 
     for dataset_id in datasets:
         verify_dataset_id(dataset_id)
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+        fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
         if not os.path.exists(fname):
             print(f"Skipping {dataset_id}: data not found")
             continue

@@ -31,9 +31,8 @@ from methods.config import (
     BASELINE_DATASET,
     pywrdrb_nodes_to_generate,
     verify_dataset_id,
-    ensure_ensemble_set_dirs,
-    get_existing_ensemble_sets,
 )
+from methods.ensemble_utils import ensure_ensemble_set_dirs, get_existing_ensemble_sets
 
 
 def _load_and_prepare_data(rank):

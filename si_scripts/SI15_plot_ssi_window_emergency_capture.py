@@ -19,7 +19,7 @@ from matplotlib.patches import Patch
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR, SSI_WINDOWS
+from methods.config import FIG_DIR, SSI_WINDOWS, PERFORMANCE_METRICS_DIR, DROUGHT_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_LABELS, DATASET_COLORS,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LABEL,
@@ -30,8 +30,6 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/SI15_ssi_emergency_capture"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
-PERF_DIR = f"{ROOT_DIR}/pywrdrb/performance_metrics"
-DROUGHT_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
 
 # Emergency zone threshold (max_zone == 6 in zone_duration_events)
 EMERGENCY_ZONE = 6
@@ -41,7 +39,7 @@ EMERGENCY_ZONE = 6
 
 def load_zone_events(dataset_id):
     """Load zone duration events, filter to Emergency."""
-    df = pd.read_csv(f"{PERF_DIR}/{dataset_id}_zone_duration_events.csv")
+    df = pd.read_csv(f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_zone_duration_events.csv")
     df['start_date'] = pd.to_datetime(df['start_date'])
     df['end_date'] = pd.to_datetime(df['end_date'])
     return df[df['max_zone'] >= EMERGENCY_ZONE].copy()
@@ -50,7 +48,7 @@ def load_zone_events(dataset_id):
 def load_drought_events(dataset_id, ssi_window):
     """Load SSI drought events."""
     df = pd.read_csv(
-        f"{DROUGHT_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv")
+        f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv")
     df['start'] = pd.to_datetime(df['start'])
     df['end'] = pd.to_datetime(df['end'])
     return df

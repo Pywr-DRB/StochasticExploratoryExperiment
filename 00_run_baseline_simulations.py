@@ -1,6 +1,8 @@
 import sys
+import os
 import pywrdrb
 from methods.mpi_utils import get_comm
+from methods.config import OUTPUT_DIR, MODEL_DIR, FLOW_PREDICTION_MODE
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -26,15 +28,17 @@ if __name__ == "__main__":
 
         # Filenames
         flow_label = flow if ('pub' not in flow) else "reconstruction"
-        model_filename = f"./pywrdrb/models/{flow_label}.json"
-        output_filename = f"./pywrdrb/outputs/{flow_label}.hdf5"
+        model_filename = f"{MODEL_DIR}/{flow_label}.json"
+        output_filename = f"{OUTPUT_DIR}/{flow_label}.hdf5"
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
         # Create a ModelBuilder instance with inflow data type and time period
         mb = pywrdrb.ModelBuilder(
             inflow_type=flow,
             start_date=start_date,
             end_date=end_date,
-            options={"flow_prediction_mode": "perfect_foresight"},
+            options={"flow_prediction_mode": FLOW_PREDICTION_MODE},
         )
         mb.make_model()
         mb.write_model(model_filename)

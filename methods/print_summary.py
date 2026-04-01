@@ -180,7 +180,8 @@ def print_prep_status(dataset_id):
         True if all sets are properly prepared
     """
     import os
-    from methods.config import N_ENSEMBLE_SETS, get_ensemble_set_spec
+    from methods.config import N_ENSEMBLE_SETS
+    from methods.ensemble_utils import get_ensemble_set_spec
     from methods.verification import verify_dataset_id
 
     verify_dataset_id(dataset_id)
@@ -251,7 +252,8 @@ def print_simulation_status(dataset_id):
     """
     import os
     import pywrdrb
-    from methods.config import N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET, get_ensemble_set_spec
+    from methods.config import N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET
+    from methods.ensemble_utils import get_ensemble_set_spec
     from methods.verification import verify_dataset_id
 
     verify_dataset_id(dataset_id)

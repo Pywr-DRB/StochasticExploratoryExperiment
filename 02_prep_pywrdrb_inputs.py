@@ -20,9 +20,8 @@ from methods.config import (
     DATASET_CONFIGS,
     N_ENSEMBLE_SETS,
     verify_dataset_id,
-    get_ensemble_set_spec,
-    get_existing_ensemble_sets,
 )
+from methods.ensemble_utils import get_ensemble_set_spec, get_existing_ensemble_sets
 from methods.print_summary import print_prep_status
 
 if MPI_AVAILABLE:

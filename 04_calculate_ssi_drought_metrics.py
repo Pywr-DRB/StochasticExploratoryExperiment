@@ -56,7 +56,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         print(f"Using {size} MPI rank(s)")
 
     # Each rank checks file existence independently
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         print(f"Rank {rank} ERROR: File not found: {fname}")
         return False
@@ -169,7 +169,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
                     syn_ssi_dict[key].columns = df.columns.astype(str)
 
                 from synhydro.core.ensemble import Ensemble
-                ssi_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}.hdf5"
+                ssi_fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}.hdf5"
                 print(f"  Saving SSI values to hdf5: {ssi_fname}")
                 ssi_ensemble = Ensemble(syn_ssi_dict)
                 ssi_ensemble.to_hdf5(ssi_fname)
@@ -182,7 +182,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
             # Save synthetic drought metrics
             syn_droughts.reset_index(inplace=True, drop=True)
-            syn_fname = f"./pywrdrb/drought_metrics/{dataset_id}_ssi{ssi_window}_drought_events.csv"
+            syn_fname = f"{DROUGHT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_drought_events.csv"
             syn_droughts.to_csv(syn_fname, index=False)
             print(f"  Saved synthetic drought metrics: {syn_fname}")
 
@@ -204,7 +204,7 @@ def main(dataset_id):
         print("=" * 60)
 
         # Create output directory if it doesn't exist
-        os.makedirs("./pywrdrb/drought_metrics", exist_ok=True)
+        os.makedirs(DROUGHT_METRICS_DIR, exist_ok=True)
 
     # Calculate drought metrics (using default SSI windows)
     success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3,6,12])
@@ -225,7 +225,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1].lower() == 'historic':
         # Calculate historic observed droughts only (no MPI needed)
         print("Running in HISTORIC mode - calculating observed droughts only")
-        output_dir = "./pywrdrb/drought_metrics"
+        output_dir = DROUGHT_METRICS_DIR
         success = calculate_historic_observed_droughts(
             ssi_windows=[3, 6, 12], output_dir=output_dir
         )

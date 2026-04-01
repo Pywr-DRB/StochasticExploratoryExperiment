@@ -13,10 +13,13 @@ source venv/bin/activate
 # MPI transport: force libfabric TCP provider instead of RDMA verbs
 export FI_PROVIDER=tcp
 
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # make directories
-mkdir -p logs figures
+mkdir -p logs
 
 ################################################################################
 echo "Calculating SSI based drought metrics..."

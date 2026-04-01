@@ -29,7 +29,7 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR
+from methods.config import ROOT_DIR, FIG_DIR, EVENT_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
     FFMP_ZONE_COLORS,
@@ -78,7 +78,7 @@ FEATURE_SHORT = {
 def load_events(dataset_id):
     """Load and clean event metrics."""
     df = pd.read_csv(
-        f'{ROOT_DIR}/pywrdrb/event_metrics/{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv'
+        f'{EVENT_METRICS_DIR}/{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv'
     )
     df = df[df['duration_days'] >= MIN_DURATION].copy()
     df['severity'] = df['severity'].abs()

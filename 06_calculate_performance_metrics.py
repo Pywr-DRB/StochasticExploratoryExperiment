@@ -52,9 +52,7 @@ from methods.postprocess import (
 )
 from methods.metrics.event_metrics import calculate_all_event_metrics
 
-# Output directories
-PERFORMANCE_METRICS_DIR = os.path.join(ROOT_DIR, 'pywrdrb', 'performance_metrics')
-EVENT_METRICS_DIR = os.path.join(ROOT_DIR, 'pywrdrb', 'event_metrics')
+# PERFORMANCE_METRICS_DIR and EVENT_METRICS_DIR now imported from methods.config via *
 
 
 def main(dataset_id, ssi_windows):
@@ -73,9 +71,9 @@ def main(dataset_id, ssi_windows):
     is_reconstruction = (dataset_id == 'reconstruction')
     if is_reconstruction:
         # Use stationary_ensemble's postprocessed file (reconstruction is embedded)
-        fname = './pywrdrb/outputs/stationary_ensemble_with_postprocessing.hdf5'
+        fname = f'{OUTPUT_DIR}/stationary_ensemble_with_postprocessing.hdf5'
     else:
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+        fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         print(f"Rank {rank} ERROR: Postprocessed data not found: {fname}")

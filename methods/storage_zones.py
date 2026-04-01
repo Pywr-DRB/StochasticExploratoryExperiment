@@ -13,6 +13,8 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
+from methods.config import OUTPUT_DIR, ZONE_PROB_DIR
+
 import pywrdrb
 from .config import NYC_TOTAL_CAPACITY, PERIOD_ORIGIN
 from .load import load_ffmp_boundaries
@@ -68,7 +70,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     verify_postprocessing_output(dataset_id)
 
     # Load ensemble storage data
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     print(f"  Loading res_storage for {dataset_id}...")
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage'])
@@ -201,7 +203,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
 
     # Save to CSV
     if output_dir is None:
-        output_dir = "./pywrdrb/zone_probabilities"
+        output_dir = ZONE_PROB_DIR
 
     os.makedirs(output_dir, exist_ok=True)
     csv_file = f"{output_dir}/{dataset_id}_zone_probs_{period}.csv"
@@ -258,7 +260,7 @@ def calculate_storage_percentiles(dataset_id, period='weekly',
     verify_postprocessing_output(dataset_id)
 
     # Load ensemble storage data
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     print(f"  Loading res_storage for {dataset_id}...")
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage'])
@@ -324,7 +326,7 @@ def calculate_storage_percentiles(dataset_id, period='weekly',
 
     # Save to CSV
     if output_dir is None:
-        output_dir = "./pywrdrb/zone_probabilities"
+        output_dir = ZONE_PROB_DIR
 
     os.makedirs(output_dir, exist_ok=True)
     csv_file = f"{output_dir}/{dataset_id}_storage_percentiles_{period}.csv"

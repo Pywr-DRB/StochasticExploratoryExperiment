@@ -22,7 +22,7 @@ from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR
+from methods.config import ROOT_DIR, FIG_DIR, EVENT_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_SMALL,
@@ -50,7 +50,7 @@ MAG_BIN_COLORS = ['#4393C3', '#FDB863', '#D73027']
 
 def load_events(dataset_id, ssi_window):
     df = pd.read_csv(
-        f'{ROOT_DIR}/pywrdrb/event_metrics/'
+        f'{EVENT_METRICS_DIR}/'
         f'{dataset_id}_ssi{ssi_window}_event_metrics.csv'
     )
     df = df[df['duration_days'] >= MIN_DURATION].copy()
@@ -111,7 +111,7 @@ def plot_outcome_cdfs(ssi_window, all_data, outcome_specs, fname,
     if show_1960s_ref:
         try:
             recon_df = pd.read_csv(
-                f'{ROOT_DIR}/pywrdrb/event_metrics/reconstruction_ssi{ssi_window}_event_metrics.csv')
+                f'{EVENT_METRICS_DIR}/reconstruction_ssi{ssi_window}_event_metrics.csv')
             recon_df['start'] = pd.to_datetime(recon_df['start'])
             recon_df['end'] = pd.to_datetime(recon_df['end'])
             target = pd.Timestamp('1964-12-01')

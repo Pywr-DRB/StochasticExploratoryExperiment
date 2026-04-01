@@ -29,7 +29,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import (
-    FIG_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY, ROOT_DIR,
+    FIG_DIR, OUTPUT_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
     RECONSTRUCTION_OUTPUT_FNAME
 )
 from methods.plotting.styles import (
@@ -61,7 +61,7 @@ def load_dataset(dataset_id):
     data : pywrdrb.Data
         Data object with res_storage and contribution loaded
     """
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(

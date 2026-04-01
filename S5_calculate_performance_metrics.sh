@@ -6,6 +6,9 @@
 
 DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high" "reconstruction")
 
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 mkdir -p logs
 
 for DATASET_ID in "${DATASETS[@]}"; do

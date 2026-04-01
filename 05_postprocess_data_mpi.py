@@ -49,13 +49,14 @@ from methods.mpi_utils import get_comm, MPI_AVAILABLE, global_point_to_point_gat
 import pywrdrb
 from methods.metrics.shortfall import get_flow_and_target_values, add_trenton_equiv_flow, calculate_shortage_series
 from methods.config import *
+from methods.ensemble_utils import ENSEMBLE_SETS
 from methods.load import (
     load_ensemble_set_data,
     load_and_process_historical_models,
     load_gage_flow_data,
 )
 # Temporary directory for intermediate files
-TEMP_DIR = f"{ROOT_DIR}/pywrdrb/outputs/temp_mpi"
+TEMP_DIR = f"{OUTPUT_DIR}/temp_mpi"
 
 
 def distribute_ensemble_sets(rank, size, n_sets):
@@ -336,7 +337,7 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
     # Export final file
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     print(f"Exporting combined data to {fname}...")
     keep_data.export(fname)
     print(f"Successfully combined and exported data for {dataset_id}!")
@@ -411,7 +412,7 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
     # Export
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     print(f"Exporting combined data to {fname}...")
     keep_data.export(fname)
     print(f"Successfully combined and exported data for {dataset_id}!")
@@ -563,7 +564,7 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             return False
 
     # Determine whether to recombine or load existing data
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if recombine_sets or not os.path.exists(fname):
         # Recombine all ensemble sets (MPI parallel)
@@ -627,7 +628,7 @@ def main_mpi(dataset_id, recombine_sets=True, low_memory=False):
     if rank == 0:
         if success:
             # Verify output
-            fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+            fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
             if os.path.exists(fname):
                 file_size = os.path.getsize(fname)
                 print(f"\nSUCCESS: Postprocessed data file exists ({file_size//1024//1024} MB)")

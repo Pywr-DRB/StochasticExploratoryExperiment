@@ -12,8 +12,11 @@ module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 # make directories
-mkdir -p logs figures
+mkdir -p logs
 
 # Workflow flags
 PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}

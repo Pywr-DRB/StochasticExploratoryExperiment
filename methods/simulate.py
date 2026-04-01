@@ -15,15 +15,16 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers, combine_batched_hdf
 
 from methods.utils import get_parameter_subset_to_export
 from methods.config import (
-    get_ensemble_set_spec,
     N_REALIZATIONS_PER_PYWRDRB_BATCH,
     START_DATE,
     END_DATE,
     SALINITY_LSTM_PREDICTIONS,
     SALINITY_LSTM_OPTIONS,
     SAVE_RESULTS_SETS,
-    WorkflowFlags
+    FLOW_PREDICTION_MODE,
+    MODEL_DIR,
 )
+from methods.ensemble_utils import get_ensemble_set_spec
 
 from methods.mpi_utils import (
     MPI_AVAILABLE,
@@ -178,7 +179,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             model_options = {
                 "inflow_ensemble_indices": indices,
                 'nyc_nj_demand_source': 'custom',
-                'flow_prediction_mode': 'perfect_foresight'
+                'flow_prediction_mode': FLOW_PREDICTION_MODE
             }
 
             # Add salinity LSTM options if enabled
@@ -194,10 +195,8 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             )
 
             # Save model
-            model_fname = f"{os.path.dirname(output_file)}/../models/{dataset_id}_set{set_id + 1}_rank{rank}_batch{batch}.json"
-            
-            # Make directory if it doesn't exist
-            os.makedirs(os.path.dirname(model_fname), exist_ok=True)
+            model_fname = f"{MODEL_DIR}/{dataset_id}_set{set_id + 1}_rank{rank}_batch{batch}.json"
+            os.makedirs(MODEL_DIR, exist_ok=True)
             
             mb.make_model()
             mb.write_model(model_fname)
@@ -270,7 +269,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             combine_batched_hdf5_outputs(all_batch_files, output_file)
 
             # Cleanup batch files if requested
-            if WorkflowFlags.CLEANUP_PYWRDRB_BATCH_FILES:
+            if True:  # always clean up batch files after combining
                 for file in all_batch_files:
                     if os.path.exists(file):
                         os.remove(file)

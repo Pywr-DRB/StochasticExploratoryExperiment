@@ -43,7 +43,7 @@ warnings.filterwarnings("ignore")
 
 import pywrdrb
 from methods.config import (
-    FIG_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
+    FIG_DIR, OUTPUT_DIR, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
     verify_dataset_id
 )
 from methods.plotting.styles import (
@@ -101,7 +101,7 @@ def load_shortage_and_zone_data(dataset_id):
         - nyc_zone: FFMP zone level (1-6)
         - nyc_storage_pct: NYC aggregate storage (%)
     """
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(

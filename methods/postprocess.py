@@ -27,8 +27,10 @@ from methods.config import (
     N_ENSEMBLE_SETS,
     NYC_TOTAL_CAPACITY,
     NYC_RESERVOIRS,
-    get_ensemble_set_spec
+    OUTPUT_DIR,
+    PERFORMANCE_METRICS_DIR,
 )
+from methods.ensemble_utils import get_ensemble_set_spec
 
 
 def assign_water_year(index):
@@ -691,7 +693,9 @@ def save_metrics_csv(df, dataset_id, suffix, output_dir):
     return fname
 
 
-def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir="./pywrdrb/performance_metrics"):
+def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir=None):
+    if output_dir is None:
+        output_dir = PERFORMANCE_METRICS_DIR
     """
     Calculate drought zone episode durations for all realizations and save to CSV.
 
@@ -801,7 +805,7 @@ def combine_ensemble_sets(dataset_id, recombine=True):
     data : pywrdrb.Data
         Combined data object with all realizations
     """
-    fname_combined = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname_combined = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     # Check if combined file exists and we don't need to recombine
     if not recombine and os.path.exists(fname_combined):

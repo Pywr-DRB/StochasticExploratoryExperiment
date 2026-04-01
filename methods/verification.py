@@ -49,11 +49,11 @@ def verify_postprocessing_output(dataset_id):
     FileNotFoundError
         If postprocessing outputs are not found
     """
-    from methods.config import ROOT_DIR
+    from methods.config import OUTPUT_DIR
 
     verify_dataset_id(dataset_id)
 
-    output_file = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
+    output_file = f"{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5"
 
     if not os.path.exists(output_file):
         raise FileNotFoundError(

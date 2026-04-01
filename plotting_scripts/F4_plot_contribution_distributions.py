@@ -30,7 +30,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, DATASET_CONFIGS, NYC_RESERVOIRS, verify_dataset_id
+from methods.config import FIG_DIR, OUTPUT_DIR, DATASET_CONFIGS, NYC_RESERVOIRS, verify_dataset_id
 from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_LABEL, FONTSIZE_MEDIUM,
@@ -73,7 +73,7 @@ SHOW_REPRESENTATIVE_YEAR = True
 
 def _load_dataset(dataset_id, results_sets):
     """Load a single pywrdrb dataset."""
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         raise FileNotFoundError(f"Data not found: {fname}")
     data = pywrdrb.Data()

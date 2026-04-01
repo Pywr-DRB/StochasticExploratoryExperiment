@@ -1186,7 +1186,7 @@ def load_scenario_data(dataset_id):
     categorized_data : dict
         Dictionary mapping category name -> DataFrame subset with contribution ratios
     """
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(
@@ -1510,7 +1510,7 @@ def main(dataset_id):
 
     # Load data
     print("\nLoading data...")
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(

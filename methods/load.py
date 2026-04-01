@@ -11,11 +11,13 @@ from pywrdrb.utils.constants import cfs_to_mgd
 from synhydro.core.ensemble import Ensemble
 from methods.config import (
     RECONSTRUCTION_OUTPUT_FNAME, WRFAORC_OUTPUT_FNAME, WRF1960s_OUTPUT_FNAME,
-    ENSEMBLE_SETS, ROOT_DIR,
+    ROOT_DIR, OUTPUT_DIR,
+    DROUGHT_METRICS_DIR, PERFORMANCE_METRICS_DIR, EVENT_METRICS_DIR,
+    ZONE_PROB_DIR, SATISFICING_DIR,
     N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET,
     N_YEARS,
-    get_ensemble_set_spec,
 )
+from methods.ensemble_utils import get_ensemble_set_spec, ENSEMBLE_SETS
 from methods.metrics.shortfall import (
     get_flow_and_target_values, add_trenton_equiv_flow,
     calculate_shortage_series,
@@ -25,7 +27,7 @@ from methods.metrics.satisficing import add_satisficing_category
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
 
-DROUGHT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/drought_metrics"
+# DROUGHT_METRICS_DIR is now imported from methods.config
 
 
 def get_realization_ids_from_export(fname, dataset_id, results_set='shortage'):
@@ -116,8 +118,7 @@ def load_annual_metrics(dataset_id):
         Rows: (realization_id, water_year, period).
         Columns: 20 metrics + 3 annotation columns.
     """
-    performance_metrics_dir = f"{ROOT_DIR}/pywrdrb/performance_metrics"
-    csv_file = f"{performance_metrics_dir}/{dataset_id}_annual_metrics.csv"
+    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_annual_metrics.csv"
 
     if not os.path.exists(csv_file):
         raise FileNotFoundError(
@@ -137,7 +138,7 @@ def load_hashimoto_metrics(dataset_id):
     pd.DataFrame
         One row per realization with reliability/resiliency for Montague and Trenton.
     """
-    csv_file = f"{ROOT_DIR}/pywrdrb/performance_metrics/{dataset_id}_hashimoto_metrics.csv"
+    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_hashimoto_metrics.csv"
     if not os.path.exists(csv_file):
         raise FileNotFoundError(
             f"Hashimoto metrics not found: {csv_file}\n"
@@ -155,7 +156,7 @@ def load_hashimoto_events(dataset_id):
     pd.DataFrame
         One row per shortage event per location per realization.
     """
-    csv_file = f"{ROOT_DIR}/pywrdrb/performance_metrics/{dataset_id}_hashimoto_shortage_events.csv"
+    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_hashimoto_shortage_events.csv"
     if not os.path.exists(csv_file):
         raise FileNotFoundError(
             f"Hashimoto events not found: {csv_file}\n"
@@ -609,7 +610,7 @@ def load_shortage_data(dataset_id):
     pywrdrb.Data
         Data object with shortage, ibt_diversions, and ibt_demands
     """
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(
@@ -755,8 +756,7 @@ def load_zone_probabilities(dataset_id, period='weekly'):
     pd.DataFrame or None
         Zone probabilities indexed by period, or None if file not found
     """
-    zone_prob_dir = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
-    csv_file = f"{zone_prob_dir}/{dataset_id}_zone_probs_{period}.csv"
+    csv_file = f"{ZONE_PROB_DIR}/{dataset_id}_zone_probs_{period}.csv"
 
     if not os.path.exists(csv_file):
         print(f"ERROR: Zone probabilities not found: {csv_file}")
@@ -784,8 +784,7 @@ def load_storage_percentiles(dataset_id, period='weekly'):
         Storage percentiles indexed by period with columns p1, p5, p10, etc.
         Returns None if file not found.
     """
-    zone_prob_dir = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
-    csv_file = f"{zone_prob_dir}/{dataset_id}_storage_percentiles_{period}.csv"
+    csv_file = f"{ZONE_PROB_DIR}/{dataset_id}_storage_percentiles_{period}.csv"
 
     if not os.path.exists(csv_file):
         print(f"ERROR: Storage percentiles not found: {csv_file}")
@@ -810,7 +809,7 @@ def load_reservoir_storage(dataset_id):
     dict
         Dictionary mapping realization_id to storage DataFrame
     """
-    fname = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
+    fname = f"{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5"
 
     if not os.path.exists(fname):
         raise FileNotFoundError(
@@ -969,7 +968,7 @@ def load_contribution_metrics(dataset_id):
     FileNotFoundError
         If pre-computed metrics file does not exist.
     """
-    fname = f'./pywrdrb/performance_metrics/{dataset_id}_contribution_metrics.csv'
+    fname = f'{PERFORMANCE_METRICS_DIR}/{dataset_id}_contribution_metrics.csv'
 
     if not os.path.exists(fname):
         raise FileNotFoundError(
@@ -1006,7 +1005,6 @@ def load_event_metrics(dataset_id, ssi_window, min_duration=30):
     pd.DataFrame
         Filtered event-level metrics.
     """
-    EVENT_METRICS_DIR = f"{ROOT_DIR}/pywrdrb/event_metrics"
     fname = f"{EVENT_METRICS_DIR}/{dataset_id}_ssi{ssi_window}_event_metrics.csv"
 
     if not os.path.exists(fname):

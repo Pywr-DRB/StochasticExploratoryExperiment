@@ -104,6 +104,30 @@ All ensemble and experiment parameters are defined in `methods/config.py`, inclu
 - Dataset definitions (stationary and climate-adjusted scenarios)
 - Pywr-DRB batching and output settings
 
+### Output isolation with CONFIG_NAME
+
+All simulation outputs and figures are written to a config-specific directory under `outputs/`. Set the `CONFIG_NAME` environment variable to isolate results from different experiment configurations:
+
+```bash
+# Default config
+python 03_run_pywrdrb_simulations.py stationary_ensemble
+# → outputs/default/data/simulations/...
+
+# Named config
+CONFIG_NAME=perfect_foresight python 03_run_pywrdrb_simulations.py stationary_ensemble
+# → outputs/perfect_foresight/data/simulations/...
+
+# Set for entire session
+export CONFIG_NAME=regression_disagg
+python 03_run_pywrdrb_simulations.py stationary_ensemble
+# → outputs/regression_disagg/data/...
+
+# SLURM
+CONFIG_NAME=regression_disagg sbatch S6_run_figure_generation.sh
+```
+
+Each config directory contains a `config.json` recording the settings used.
+
 ## Project structure
 
 ```
@@ -115,7 +139,19 @@ methods/              Core library (generation, simulation, post-processing, ana
   metrics/            Shortfall and satisficing calculations
   plotting/           Publication figure utilities
 data/                 Input data (climate change scenarios)
-pywrdrb/              Pywr-DRB model files, inputs, and outputs
-figures/              Generated figures
+pywrdrb/inputs/       Shared ensemble input data (across all configs)
+outputs/              Config-specific output root
+  <config_name>/
+    data/
+      simulations/    HDF5 simulation results
+      models/         ModelBuilder JSON files
+      drought_metrics/
+      performance_metrics/
+      event_metrics/
+      zone_probabilities/
+      satisficing/
+      focal_events/
+    figures/           Generated figures
+    config.json        Configuration snapshot
 docs/                 Manuscript and supplemental drafts
 ```

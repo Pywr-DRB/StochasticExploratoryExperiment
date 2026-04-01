@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from methods.load import load_annual_metrics
-from methods.config import N_YEARS, RECONSTRUCTION_N_YEARS
+from methods.config import N_YEARS, RECONSTRUCTION_N_YEARS, PERFORMANCE_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_COLORS,
     FONTSIZE_SMALL, FONTSIZE_LABEL,
@@ -148,7 +148,7 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
                 ax.scatter(zone_idx + hist_slot_x, hist_count, marker='^', s=60,
                            color='black', edgecolors='white', linewidths=0.5, zorder=10)
         except FileNotFoundError:
-            hist_csv = './pywrdrb/performance_metrics/reconstruction_performance_metrics.csv'
+            hist_csv = f'{PERFORMANCE_METRICS_DIR}/reconstruction_performance_metrics.csv'
             if os.path.exists(hist_csv):
                 hist_perf = pd.read_csv(hist_csv)
                 hist_col_map = {
@@ -200,7 +200,7 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
     # Load pre-computed episode records for all datasets
     all_duration_data = {}
     for dataset_id in scenarios:
-        csv_fname = f'./pywrdrb/performance_metrics/{dataset_id}_zone_duration_events.csv'
+        csv_fname = f'{PERFORMANCE_METRICS_DIR}/{dataset_id}_zone_duration_events.csv'
 
         if not os.path.exists(csv_fname):
             raise FileNotFoundError(
@@ -256,7 +256,7 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
     # Historic markers
     if show_historic:
         hist_slot_x = (0 - slot_center) * box_width + box_width * 0.15
-        hist_csv = './pywrdrb/performance_metrics/reconstruction_zone_duration_events.csv'
+        hist_csv = f'{PERFORMANCE_METRICS_DIR}/reconstruction_zone_duration_events.csv'
         if os.path.exists(hist_csv):
             hist_events = pd.read_csv(hist_csv)
             for zone_idx, zone_num in enumerate(zone_order):

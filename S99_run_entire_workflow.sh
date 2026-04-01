@@ -12,6 +12,10 @@
 # Usage: bash S99_run_entire_workflow.sh
 
 set -e
+
+# Configuration name (determines output directory)
+export CONFIG_NAME=${CONFIG_NAME:-default}
+
 mkdir -p logs
 
 echo "============================================================"

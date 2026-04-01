@@ -35,7 +35,7 @@ from scipy import stats
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR
+from methods.config import ROOT_DIR, FIG_DIR, EVENT_METRICS_DIR
 from methods.plotting.styles import (
     FFMP_ZONE_COLORS, DATASET_LABELS,
     FONTSIZE_LABEL, DPI_HIGH, apply_publication_style,
@@ -77,7 +77,7 @@ FEATURE_SHORT = {
 def load_events(dataset_id):
     """Load event metrics, filter, and add cyclical month features."""
     df = pd.read_csv(
-        f'{ROOT_DIR}/pywrdrb/event_metrics/'
+        f'{EVENT_METRICS_DIR}/'
         f'{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv'
     )
     df = df[df['duration_days'] >= MIN_DURATION].copy()

@@ -34,7 +34,7 @@ warnings.filterwarnings("ignore")
 import pywrdrb
 from methods.config import (
     NYC_TOTAL_CAPACITY, NYC_RESERVOIRS,
-    FIG_DIR,
+    FIG_DIR, OUTPUT_DIR,
     verify_dataset_id,
 )
 from methods.plotting.styles import (
@@ -88,7 +88,7 @@ def load_all_data():
 
     for dataset_id in SCENARIOS:
         verify_dataset_id(dataset_id)
-        fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+        fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
         data = pywrdrb.Data()
         data.load_from_export(fname, results_sets=results_sets)
         all_data[dataset_id] = data

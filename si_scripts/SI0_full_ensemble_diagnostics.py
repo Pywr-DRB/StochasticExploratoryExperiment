@@ -29,6 +29,7 @@ from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_grid
 from methods.plotting.ensemble_summary import plot_ensemble_convergence
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import *
+from methods.ensemble_utils import ENSEMBLE_SETS
 
 FIG_DIR = f"{FIG_DIR}/SI0_ensemble_diagnostics"
 

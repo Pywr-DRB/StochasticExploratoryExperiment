@@ -24,7 +24,7 @@ from matplotlib.patches import Patch
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR
+from methods.config import FIG_DIR, ZONE_PROB_DIR
 from methods.plotting.styles import (
     DPI_HIGH,
     DATASET_COLORS, DATASET_LABELS,
@@ -59,7 +59,7 @@ WY_MONTH_LABELS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
 def load_zone_probs(dataset_id):
     """Load zone probabilities CSV (period is WY-ordered, period 1 = June)."""
     return pd.read_csv(
-        f'{ROOT_DIR}/pywrdrb/zone_probabilities/{dataset_id}_zone_probs_weekly.csv',
+        f'{ZONE_PROB_DIR}/{dataset_id}_zone_probs_weekly.csv',
         index_col='period')
 
 

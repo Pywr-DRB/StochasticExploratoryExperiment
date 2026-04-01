@@ -10,12 +10,7 @@ tightly coupled with the calculation logic there.
 import os
 import pandas as pd
 
-from methods.config import ROOT_DIR
-
-
-# Output directories
-ZONE_PROB_DIR = f"{ROOT_DIR}/pywrdrb/zone_probabilities"
-SATISFICING_ANALYSIS_DIR = f"{ROOT_DIR}/pywrdrb/satisficing_analysis"
+from methods.config import ZONE_PROB_DIR, SATISFICING_DIR
 
 
 def save_zone_probabilities(df, dataset_id, period='weekly', output_dir=None):
@@ -63,7 +58,7 @@ def save_annual_satisficing(df, dataset_id, ssi_window, output_dir=None):
     ssi_window : int
         SSI window (3, 6, or 12).
     output_dir : str, optional
-        Output directory. Defaults to SATISFICING_ANALYSIS_DIR.
+        Output directory. Defaults to SATISFICING_DIR.
 
     Returns
     -------
@@ -71,7 +66,7 @@ def save_annual_satisficing(df, dataset_id, ssi_window, output_dir=None):
         Path to the saved file.
     """
     if output_dir is None:
-        output_dir = SATISFICING_ANALYSIS_DIR
+        output_dir = SATISFICING_DIR
 
     os.makedirs(output_dir, exist_ok=True)
     fname = f"{output_dir}/{dataset_id}_ssi{ssi_window}_annual_satisficing.csv"

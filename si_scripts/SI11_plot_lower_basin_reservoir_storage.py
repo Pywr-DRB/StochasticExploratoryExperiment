@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import ROOT_DIR, FIG_DIR, PERIOD_ORIGIN
+from methods.config import FIG_DIR, OUTPUT_DIR, PERIOD_ORIGIN
 from methods.utils import calculate_water_year_period_index
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS, DATASET_LINESTYLES,
@@ -42,7 +42,7 @@ WY_MONTH_LABELS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
 
 def compute_weekly_percentiles(dataset_id, res_col):
     """Compute weekly storage percentiles for a single reservoir across all realizations."""
-    fname = f'{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage'])
 

@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pywrdrb
 from methods.load import load_contribution_metrics
 from methods.postprocess import calculate_contribution_analysis_metrics
-from methods.config import DATASET_CONFIGS
+from methods.config import DATASET_CONFIGS, OUTPUT_DIR
 
 
 def validate_metrics(dataset_id, sample_size=10, tolerance=1e-6, verbose=True):
@@ -63,7 +63,7 @@ def validate_metrics(dataset_id, sample_size=10, tolerance=1e-6, verbose=True):
         return False
 
     # Load HDF5 data for recalculation
-    fname = f'./pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5'
+    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     if not os.path.exists(fname):
         print(f"✗ ERROR: HDF5 file not found: {fname}")
         return False

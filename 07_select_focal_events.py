@@ -22,7 +22,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from methods.config import ROOT_DIR
+from methods.config import FOCAL_EVENTS_DIR
 from methods.load import load_drought_events
 
 # ── Configuration ─────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ DEFAULT_OUTCOME_METRICS = [
 DEFAULT_MAG_BIN_IDX = 2  # >= 8
 DEFAULT_TARGET_PROBS = [0.05, 0.01]  # P(outcome >= x)
 
-OUTPUT_DIR = os.path.join(ROOT_DIR, 'pywrdrb', 'focal_events')
+OUTPUT_DIR = FOCAL_EVENTS_DIR
 
 
 def load_event_metrics(dataset_id, ssi_window):

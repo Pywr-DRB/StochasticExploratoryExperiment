@@ -21,7 +21,7 @@ from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR
+from methods.config import ROOT_DIR, FIG_DIR, PERFORMANCE_METRICS_DIR, EVENT_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS, DATASET_LINESTYLES,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LABEL,
@@ -64,7 +64,7 @@ EVENT_ZONE_LABELS = {
 
 def load_contribution_metrics(dataset_id):
     """Load pre-computed annual contribution metrics."""
-    df = pd.read_csv(f'{ROOT_DIR}/pywrdrb/performance_metrics/{dataset_id}_contribution_metrics.csv')
+    df = pd.read_csv(f'{PERFORMANCE_METRICS_DIR}/{dataset_id}_contribution_metrics.csv')
     df = df.dropna(subset=[f'contribution_ratio_{WINDOW}', 'annual_max_zone'])
     df['zone'] = df['annual_max_zone'].astype(int)
     df['ratio'] = df[f'contribution_ratio_{WINDOW}']
@@ -74,7 +74,7 @@ def load_contribution_metrics(dataset_id):
 def load_event_metrics(dataset_id):
     """Load SSI drought event metrics, filter by duration, assign FFMP zone group."""
     df = pd.read_csv(
-        f'{ROOT_DIR}/pywrdrb/event_metrics/{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv'
+        f'{EVENT_METRICS_DIR}/{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv'
     )
     df = df[df['duration_days'] >= MIN_DURATION].copy()
     df['ratio'] = df['contribution_ratio'] * 100.0

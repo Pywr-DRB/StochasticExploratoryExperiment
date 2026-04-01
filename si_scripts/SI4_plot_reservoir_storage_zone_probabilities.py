@@ -21,7 +21,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import *
+from methods.config import *  # noqa: F403
+from methods.config import OUTPUT_DIR
 from methods.load import load_zone_probabilities, load_ffmp_boundaries, load_storage_percentiles
 
 # Default probability bins (percent) - log-scale discrete bins
@@ -89,7 +90,7 @@ def load_single_year_trajectories(dataset_id, percentile_realization_years, orig
     import pywrdrb
 
     # Load storage data for the needed realizations
-    fname = f"{ROOT_DIR}/pywrdrb/outputs/{dataset_id}_with_postprocessing.hdf5"
+    fname = f"{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5"
     data = pywrdrb.Data()
     data.load_from_export(fname, results_sets=['res_storage'])
 
@@ -181,7 +182,7 @@ def load_historical_mean_storage(period='weekly', origin='june1'):
         Mean storage percentage by week, indexed by period (1-52/53)
     """
     # Load reconstruction storage data
-    fname = f"{ROOT_DIR}/pywrdrb/outputs/reconstruction.hdf5"
+    fname = f"{OUTPUT_DIR}/reconstruction.hdf5"
     data = pywrdrb.Data()
     data.load_output(output_filenames=[fname], results_sets=['res_storage'])
 

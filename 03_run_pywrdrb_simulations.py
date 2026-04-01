@@ -22,8 +22,8 @@ from methods.config import (
     N_ENSEMBLE_SETS,
     N_REALIZATIONS_PER_ENSEMBLE_SET,
     verify_dataset_id,
-    get_ensemble_set_spec,
 )
+from methods.ensemble_utils import get_ensemble_set_spec
 from methods.print_summary import print_simulation_status
 
 

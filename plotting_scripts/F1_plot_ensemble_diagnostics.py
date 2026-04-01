@@ -21,9 +21,10 @@ warnings.filterwarnings("ignore")
 from methods.plotting.ensemble_summary import plot_ensemble_summary_figure
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import (
-    FIG_DIR, ENSEMBLE_SETS, DATASET_CONFIGS, BASELINE_DATASET,
+    FIG_DIR, DATASET_CONFIGS, BASELINE_DATASET,
     verify_dataset_id,
 )
+from methods.ensemble_utils import ENSEMBLE_SETS
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F1_ensemble_diagnostics"

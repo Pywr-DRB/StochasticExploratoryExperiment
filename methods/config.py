@@ -7,6 +7,12 @@ from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from methods.verification import verify_dataset_id
 
 # =============================================================================
+# CONFIGURATION NAME — determines output directory
+# Override via environment: CONFIG_NAME=regression_disagg python 03_run_...
+# =============================================================================
+CONFIG_NAME = os.environ.get("CONFIG_NAME", "default")
+
+# =============================================================================
 # ENSEMBLE CONFIGURATION
 # =============================================================================
 
@@ -141,126 +147,38 @@ SALINITY_LSTM_OPTIONS = {
 
 SALINITY_LSTM_PREDICTIONS = False
 
+
 # =============================================================================
-# WORKFLOW CONTROL
+# MODELBUILDER OPTIONS
 # =============================================================================
 
-class WorkflowFlags:
-    """Control which steps of the workflow to run"""
-    RUN_BASELINE = False
-    GENERATE_ENSEMBLE_SETS = True
-    PREP_PYWRDRB = True
-    RUN_PYWRDRB = True
-    PLOT_DIAGNOSTICS = False
-    PLOT_OUTCOMES = False
-    
-    # Processing options
-    PROCESS_ALL_SETS = True  # Process all sets or specify subset
-    TARGET_ENSEMBLE_SETS = None  # None for all, or list of set IDs
-    
-    # Cleanup options
-    CLEANUP_PYWRDRB_BATCH_FILES = True  # Remove batch files after combining within set
-    CLEANUP_TEMP_FILES = True
+FLOW_PREDICTION_MODE = 'perfect_foresight'
 
 # =============================================================================
 # FILE STRUCTURE AND PATHS
 # =============================================================================
 
-# root dir is 1 level above this config file
+# Root directory (repo root, 1 level above this config file)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/outputs/")
-from datetime import datetime as _dt
-FIG_DIR = os.path.abspath(f"{ROOT_DIR}/figures/")
 
-# Base ensemble directory
+# Shared inputs (independent of config)
 ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
 
-# =============================================================================
-# ENSEMBLE SET SPECIFICATIONS
-# =============================================================================
+# Config-specific output root
+CONFIG_DIR = os.path.abspath(f"{ROOT_DIR}/outputs/{CONFIG_NAME}")
 
-class EnsembleSetSpec:
-    """Specification for a single ensemble set"""
-    
-    def __init__(self, set_id, dataset_id):
-        # Validate dataset_id
-        if dataset_id not in DATASET_CONFIGS:
-            raise ValueError(f"Invalid dataset_id: {dataset_id}. Must be one of {list(DATASET_CONFIGS.keys())}")
-        
-        self.dataset_id = dataset_id
-        self.dataset_config = DATASET_CONFIGS[dataset_id]
-        self.ensemble_type = self.dataset_config['type']  # 'stationary' or 'climate_adjusted'
-        self.set_id = set_id
-        self.start_realization = set_id * N_REALIZATIONS_PER_ENSEMBLE_SET
-        self.end_realization = (set_id + 1) * N_REALIZATIONS_PER_ENSEMBLE_SET
-        self.n_realizations = N_REALIZATIONS_PER_ENSEMBLE_SET
-        self.realizations = self.get_realization_ids()
-        self.realization_ids = self.realizations
-        
-        # Pywr-DRB batching within this set
-        self.pywrdrb_batches = self._create_pywrdrb_batch_specs()
-    
-    @property
-    def directory(self):
-        """Get directory path for this ensemble set"""
-        return f"{ENSEMBLE_BASE_DIR}/{self.dataset_id}/{self.dataset_id}_set{self.set_id + 1}"
-    
-    @property
-    def files(self):
-        """Get file paths for this ensemble set"""
-        set_dir = self.directory
-        return {
-            'gage_flow': f"{set_dir}/gage_flow_mgd.hdf5",
-            'catchment_inflow': f"{set_dir}/catchment_inflow_mgd.hdf5",
-            'predicted_inflow': f"{set_dir}/predicted_inflows_mgd.hdf5",
-            'diversion_nyc': f"{set_dir}/diversion_nyc_extrapolated_mgd.hdf5",
-            'diversion_nj': f"{set_dir}/diversion_nj_extrapolated_mgd.hdf5",
-            'predicted_diversions': f"{set_dir}/predicted_diversions_mgd.hdf5"
-        }
-    
-    @property
-    def output_file(self):
-        """Get output filename for this ensemble set"""
-        return f"{OUTPUT_DIR}/{self.dataset_id}_set{self.set_id + 1}.hdf5"
-    
-    def _create_pywrdrb_batch_specs(self):
-        """Create Pywr-DRB batch specifications within this ensemble set"""
-        batches = []
-        for batch_id in range(N_PYWRDRB_BATCHES_PER_SET):
-            batch_start = batch_id * N_REALIZATIONS_PER_PYWRDRB_BATCH
-            batch_end = (batch_id + 1) * N_REALIZATIONS_PER_PYWRDRB_BATCH
-            
-            # Global realization IDs
-            global_start = self.start_realization + batch_start
-            global_end = self.start_realization + batch_end
-            
-            # Local realization IDs within this set (0-based)
-            local_ids = list(range(batch_start, batch_end))
-            
-            batches.append({
-                'batch_id': batch_id,
-                'dataset_id': self.dataset_id,
-                'set_id': self.set_id,
-                'local_start': batch_start,
-                'local_end': batch_end,
-                'global_start': global_start,
-                'global_end': global_end,
-                'local_realization_ids': local_ids,
-                'n_realizations': N_REALIZATIONS_PER_PYWRDRB_BATCH
-            })
-        
-        return batches
-    
-    def get_realization_ids(self):
-        """Get list of global realization IDs for this set"""
-        return list(range(self.start_realization, self.end_realization))
-    
+# Data directories (under CONFIG_DIR/data/)
+OUTPUT_DIR              = os.path.abspath(f"{CONFIG_DIR}/data/simulations/")
+MODEL_DIR               = os.path.abspath(f"{CONFIG_DIR}/data/models/")
+DROUGHT_METRICS_DIR     = os.path.abspath(f"{CONFIG_DIR}/data/drought_metrics/")
+PERFORMANCE_METRICS_DIR = os.path.abspath(f"{CONFIG_DIR}/data/performance_metrics/")
+EVENT_METRICS_DIR       = os.path.abspath(f"{CONFIG_DIR}/data/event_metrics/")
+ZONE_PROB_DIR           = os.path.abspath(f"{CONFIG_DIR}/data/zone_probabilities/")
+SATISFICING_DIR         = os.path.abspath(f"{CONFIG_DIR}/data/satisficing/")
+FOCAL_EVENTS_DIR        = os.path.abspath(f"{CONFIG_DIR}/data/focal_events/")
 
-# Create ensemble set specifications for all datasets
-ENSEMBLE_SETS = {
-    dataset_id: [EnsembleSetSpec(i, dataset_id) for i in range(N_ENSEMBLE_SETS)]
-    for dataset_id in DATASET_CONFIGS.keys()
-}
+# Figures directory
+FIG_DIR = os.path.abspath(f"{CONFIG_DIR}/figures/")
 
 # =============================================================================
 # PYWR-DRB CONFIGURATION
@@ -321,49 +239,8 @@ NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,837 MG
 DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
 
 # =============================================================================
-# UTILITY FUNCTIONS
+# VALIDATION (runs at import time)
 # =============================================================================
-
-
-
-def get_ensemble_set_spec(set_id, dataset_id):
-    """Get ensemble set specification by ID and dataset"""
-    if dataset_id not in ENSEMBLE_SETS:
-        raise ValueError(f"Invalid dataset_id: {dataset_id}")
-    if set_id < 0 or set_id >= N_ENSEMBLE_SETS:
-        raise ValueError(f"set_id must be between 0 and {N_ENSEMBLE_SETS-1}")
-    return ENSEMBLE_SETS[dataset_id][set_id]
-
-def ensure_ensemble_set_dirs(dataset_id=None):
-    """Create all necessary ensemble set directories"""
-    os.makedirs(ENSEMBLE_BASE_DIR, exist_ok=True)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    os.makedirs(FIG_DIR, exist_ok=True)
-    
-    # If dataset_id specified, only create dirs for that dataset
-    if dataset_id:
-        dataset_ids = [dataset_id]
-    else:
-        dataset_ids = DATASET_CONFIGS.keys()
-    
-    for did in dataset_ids:
-        # Create dataset directory
-        os.makedirs(f"{ENSEMBLE_BASE_DIR}/{did}", exist_ok=True)
-        
-        # Create directories for each ensemble set
-        for ensemble_set in ENSEMBLE_SETS[did]:
-            os.makedirs(ensemble_set.directory, exist_ok=True)
-
-def get_existing_ensemble_sets(dataset_id):
-    """Get list of ensemble set specs that have been generated for a dataset"""
-    verify_dataset_id(dataset_id)
-    existing_sets = []
-    for spec in ENSEMBLE_SETS[dataset_id]:
-        # Check if both required files exist
-        if (os.path.exists(spec.files['gage_flow']) and 
-            os.path.exists(spec.files['catchment_inflow'])):
-            existing_sets.append(spec)
-    return existing_sets
 
 def validate_configuration():
     """Validate the configuration parameters"""
