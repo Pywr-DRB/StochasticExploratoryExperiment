@@ -27,7 +27,7 @@ if [ "$PLOT_ENSEMBLE_DIAGNOSTICS" = true ]; then
     echo "========================================"
     echo "F1: Generating ensemble diagnostics figures..."
     echo "========================================"
-    python3 F1_plot_ensemble_diagnostics.py stationary_ensemble
+    python3 plotting_scripts/F1_plot_ensemble_diagnostics.py stationary_ensemble
 fi
 
 # F2: Drought metric distributions
@@ -35,9 +35,9 @@ if [ "$PLOT_DROUGHT_DISTRIBUTION" = true ]; then
     echo "========================================"
     echo "F2: Generating drought metric distribution figures..."
     echo "========================================"
-    python3 F2_plot_drought_metric_distribution.py 12
-    python3 F2_plot_drought_metric_distribution.py 6
-    python3 F2_plot_drought_metric_distribution.py 3
+    python3 plotting_scripts/F2_plot_drought_metric_distribution.py 12
+    python3 plotting_scripts/F2_plot_drought_metric_distribution.py 6
+    python3 plotting_scripts/F2_plot_drought_metric_distribution.py 3
 fi
 
 # F3: Drought zone occurrence (temporal probability + frequency/duration boxplots)
@@ -45,7 +45,7 @@ if [ "$PLOT_ZONE_OCCURRENCE" = true ]; then
     echo "========================================"
     echo "F3: Generating drought zone occurrence figure..."
     echo "========================================"
-    python3 F3_plot_drought_zone_occurrence.py
+    python3 plotting_scripts/F3_plot_drought_zone_occurrence.py
 fi
 
 # F4: NYC contribution distributions
@@ -53,7 +53,7 @@ if [ "$PLOT_CONTRIBUTION_DISTRIBUTIONS" = true ]; then
     echo "========================================"
     echo "F4: Generating contribution distribution figures..."
     echo "========================================"
-    python3 F4_plot_contribution_distributions.py --montague --layout side_by_side
+    python3 plotting_scripts/F4_plot_contribution_distributions.py --montague --layout side_by_side
 fi
 
 # F5: Drought satisficing heatmaps (severity × magnitude)
@@ -61,5 +61,5 @@ if [ "$PLOT_SATISFICING_HEATMAP" = true ]; then
     echo "========================================"
     echo "F5: Generating drought satisficing heatmap figures..."
     echo "========================================"
-    python3 F5_plot_drought_satisficing_heatmap.py 3
+    python3 plotting_scripts/F5_plot_drought_satisficing_heatmap.py 3
 fi

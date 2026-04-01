@@ -92,8 +92,8 @@ S0 (baseline)
 
 - `S*.sh` -- SLURM job submission scripts for HPC execution
 - `0*.py` -- Main workflow scripts (generation, simulation, post-processing)
-- `F*.py` -- Manuscript figure generation scripts
-- `SI*.py` -- Supplementary information figure scripts
+- `plotting_scripts/F*.py` -- Manuscript figure generation scripts
+- `si_scripts/SI*.py` -- Supplementary information figure scripts
 
 ## Configuration
 
@@ -107,6 +107,10 @@ All ensemble and experiment parameters are defined in `methods/config.py`, inclu
 ## Project structure
 
 ```
+plotting_scripts/     Manuscript figure scripts (F1-F5)
+  underdev/           In-progress figure scripts
+si_scripts/           Supplementary information scripts (SI0-SI16)
+  underdev/           In-progress SI scripts
 methods/              Core library (generation, simulation, post-processing, analysis)
   metrics/            Shortfall and satisficing calculations
   plotting/           Publication figure utilities

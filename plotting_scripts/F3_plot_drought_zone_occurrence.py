@@ -13,7 +13,9 @@ Usage:
     python F3_plot_drought_zone_occurrence.py
 """
 
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec

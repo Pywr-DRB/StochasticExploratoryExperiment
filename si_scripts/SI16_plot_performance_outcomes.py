@@ -15,8 +15,9 @@ Usage:
     python F5_plot_performance_outcomes.py
 """
 
-import os
 import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt

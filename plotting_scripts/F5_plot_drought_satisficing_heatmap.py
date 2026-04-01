@@ -15,6 +15,7 @@ Usage:
 
 import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
