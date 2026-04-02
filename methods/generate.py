@@ -20,8 +20,9 @@ from synhydro.core.ensemble import Ensemble
 from methods.load import load_baseline_historical_flow
 from methods.config import (
     DATASET_CONFIGS,
-    N_YEARS,
+    N_YEARS_GENERATE,
     START_DATE,
+    END_DATE,
     BASELINE_DATASET,
     pywrdrb_nodes_to_generate,
     pywrdrb_nodes_to_regress
@@ -156,12 +157,12 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Fit Kirsch generator (monthly) and Nowak disaggregator (monthly->daily)
     # (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
-    kirsch_gen_baseline = KirschGenerator(Q_baseline, debug=False, generate_using_log_flow=True)
-    kirsch_gen_baseline.preprocessing()
+    kirsch_gen_baseline = KirschGenerator(debug=False, generate_using_log_flow=True)
+    kirsch_gen_baseline.preprocessing(Q_baseline)
     kirsch_gen_baseline.fit()
 
-    nowak_disagg = NowakDisaggregator(Q, debug=False)
-    nowak_disagg.preprocessing()
+    nowak_disagg = NowakDisaggregator(debug=False)
+    nowak_disagg.preprocessing(Q)
     nowak_disagg.fit()
 
     # Apply climate adjustments if needed
@@ -209,7 +210,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
         monthly_ensemble_obj = kirsch_gen_baseline.generate(n_realizations=local_n_realizations,
-                                                    n_years=N_YEARS,
+                                                    n_years=N_YEARS_GENERATE,
                                                     seed=generation_seed)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak
@@ -302,9 +303,13 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         for real in local_syn_ensemble:
             local_syn_ensemble[real]['delTrenton'] = 0.0
             flows_i = local_syn_ensemble[real].copy()
-            flows_i.index = pd.date_range(start=START_DATE,
-                                          periods=len(flows_i),
-                                          freq='D')
+            date_idx = pd.date_range(start=START_DATE, periods=len(flows_i), freq='D')
+            flows_i.index = date_idx
+            flows_i = flows_i.loc[:END_DATE]
+
+            # Trim gage flow ensemble to match
+            local_syn_ensemble[real].index = date_idx
+            local_syn_ensemble[real] = local_syn_ensemble[real].loc[:END_DATE]
 
             local_inflow_ensemble[real] = _subtract_upstream_catchment_inflows(flows_i)
     else:
@@ -391,10 +396,10 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
         for i, real_id in enumerate(set_realization_ids):
             real_col = str(real_id)
-            gage_flow_ensemble_dict[real_id] = pd.DataFrame({
+            gage_flow_ensemble_dict[int(real_id)] = pd.DataFrame({
                 site: Q_syn[site][real_col] for site in sites
             }, index=syn_datetime)
-            inflow_ensemble_dict[real_id] = pd.DataFrame({
+            inflow_ensemble_dict[int(real_id)] = pd.DataFrame({
                 site: Qs_inflows[site][real_col] for site in sites
             }, index=syn_datetime)
 

@@ -121,7 +121,6 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
             ensemble_hdf5_file=gage_flow_file,
             realization_ids=realization_ids,
             use_mpi=use_mpi,
-            comm=comm,
         )
         nj_extrapolator.load()
         nj_extrapolator.process()
@@ -137,7 +136,6 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
             ensemble_hdf5_file=gage_flow_file,
             realization_ids=realization_ids,
             use_mpi=use_mpi,
-            comm=comm,
         )
 
         nyc_extrapolator.load()

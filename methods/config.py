@@ -16,15 +16,15 @@ CONFIG_NAME = "perf_foresight_baseline"
 # =============================================================================
 
 # Total experiment size
-TOTAL_REALIZATIONS = 2000
+TOTAL_REALIZATIONS = 5
 BASELINE_DATASET =  'pub_nhmv10_BC_withObsScaled' # 'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
 
 # Ensemble set configuration (for generation and storage)
-N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
+N_REALIZATIONS_PER_ENSEMBLE_SET = 5  # Memory-manageable chunks
 N_ENSEMBLE_SETS = TOTAL_REALIZATIONS // N_REALIZATIONS_PER_ENSEMBLE_SET
 
 # Pywr-DRB simulation batching (within each ensemble set)
-N_REALIZATIONS_PER_PYWRDRB_BATCH = 10 # Simulation memory limits
+N_REALIZATIONS_PER_PYWRDRB_BATCH = 5 # Simulation memory limits
 N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PER_PYWRDRB_BATCH
 
 # Temporal configuration
@@ -32,6 +32,13 @@ START_DATE = '2030-01-01'
 END_DATE = '2100-12-31'
 
 N_YEARS = count_water_years(START_DATE, END_DATE)
+
+# N_YEARS_GENERATE: years of synthetic data to request from Kirsch/Nowak.
+# Must cover the full simulation period through END_DATE. count_water_years()
+# excludes partial water years at the end (e.g. WY2100 = Jun–Dec 2100 only has
+# 214 days, below the 300-day threshold), so N_YEARS alone generates data that
+# can fall ~1 year short of END_DATE. Add 2 years of buffer to ensure coverage.
+N_YEARS_GENERATE = N_YEARS + 2
 
 # Reconstruction simulation date range and year count
 _reconstruction_dates = pywrdrb.utils.dates.model_date_ranges[BASELINE_DATASET]
@@ -226,6 +233,13 @@ DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
 # =============================================================================
 # VALIDATION (runs at import time)
 # =============================================================================
+
+def verify_dataset_id(dataset_id):
+    """Verify that a dataset_id is valid."""
+    if dataset_id not in DATASET_CONFIGS:
+        raise ValueError(f"Invalid dataset_id '{dataset_id}'. Must be one of: {list(DATASET_CONFIGS.keys())}")
+    return True
+
 
 def validate_configuration():
     """Validate the configuration parameters"""
