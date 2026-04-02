@@ -16,9 +16,7 @@ export CONFIG_NAME=${CONFIG_NAME:-default}
 mkdir -p logs
 
 run() {
-    echo "========================================"
-    echo "Running: $*"
-    echo "========================================"
+    echo "==== Running: $* ===="
     python3 "$@"
     if [ $? -ne 0 ]; then
         echo "ERROR: $* failed"

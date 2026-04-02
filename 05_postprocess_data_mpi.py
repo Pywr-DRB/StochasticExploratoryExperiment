@@ -110,13 +110,11 @@ def compute_metrics_for_ensemble_set(data, dataset_id, set_idx, rank):
 
     # Get realization IDs in this set
     if set_name not in data.major_flow:
-        print(f"  Rank {rank}: WARNING - {set_name} not found in data.major_flow")
+        print(f"  Rank {rank} WARNING: {set_name} not found in data.major_flow")
         return None
 
     local_ids = sorted(data.major_flow[set_name].keys())
     min_local_id = min(local_ids) if local_ids else 0
-
-    print(f"  Rank {rank}: Processing {set_name} ({len(local_ids)} realizations)")
 
     # Add Trenton equivalent flow for this set
     data = add_trenton_equiv_flow(data)
@@ -143,11 +141,6 @@ def compute_metrics_for_ensemble_set(data, dataset_id, set_idx, rank):
         # Calculate global realization ID
         local_id_normalized = local_id - min_local_id
         global_id = set_idx * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
-
-        # Progress reporting (every 25%)
-        if len(local_ids) > 4 and (i + 1) % max(1, len(local_ids) // 4) == 0:
-            progress = 100 * (i + 1) / len(local_ids)
-            print(f"    Rank {rank}: {progress:.0f}% complete ({i+1}/{len(local_ids)} realizations)")
 
         # Calculate shortages for each node
         node_shortages = {}
@@ -180,8 +173,6 @@ def compute_metrics_for_ensemble_set(data, dataset_id, set_idx, rank):
         results['mrf_target'][global_id] = data.mrf_target[set_name][local_id]
         results['res_level'][global_id] = data.res_level[set_name][local_id]
 
-    print(f"  Rank {rank}: Completed {set_name}")
-
     return results
 
 
@@ -208,8 +199,6 @@ def process_ensemble_sets_on_rank(dataset_id, ensemble_set_specs, rank_sets, ran
     all_results = []
 
     for set_idx in rank_sets:
-        # Load data for this ensemble set
-        print(f"  Rank {rank}: Loading ensemble set {set_idx + 1}...")
         data = load_ensemble_set_data(dataset_id, set_idx, ensemble_set_specs)
 
         # Compute metrics for this ensemble set
@@ -261,8 +250,6 @@ def save_results_to_temp_file(results_list, dataset_id, rank):
         setattr(temp_data, key, {dataset_id: combined[key]})
 
     temp_data.export(temp_fname)
-    print(f"  Rank {rank}: Saved {len(combined['shortage'])} realizations to {temp_fname}")
-
     return temp_fname
 
 
@@ -287,15 +274,11 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     keep_data : pywrdrb.Data
         Combined data object
     """
-    print(f"\nCombining {len(temp_files)} temporary files...")
-
     combined = {key: {} for key in RESULTS_SET_KEYS}
 
     for i, temp_fname in enumerate(temp_files):
         if temp_fname is None or not os.path.exists(temp_fname):
             continue
-
-        print(f"  Loading temp file {i+1}/{len(temp_files)}: {temp_fname}")
 
         temp_data = pywrdrb.Data()
         temp_data.load_from_export(temp_fname, results_sets=RESULTS_SET_KEYS)
@@ -314,16 +297,10 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
             pass
 
     n_realizations = len(combined['shortage'])
-    print(f"  Combined {n_realizations} ensemble realizations")
-
     if n_realizations != TOTAL_REALIZATIONS:
-        print(f"  WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
+        print(f"[POST] WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
 
-    # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
-
-    # Build keep_data from combined + historical, then free intermediates
-    # before loading gage flow (which is memory-intensive)
     keep_data = pywrdrb.Data()
     for key in RESULTS_SET_KEYS:
         ensemble_and_historical = {dataset_id: combined[key]}
@@ -332,15 +309,12 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
     del combined, historical_data
     gc.collect()
 
-    # Load gage flow after freeing intermediates
     combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
-    # Export final file
     fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-    print(f"Exporting combined data to {fname}...")
     keep_data.export(fname)
-    print(f"Successfully combined and exported data for {dataset_id}!")
+    print(f"[POST] {dataset_id}: Complete → {os.path.basename(fname)}")
 
     # Clean up temp directory
     try:
@@ -375,8 +349,6 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
     keep_data : pywrdrb.Data
         Combined data object
     """
-    print(f"\nCombining results from all ranks...")
-
     combined = {key: {} for key in RESULTS_SET_KEYS}
 
     for rank_results in all_rank_results:
@@ -389,16 +361,10 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
                 combined[key].update(set_results[key])
 
     n_realizations = len(combined['shortage'])
-    print(f"  Combined {n_realizations} ensemble realizations")
-
     if n_realizations != TOTAL_REALIZATIONS:
-        print(f"  WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
+        print(f"[POST] WARNING: Expected {TOTAL_REALIZATIONS} realizations, got {n_realizations}")
 
-    # Load and process historical models
     historical_data = load_and_process_historical_models(dataset_id)
-
-    # Build keep_data from combined + historical, then free intermediates
-    # before loading gage flow (which is memory-intensive)
     keep_data = pywrdrb.Data()
     for key in RESULTS_SET_KEYS:
         ensemble_and_historical = {dataset_id: combined[key]}
@@ -407,15 +373,12 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
     del combined, historical_data
     gc.collect()
 
-    # Load gage flow after freeing intermediates
     combined_gage_flow = load_gage_flow_data(dataset_id, ensemble_set_specs)
     keep_data.gage_flow = {dataset_id: combined_gage_flow}
 
-    # Export
     fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-    print(f"Exporting combined data to {fname}...")
     keep_data.export(fname)
-    print(f"Successfully combined and exported data for {dataset_id}!")
+    print(f"[POST] {dataset_id}: Complete → {os.path.basename(fname)}")
 
     return keep_data
 
@@ -443,25 +406,10 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
     comm, rank, size = get_comm()
 
     if rank == 0:
-        print(f"\n{'='*80}")
-        print(f"MPI PARALLEL POSTPROCESSING: {dataset_id}")
-        print(f"{'='*80}")
-        print(f"MPI ranks: {size}")
-        print(f"Ensemble sets: {N_ENSEMBLE_SETS}")
-        print(f"Total realizations: {TOTAL_REALIZATIONS}")
-        print(f"Realizations per set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
-        print(f"Low-memory mode: {low_memory}")
-
-        # Optimal configuration info
-        if size == N_ENSEMBLE_SETS:
-            print(f"Optimal configuration: 1 set per rank")
-        elif size < N_ENSEMBLE_SETS:
-            sets_per_rank = N_ENSEMBLE_SETS // size
-            remainder = N_ENSEMBLE_SETS % size
-            print(f"Sets per rank: {sets_per_rank}" + (f" to {sets_per_rank + 1}" if remainder > 0 else ""))
-        else:
-            print(f"WARNING: More ranks ({size}) than ensemble sets ({N_ENSEMBLE_SETS})")
-            print(f"  Some ranks will be idle. Consider using fewer ranks.")
+        low_mem_tag = " [low-memory]" if low_memory else ""
+        print(f"[POST] {dataset_id} | {N_ENSEMBLE_SETS} sets | {size} ranks{low_mem_tag}")
+        if size > N_ENSEMBLE_SETS:
+            print(f"[POST] WARNING: More ranks ({size}) than sets ({N_ENSEMBLE_SETS}) — some ranks idle.")
 
     # Get dataset configuration
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
@@ -469,10 +417,6 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
     # Distribute ensemble sets across ranks
     rank_sets = distribute_ensemble_sets(rank, size, N_ENSEMBLE_SETS)
 
-    if len(rank_sets) > 0:
-        print(f"Rank {rank}: Assigned ensemble sets {[s+1 for s in rank_sets]} ({len(rank_sets)} total)")
-    else:
-        print(f"Rank {rank}: No ensemble sets assigned (idle)")
 
     # Each rank processes its assigned ensemble sets independently (no barrier)
     if len(rank_sets) > 0:
@@ -508,8 +452,6 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
 
     else:
         # STANDARD MODE: Gather all results via point-to-point
-        if rank == 0:
-            print(f"\nGathering results from all ranks...")
 
         all_results = global_point_to_point_gather(
             comm, rank_results, rank, size, tag=701
@@ -542,11 +484,6 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
         True if processing completed successfully
     """
     comm, rank, size = get_comm()
-
-    if rank == 0:
-        print(f"\n{'='*80}")
-        print(f"PROCESSING DATASET (MPI): {dataset_id}")
-        print(f"{'='*80}")
 
     dataset_config = DATASET_CONFIGS[dataset_id]
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
@@ -606,38 +543,12 @@ def main_mpi(dataset_id, recombine_sets=True, low_memory=False):
     """
     comm, rank, size = get_comm()
 
-    if rank == 0:
-        print("=" * 80)
-        print(f"MPI POSTPROCESSING: {dataset_id}")
-        print("=" * 80)
+    verify_dataset_id(dataset_id)
 
-        verify_dataset_id(dataset_id)
-        dataset_config = DATASET_CONFIGS[dataset_id]
-
-        print(f"Dataset type: {dataset_config['type']}")
-        print(f"Description: {dataset_config['description']}")
-        print(f"Total realizations: {TOTAL_REALIZATIONS}")
-        print(f"Ensemble sets: {N_ENSEMBLE_SETS}")
-        print(f"Recombine sets: {recombine_sets}")
-        print(f"Low-memory mode: {low_memory}")
-        print("=" * 80)
-
-    # Process the dataset
     success = process_dataset_mpi(dataset_id, recombine_sets=recombine_sets, low_memory=low_memory)
 
-    if rank == 0:
-        if success:
-            # Verify output
-            fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-            if os.path.exists(fname):
-                file_size = os.path.getsize(fname)
-                print(f"\nSUCCESS: Postprocessed data file exists ({file_size//1024//1024} MB)")
-            else:
-                print(f"\nFAIL: Output file not found: {fname}")
-
-        print("=" * 80)
-        print(f"Postprocessing {'completed successfully' if success else 'failed'}!")
-        print("=" * 80)
+    if rank == 0 and not success:
+        print(f"[POST] ERROR: Postprocessing failed for {dataset_id}!")
 
     # Barrier so all ranks wait for rank 0 to finish before exiting.
     # Without this, non-rank-0 processes exit early and trigger

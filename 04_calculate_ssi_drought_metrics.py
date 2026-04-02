@@ -50,10 +50,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     dataset_config = DATASET_CONFIGS[dataset_id]
 
     if rank == 0:
-        print(f"Calculating SSI drought metrics for: {dataset_id}")
-        print(f"Dataset type: {dataset_config['type']}")
-        print(f"SSI windows: {ssi_windows}")
-        print(f"Using {size} MPI rank(s)")
+        print(f"[SSI] {dataset_id} | windows={ssi_windows} | {size} ranks")
 
     # Each rank checks file existence independently
     fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
@@ -66,25 +63,20 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     node_config = SSI_NODE_CONFIGS[node]
     results_set_key = node_config['results_set']
 
-    if rank == 0:
-        print(f"  SSI node: {node} (results_set: {results_set_key})")
-
     # Each rank reads realization IDs from HDF5 metadata (fast, no data loaded)
     realization_ids = get_realization_ids_from_export(fname, dataset_id,
                                                       results_set=results_set_key)
     n_realizations = len(realization_ids)
+
+    if rank == 0:
+        print(f"  {n_realizations} realizations, SSI node: {node}")
 
     # Determine this rank's assigned realizations
     my_realizations = distribute_realizations_across_ranks(
         realization_ids, rank, size
     )
 
-    if rank == 0:
-        print(f"  Total realizations: {n_realizations}")
-        print(f"  Realizations per rank: ~{n_realizations // size}")
-
     # Each rank loads ONLY its assigned realizations (staggered I/O)
-    print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
     local_data = load_rank_subset_from_export(
         fname, my_realizations, [results_set_key], rank, size
     )
@@ -98,10 +90,6 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         for real_id, df in local_syn_ensemble.items():
             df[node] = df[node_config['derive_from']].sum(axis=1)
 
-    print(f"Rank {rank}: loaded {len(local_syn_ensemble)} realizations.")
-
-    if rank == 0:
-        print(f"Loaded synthetic {dataset_id} ensemble with {n_realizations} realizations.")
 
     # SSI Drought Metrics
     for ssi_window in ssi_windows:
@@ -111,9 +99,6 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
 
         # Each rank fits SSI calculator independently (uses historical obs data)
         ssi_calculator = fit_ssi_calculator(ssi_window, node=node)
-
-        if rank == 0:
-            print(f"  Rank {rank} processing {len(my_realizations)} realizations")
 
         # Process assigned realizations
         local_ssi_data = {}
@@ -199,22 +184,13 @@ def main(dataset_id):
     comm, rank, size = get_comm()
 
     if rank == 0:
-        print("=" * 60)
-        print(f"SSI DROUGHT METRICS CALCULATION: {dataset_id}")
-        print("=" * 60)
-
-        # Create output directory if it doesn't exist
         os.makedirs(DROUGHT_METRICS_DIR, exist_ok=True)
 
     # Calculate drought metrics (using default SSI windows)
     success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3,6,12])
 
     if rank == 0:
-        if success:
-            print("=" * 60)
-            print("SSI drought metrics calculation completed successfully!")
-        else:
-            print("=" * 60)
+        if not success:
             print("ERROR: SSI drought metrics calculation failed!")
             sys.exit(1)
 

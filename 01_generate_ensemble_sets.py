@@ -73,20 +73,7 @@ def parallel_generate_all_sets(dataset_id):
     dataset_config = DATASET_CONFIGS[dataset_id]
 
     if rank == 0:
-        print("=" * 60)
-        print(f"PARALLEL ENSEMBLE SET GENERATION: {dataset_id}")
-        print("=" * 60)
-        print(f"Dataset type: {dataset_config['type']}")
-        print(f"Description: {dataset_config['description']}")
-        print(f"Total ensemble sets: {N_ENSEMBLE_SETS}")
-        print(f"Realizations per set: {N_REALIZATIONS_PER_ENSEMBLE_SET}")
-        print(f"Available ranks: {size}")
-        print(f"Years per realization: {N_YEARS}")
-        if size >= N_ENSEMBLE_SETS:
-            print(f"Ranks per ensemble set: {size // N_ENSEMBLE_SETS}")
-        else:
-            print("More sets than ranks — will process sets sequentially per rank")
-        print("=" * 60)
+        print(f"[GENERATE] {dataset_id} | {N_ENSEMBLE_SETS} sets × {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations | {size} ranks")
 
     # Ensure all directories exist
     ensure_ensemble_set_dirs(dataset_id)
@@ -127,17 +114,12 @@ def parallel_generate_all_sets(dataset_id):
     # No global barrier — each set completes independently.
     # Rank 0 verifies output files exist after its own set finishes.
     if rank == 0:
-        print("\n" + "=" * 60)
-        print(f"GENERATION COMPLETED: {dataset_id}")
-        print("=" * 60)
-
         existing_sets = get_existing_ensemble_sets(dataset_id)
         if len(existing_sets) == N_ENSEMBLE_SETS:
-            print(f"SUCCESS: All {N_ENSEMBLE_SETS} ensemble sets verified")
+            print(f"[GENERATE] {dataset_id}: {N_ENSEMBLE_SETS}/{N_ENSEMBLE_SETS} sets complete.")
         else:
-            print(f"WARNING: Only {len(existing_sets)}/{N_ENSEMBLE_SETS} sets found")
             missing = set(range(N_ENSEMBLE_SETS)) - set([s.set_id for s in existing_sets])
-            print(f"  Missing sets: {sorted(missing)}")
+            print(f"[GENERATE] WARNING: {len(existing_sets)}/{N_ENSEMBLE_SETS} sets found. Missing: {sorted(missing)}")
 
 
 def main(dataset_id):
@@ -145,8 +127,6 @@ def main(dataset_id):
 
     parallel_generate_all_sets(dataset_id)
 
-    if rank == 0:
-        print(f"\nEnsemble generation workflow completed for {dataset_id}!")
 
 
 if __name__ == "__main__":

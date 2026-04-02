@@ -37,34 +37,19 @@ def parallel_prep_all_sets(dataset_id):
     dataset_config = DATASET_CONFIGS[dataset_id]
 
     if rank == 0:
-        print("=" * 60)
-        print(f"PARALLEL PYWRDRB INPUT PREPARATION: {dataset_id}")
-        print("=" * 60)
-        print(f"Dataset type: {dataset_config['type']}")
-        print(f"Description: {dataset_config['description']}")
-        print(f"Total ensemble sets: {N_ENSEMBLE_SETS}")
-        print(f"Available ranks: {size}")
-
+        print(f"[PREP] {dataset_id} | {N_ENSEMBLE_SETS} sets | {size} ranks")
         existing_sets = get_existing_ensemble_sets(dataset_id)
-        print(f"Found {len(existing_sets)} existing ensemble sets")
         if len(existing_sets) < N_ENSEMBLE_SETS:
             missing_sets = set(range(N_ENSEMBLE_SETS)) - set([s.set_id for s in existing_sets])
-            print(f"Warning: Missing ensemble sets: {sorted(missing_sets)}")
-            print("Run ensemble generation first!")
-        print("=" * 60)
+            print(f"[PREP] WARNING: Missing ensemble sets: {sorted(missing_sets)} — run generation first!")
 
     assignments = get_set_assignments(rank, size, N_ENSEMBLE_SETS)
 
     if size >= N_ENSEMBLE_SETS and comm is not None:
-        # Multiple ranks per set — use comm.Split so ALL ranks participate
         set_id, local_rank, local_size = assignments[0]
-
-        # Create sub-communicator scoped to this set
         local_comm = comm.Split(color=set_id, key=local_rank)
 
         try:
-            if local_rank == 0:
-                print(f"Set {set_id+1}: {local_size} ranks collaborating via sub-communicator")
             success = prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=local_comm)
         finally:
             local_comm.Free()
@@ -79,45 +64,24 @@ def parallel_prep_all_sets(dataset_id):
         comm.Barrier()
 
     if rank == 0:
-        print("\n" + "=" * 60)
-        print(f"PYWRDRB INPUT PREPARATION COMPLETED: {dataset_id}")
-        print("=" * 60)
-
-        required_files = [
-            'predicted_inflow',
-            'diversion_nyc',
-            'diversion_nj',
-            'predicted_diversions'
+        required_files = ['predicted_inflow', 'diversion_nyc', 'diversion_nj', 'predicted_diversions']
+        failed_sets = [
+            sid + 1 for sid in range(N_ENSEMBLE_SETS)
+            if not all(os.path.exists(get_ensemble_set_spec(sid, dataset_id).files[f]) for f in required_files)
         ]
-        success_sets = []
-        failed_sets = []
-        for sid in range(N_ENSEMBLE_SETS):
-            set_spec = get_ensemble_set_spec(sid, dataset_id)
-            if all(os.path.exists(set_spec.files[f]) for f in required_files):
-                success_sets.append(sid)
-            else:
-                failed_sets.append(sid + 1)
-
-        print(f"Verified: {len(success_sets)}/{N_ENSEMBLE_SETS} sets have all required files")
         if not failed_sets:
-            print("SUCCESS: All ensemble sets prepared successfully!")
+            print(f"[PREP] {dataset_id}: {N_ENSEMBLE_SETS}/{N_ENSEMBLE_SETS} sets complete.")
         else:
-            print(f"WARNING: Missing files for sets: {failed_sets}")
-
-        print("=" * 60)
+            print(f"[PREP] WARNING: Missing files for sets: {failed_sets}")
 
 
 def main(dataset_id):
     comm, rank, _ = get_comm()
 
-    if rank == 0:
-        print(f"Starting Pywr-DRB input preparation for {dataset_id}...")
-
     parallel_prep_all_sets(dataset_id)
 
     if rank == 0:
         print_prep_status(dataset_id)
-        print(f"\nPywr-DRB input preparation workflow completed for {dataset_id}!")
 
 
 if __name__ == "__main__":

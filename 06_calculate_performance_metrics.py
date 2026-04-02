@@ -60,11 +60,7 @@ def main(dataset_id, ssi_windows):
     comm, rank, size = get_comm()
 
     if rank == 0:
-        print("=" * 80)
-        print(f"PERFORMANCE METRICS (MPI): {dataset_id}")
-        print(f"SSI Windows: {ssi_windows}")
-        print(f"Using {size} MPI rank(s)")
-        print("=" * 80)
+        print(f"[PERF] {dataset_id} | SSI windows={ssi_windows} | {size} ranks")
 
     # Each rank checks file existence independently
     # For reconstruction: data lives inside an ensemble's postprocessed file
@@ -89,8 +85,7 @@ def main(dataset_id, ssi_windows):
     )
 
     if rank == 0:
-        print(f"  Total realizations: {n_realizations}")
-        print(f"  Realizations per rank: ~{n_realizations // size}")
+        print(f"  {n_realizations} realizations across {size} ranks")
 
     # Load data — superset of what all analyses need
     results_sets = [
@@ -98,11 +93,9 @@ def main(dataset_id, ssi_windows):
         'inflow', 'ibt_diversions', 'ibt_demands',
         'contribution', 'shortage', 'nyc_release_components',
     ]
-    print(f"Rank {rank}: loading {len(my_realizations)} realizations from HDF5...")
     local_data = load_rank_subset_from_export(
         fname, my_realizations, results_sets, rank, size
     )
-    print(f"Rank {rank}: loaded {len(my_realizations)} realizations")
 
     # =========================================================================
     # Use first SSI window for the main annual metrics drought conditioning.
@@ -128,7 +121,6 @@ def main(dataset_id, ssi_windows):
     # =========================================================================
     # Part 1: Annual metrics (realization × water_year × period)
     # =========================================================================
-    print(f"Rank {rank}: calculating annual metrics...")
     local_annual = calculate_annual_metrics(
         local_data, dataset_id, my_realizations, primary_drought_events
     )
@@ -139,7 +131,6 @@ def main(dataset_id, ssi_windows):
     # =========================================================================
     # Part 2: Hashimoto RRV metrics (simulation-level + per-event)
     # =========================================================================
-    print(f"Rank {rank}: calculating Hashimoto metrics...")
     local_hashimoto, local_hashimoto_events = calculate_hashimoto_all(
         local_data, dataset_id, my_realizations
     )
@@ -153,7 +144,6 @@ def main(dataset_id, ssi_windows):
     # =========================================================================
     # Part 3: Contribution analysis metrics
     # =========================================================================
-    print(f"Rank {rank}: calculating contribution metrics...")
     local_contrib = calculate_contribution_analysis_metrics(
         local_data, dataset_id, my_realizations
     )
@@ -164,7 +154,6 @@ def main(dataset_id, ssi_windows):
     # =========================================================================
     # Part 4: Zone duration events
     # =========================================================================
-    print(f"Rank {rank}: calculating zone duration events...")
     local_zone_records = []
     from methods.zone_duration_metrics import calculate_drought_zone_events
     for r in my_realizations:
@@ -274,11 +263,7 @@ def main(dataset_id, ssi_windows):
                 all_events.to_csv(event_fname, index=False)
                 print(f"  Saved {len(all_events)} SSI-{ssi_window} events: {event_fname}")
 
-        print("\n" + "=" * 80)
-        print("PERFORMANCE METRICS COMPLETE!")
-        print("=" * 80)
-        print(f"\nMetrics: {PERFORMANCE_METRICS_DIR}/")
-        print(f"Events:  {EVENT_METRICS_DIR}/")
+        print(f"[PERF] {dataset_id}: Complete.")
 
 
 if __name__ == "__main__":

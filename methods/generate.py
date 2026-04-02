@@ -100,10 +100,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     output_dir = set_spec.directory
 
     if rank == 0:
-        print(f"Set {set_id + 1}: Generating {dataset_id} ensemble with {size} ranks")
-        print(f"  Dataset type: {dataset_config['type']}")
-        print(f"  Total realizations: {n_realizations}")
-        print(f"  Output directory: {output_dir}")
+        print(f"Set {set_id + 1}: Generating {dataset_id} ({n_realizations} realizations, {size} ranks)")
 
     # Ensure output directory exists
     if rank == 0:
@@ -135,7 +132,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
             # CRITICAL: Replace zeros with NaN before fitting
             # Streamflow should never be exactly zero - zeros in historical data are artifacts
             # that would otherwise propagate to synthetic ensembles via Nowak disaggregation
-            print(f"Set {set_id + 1}: Loaded data for {Q.shape[1]} nodes, {Q.shape[0]} days")
             n_zeros_before = (Q == 0.0).sum().sum()
             if n_zeros_before > 0:
                 print(f"Set {set_id + 1}: Replacing {n_zeros_before} zero values with NaN (physically unrealistic)")
@@ -160,15 +156,9 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Fit Kirsch generator (monthly) and Nowak disaggregator (monthly->daily)
     # (parallel efficiency: all ranks fit independently to avoid broadcast of large object)
-    if rank == 0:
-        print(f"Set {set_id + 1}: Fitting Kirsch generator (monthly)...")
-
     kirsch_gen_baseline = KirschGenerator(Q_baseline, debug=False, generate_using_log_flow=True)
     kirsch_gen_baseline.preprocessing()
     kirsch_gen_baseline.fit()
-
-    if rank == 0:
-        print(f"Set {set_id + 1}: Fitting Nowak disaggregator (monthly->daily)...")
 
     nowak_disagg = NowakDisaggregator(Q, debug=False)
     nowak_disagg.preprocessing()
@@ -211,12 +201,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         local_n_realizations = realizations_per_rank
         local_start_idx = rank * realizations_per_rank + extra_realizations
 
-    if rank == 0:
-        print(f"Set {set_id + 1}: Distributing realizations across {size} ranks")
-        print(f"  Base realizations per rank: {realizations_per_rank}")
-        if extra_realizations > 0:
-            print(f"  First {extra_realizations} ranks get 1 extra realization")
-
     # Generate local ensemble subset (monthly, then disaggregate to daily)
     # Seed strategy: deterministic per (set_id, rank) so results are reproducible
     # and independent across ranks. Kirsch sets np.random.seed() internally,
@@ -239,7 +223,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Fit KDEs for non-major nodes (optimized: only fit once on rank 0, broadcast parameters)
     if rank == 0:
-        print(f"Set {set_id + 1}: Fitting KDEs for non-major nodes...")
         kde_params = {}  # Store parameters instead of full KDE objects
         for upstream in pywrdrb_nodes_to_generate:
             downstream = immediate_downstream_nodes_dict[upstream]
@@ -280,9 +263,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Generate flows at non-major nodes for local ensemble
     if local_n_realizations > 0:
-        if rank == 0:
-            print(f"Set {set_id + 1}: Generating non-major node flows...")
-
         n_local_samples = local_syn_ensemble[0].shape[0] * local_n_realizations
         local_realization_ids = list(local_syn_ensemble.keys())
 
@@ -331,9 +311,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         local_inflow_ensemble = {}
 
     # GATHER ALL LOCAL ENSEMBLES TO RANK 0
-    if rank == 0:
-        print(f"Set {set_id + 1}: Gathering ensemble data from all ranks...")
-
     # Gather data (only needed in MPI mode)
     if use_mpi and comm:
         if set_peer_ranks is not None:
@@ -351,7 +328,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # COMBINE AND SAVE ON RANK 0 ONLY
     if rank == 0:
-        print(f"Set {set_id + 1}: Combining and saving ensemble data...")
 
         # Combine all local ensembles
         combined_syn_ensemble = {}
@@ -405,9 +381,6 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
                                             index=syn_datetime,
                                             columns=real_cols)
 
-        # Save results
-        print(f"Set {set_id + 1}: Saving results...")
-
         gage_flow_fname = set_spec.files['gage_flow']
         catchment_inflow_fname = set_spec.files['catchment_inflow']
 
@@ -431,9 +404,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         gage_flow_ensemble.to_hdf5(gage_flow_fname)
         inflow_ensemble.to_hdf5(catchment_inflow_fname)
 
-        print(f"Set {set_id + 1} completed successfully!")
-        print(f"  Gage flow file: {gage_flow_fname}")
-        print(f"  Catchment inflow file: {catchment_inflow_fname}")
+        print(f"Set {set_id + 1}: Complete.")
 
         return True
 

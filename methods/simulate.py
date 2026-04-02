@@ -86,9 +86,8 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
     ensemble_dir = set_spec.directory
     output_file = set_spec.output_file
 
-    print(f"Rank {rank}: Running Pywr-DRB simulations for {dataset_id} ensemble set {set_id + 1}")
-    print(f"  Input file: {catchment_inflow_file}")
-    print(f"  Output file: {output_file}")
+    if rank == 0:
+        print(f"Set {set_id + 1}: Running Pywr-DRB simulations for {dataset_id}")
 
     # Check if input file exists
     if not os.path.exists(catchment_inflow_file):
@@ -123,9 +122,6 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
         realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
         realization_ids = [str(rid) for rid in realization_ids]
 
-        if rank == 0:
-            print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
-
         # VALIDATION: Check if realization_ids match expected global IDs
         expected_realization_ids = set_spec.realizations
         if rank == 0:
@@ -143,12 +139,9 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
         rank_realization_ids = list(rank_realization_ids)
         n_rank_realizations = len(rank_realization_ids)
 
-        print(f"Set {set_id + 1}, Rank {rank}: Processing {n_rank_realizations} realizations")
-
         # If this rank has no realizations, skip simulation but still
         # participate in synchronization below to avoid deadlock.
         if n_rank_realizations == 0:
-            print(f"Set {set_id + 1}, Rank {rank}: No realizations assigned, waiting at barrier")
             batch_filenames = []
             # Jump directly to the barrier/combine section
             if use_mpi and comm:
@@ -168,12 +161,9 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             batched_indices[i] = rank_realization_ids[batch_start:batch_end]
             batched_indices[i] = [str(rid) for rid in batched_indices[i]]  # force to be str
 
-        print(f"Set {set_id + 1}, Rank {rank}: Running {n_batches} batches")
-
         # Run individual batches
         batch_filenames = []
         for batch, indices in batched_indices.items():
-            print(f"Set {set_id + 1}, Rank {rank}: Running sim batch {batch + 1}/{n_batches} with {len(indices)} realizations")
 
             # Model options for this batch
             model_options = {

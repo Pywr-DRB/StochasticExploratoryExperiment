@@ -61,9 +61,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
     ensemble_dir = set_spec.directory
 
     if rank == 0:
-        print(f"Set {set_id+1} Rank {rank}: Preparing inputs for {dataset_id} ensemble set {set_id + 1}")
-        print(f"  Input file: {catchment_inflow_file}")
-        print(f"  Ensemble directory: {ensemble_dir}")
+        print(f"Set {set_id+1}: Preparing Pywr-DRB inputs...")
 
     # Check if input file exists
     if not os.path.exists(catchment_inflow_file):
@@ -77,9 +75,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
 
     try:
         if rank == 0:
-            # Get realization numbers from the HDF5 file
             realization_ids = get_hdf5_realization_numbers(catchment_inflow_file)
-            print(f"Set {set_id + 1}: Found {len(realization_ids)} realizations")
 
         else:
             realization_ids = None
@@ -91,9 +87,6 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         # =====================================================================
         # Step 1: Process predicted inflows
         # =====================================================================
-        if rank == 0:
-            print(f"Set {set_id + 1}: Processing predicted inflows...")
-
         inflow_preprocessor = PredictedInflowEnsemblePreprocessor(
             flow_type=f"{dataset_id}_set{set_id + 1}",
             ensemble_hdf5_file=catchment_inflow_file,
@@ -115,14 +108,9 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         # Free up memory
         del inflow_preprocessor
 
-        if rank == 0:
-            print(f"Set {set_id + 1}: Predicted inflows complete.")
-
         # =====================================================================
         # Step 2: Process NJ diversions ensemble
         # =====================================================================
-        if rank == 0:
-            print(f"Set {set_id + 1}: Processing NJ diversions ensemble...")
 
         # Use the gage_flow file as input for diversions
         gage_flow_file = set_spec.files['gage_flow']
@@ -139,14 +127,9 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         nj_extrapolator.process()
         nj_extrapolator.save()
 
-        if rank == 0:
-            print(f"Set {set_id + 1}: NJ diversions ensemble complete.")
-
         # =====================================================================
         # Step 3: Process NYC diversions ensemble
         # =====================================================================
-        if rank == 0:
-            print(f"Set {set_id + 1}: Processing NYC diversions ensemble...")
 
         nyc_extrapolator = ExtrapolatedDiversionEnsemblePreprocessor(
             loc="nyc",
@@ -164,15 +147,9 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         # Free up memory
         del nyc_extrapolator
 
-        if rank == 0:
-            print(f"Set {set_id + 1}: NYC diversions ensemble complete.")
-
-
         # =====================================================================
         # Step 4: Process predicted diversions ensemble
         # =====================================================================
-        if rank == 0:
-            print(f"Set {set_id + 1}: Processing predicted diversions ensemble...")
 
         # Get path to the NJ extrapolated diversions we just created
         nj_div_hdf5 = str(pywrdrb.get_pn_object().sc.get(
@@ -198,8 +175,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         diversion_predictor.save()
 
         if rank == 0:
-            print(f"Set {set_id + 1}: Predicted diversions ensemble complete.")
-            print(f"Set {set_id + 1}: All Pywr-DRB inputs prepared successfully.")
+            print(f"Set {set_id + 1}: Inputs prepared.")
 
         return True
 
