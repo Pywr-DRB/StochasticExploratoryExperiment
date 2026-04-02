@@ -37,6 +37,18 @@ def vectorized_water_year(dates):
     return np.where(months >= 6, years, years - 1)
 
 
+def count_water_years(start_date, end_date, min_days=300):
+    """Count full water years in a simulation date range.
+
+    Only water years with at least `min_days` days are counted,
+    excluding partial years at the start/end of the simulation.
+    """
+    idx = pd.date_range(start_date, end_date, freq='D')
+    wy = np.where(idx.month >= 6, idx.year, idx.year - 1)
+    unique_wys, counts = np.unique(wy, return_counts=True)
+    return int(np.sum(counts >= min_days))
+
+
 def vectorized_water_year_doy(dates):
     """Return array of day-of-water-year (1-366) for a DatetimeIndex."""
     water_years = vectorized_water_year(dates)

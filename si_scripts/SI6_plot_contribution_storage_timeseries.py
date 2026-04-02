@@ -33,6 +33,10 @@ from methods.config import (
     verify_dataset_id,
 )
 from methods.plotting.styles import DPI_HIGH, DATASET_LABELS
+from methods.water_year import (
+    vectorized_water_year, vectorized_water_year_doy,
+    MONTH_STARTS_WY, MONTH_LABELS_WY,
+)
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/SI6_contribution_storage_timeseries"
@@ -69,37 +73,6 @@ LINE_ALPHA = 0.5
 # ============================================================================
 # DATA PROCESSING
 # ============================================================================
-
-def get_water_year_day(dates):
-    """Convert dates to water year day (Jun 1 = day 1)."""
-    # Water year starts Jun 1
-    month = dates.month
-    day = dates.day
-
-    # Days since Jun 1
-    # Jun=1-30 (days 1-30), Jul=31-61, Aug=62-92, Sep=93-122, Oct=123-153, etc.
-    days_in_month = [30, 31, 31, 30, 31, 30, 31, 31, 28, 31, 30, 31]  # Jun-May
-    month_to_wy_month = {6: 0, 7: 1, 8: 2, 9: 3, 10: 4, 11: 5,
-                         12: 6, 1: 7, 2: 8, 3: 9, 4: 10, 5: 11}
-
-    cumulative_days = [0]
-    for d in days_in_month[:-1]:
-        cumulative_days.append(cumulative_days[-1] + d)
-
-    wy_day = np.zeros(len(dates), dtype=int)
-    for i, (m, d) in enumerate(zip(month, day)):
-        wy_month = month_to_wy_month[m]
-        wy_day[i] = cumulative_days[wy_month] + d
-
-    return wy_day
-
-
-def get_water_year(date):
-    """Get water year for a date (Jun-May)."""
-    if date.month >= 6:
-        return date.year + 1
-    return date.year
-
 
 def calculate_yearly_traces(data, dataset_id, rolling_days=7, min_storage_threshold=None):
     """
@@ -165,8 +138,8 @@ def calculate_yearly_traces(data, dataset_id, rolling_days=7, min_storage_thresh
             )
 
         # Get water year day and water year
-        wy_day = get_water_year_day(common_idx)
-        water_years = np.array([get_water_year(d) for d in common_idx])
+        wy_day = vectorized_water_year_doy(common_idx)
+        water_years = vectorized_water_year(common_idx)
 
         # Group by water year
         unique_wys = np.unique(water_years)
@@ -301,11 +274,8 @@ def plot_contribution_storage_timeseries(
     ax.set_ylim(0, np.nanpercentile(all_ratios, 99.5))
 
     # X-axis: water year months (Jun-May)
-    month_starts = [1, 31, 62, 93, 123, 154, 184, 215, 246, 274, 305, 335]
-    month_labels = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
-                    'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
-    ax.set_xticks(month_starts)
-    ax.set_xticklabels(month_labels, fontsize=10)
+    ax.set_xticks(MONTH_STARTS_WY)
+    ax.set_xticklabels(MONTH_LABELS_WY, fontsize=10)
     ax.set_xlabel('Month (Jun-May Water Year)', fontsize=12)
 
     # Y-axis
@@ -426,11 +396,8 @@ def plot_multipanel_comparison(figsize=(14, 12), max_years=MAX_YEARS_TO_PLOT,
         ax.set_axisbelow(True)
 
     # X-axis labels on bottom panel only (Jun-May)
-    month_starts = [1, 31, 62, 93, 123, 154, 184, 215, 246, 274, 305, 335]
-    month_labels = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
-                    'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May']
-    axes[-1].set_xticks(month_starts)
-    axes[-1].set_xticklabels(month_labels, fontsize=10)
+    axes[-1].set_xticks(MONTH_STARTS_WY)
+    axes[-1].set_xticklabels(MONTH_LABELS_WY, fontsize=10)
     axes[-1].set_xlabel('Month (Jun-May Water Year)', fontsize=12)
 
     # Shared colorbar

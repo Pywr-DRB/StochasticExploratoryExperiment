@@ -27,7 +27,8 @@ from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import FIG_DIR, EVENT_METRICS_DIR
+from methods.config import FIG_DIR
+from methods.load import load_event_metrics
 from methods.plotting.styles import (
     FFMP_ZONE_COLORS, DATASET_LABELS,
     FONTSIZE_LABEL, FONTSIZE_MEDIUM, FONTSIZE_SMALL,
@@ -53,11 +54,8 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 
 
 def load_events(dataset_id):
-    df = pd.read_csv(
-        f'{EVENT_METRICS_DIR}/{dataset_id}_ssi{SSI_WINDOW}_event_metrics.csv')
-    df = df[df['duration_days'] >= MIN_DURATION].copy()
-    df['magnitude'] = df['magnitude'].abs()
-    df['severity_abs'] = df['severity'].abs()
+    df = load_event_metrics(dataset_id, SSI_WINDOW, min_duration=MIN_DURATION)
+    df['severity_abs'] = df['severity']
     df['avg_severity'] = df['magnitude'] / (df['duration_days'] / 30.44)  # per month
     df['contrib_pct'] = (df['contribution_ratio'] * 100).clip(0, 250)
     return df

@@ -105,63 +105,6 @@ def print_satisficing_summary(df, dataset_id, ssi_window):
     print("\n" + "=" * 80)
 
 
-def print_annual_metrics_summary(annual_df):
-    """
-    Print summary statistics for annual performance metrics.
-
-    Parameters
-    ----------
-    annual_df : pd.DataFrame
-        Annual metrics DataFrame with columns: realization_id, water_year, period,
-        and 20 metric columns.
-    """
-    import numpy as np
-
-    print(f"\n  Annual Metrics Summary:")
-    print(f"  {'='*60}")
-    print(f"  Total rows: {len(annual_df)}")
-    n_real = annual_df['realization_id'].nunique()
-    n_wy = annual_df['water_year'].nunique()
-    print(f"  Realizations: {n_real}, Water years: {n_wy}")
-
-    # Focus on period='all' for summary
-    df_all = annual_df[annual_df['period'] == 'all']
-
-    # Reliability metrics (mean across water years per realization, then quantiles)
-    print(f"\n  Reliability (mean annual, across realizations):")
-    print(f"  {'-'*60}")
-    for loc in ['montague', 'trenton', 'nyc']:
-        col = f'{loc}_reliability'
-        if col in df_all.columns:
-            means = df_all.groupby('realization_id')[col].mean()
-            p5, p50, p95 = np.percentile(means, [5, 50, 95])
-            print(f"    {col:40s}: p5={p5:.3f}, p50={p50:.3f}, p95={p95:.3f}")
-
-    # Storage metrics
-    print(f"\n  Storage (across realizations):")
-    print(f"  {'-'*60}")
-    for col in ['nyc_min_storage_pct', 'june1_storage_pct', 'sept1_storage_pct']:
-        if col in df_all.columns:
-            if col == 'nyc_min_storage_pct':
-                vals = df_all.groupby('realization_id')[col].min()
-            else:
-                vals = df_all.groupby('realization_id')[col].mean()
-            p5, p50, p95 = np.percentile(vals.dropna(), [5, 50, 95])
-            print(f"    {col:40s}: p5={p5:5.1f}, p50={p50:5.1f}, p95={p95:5.1f}")
-
-    # Shortage magnitudes
-    print(f"\n  Shortage (across realizations):")
-    print(f"  {'-'*60}")
-    for loc in ['montague', 'trenton', 'nyc']:
-        col = f'{loc}_max_consec_shortage_days'
-        if col in df_all.columns:
-            maxes = df_all.groupby('realization_id')[col].max()
-            p5, p50, p95 = np.percentile(maxes, [5, 50, 95])
-            print(f"    {col:40s}: p5={p5:5.0f}, p50={p50:5.0f}, p95={p95:5.0f}")
-
-    print(f"  {'='*60}")
-
-
 def print_prep_status(dataset_id):
     """
     Print detailed status of Pywr-DRB input preparation for all ensemble sets.

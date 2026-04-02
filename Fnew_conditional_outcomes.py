@@ -22,7 +22,8 @@ from matplotlib.lines import Line2D
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import ROOT_DIR, FIG_DIR, EVENT_METRICS_DIR
+from methods.config import FIG_DIR, EVENT_METRICS_DIR
+from methods.load import load_event_metrics
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_SMALL,
@@ -49,13 +50,7 @@ MAG_BIN_COLORS = ['#4393C3', '#FDB863', '#D73027']
 # ── helpers ───────────────────────────────────────────────────────────
 
 def load_events(dataset_id, ssi_window):
-    df = pd.read_csv(
-        f'{EVENT_METRICS_DIR}/'
-        f'{dataset_id}_ssi{ssi_window}_event_metrics.csv'
-    )
-    df = df[df['duration_days'] >= MIN_DURATION].copy()
-    df['severity'] = df['severity'].abs()
-    df['magnitude'] = df['magnitude'].abs()
+    df = load_event_metrics(dataset_id, ssi_window, min_duration=MIN_DURATION)
     df = df[(df['severity'] >= MIN_SEVERITY) & (df['severity'] <= MAX_SEVERITY)]
     return df
 

@@ -29,7 +29,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -42,6 +41,11 @@ from methods.plotting.styles import (
     DATASET_LABELS,
     FFMP_ZONE_COLORS_INT,
     DPI_HIGH, FONTSIZE_SMALL, FONTSIZE_MEDIUM, FONTSIZE_LARGE,
+)
+from methods.plotting.shortage_by_zone import (
+    print_summary_statistics,
+    plot_shortage_by_zone_summary,
+    plot_shortage_magnitude_distributions,
 )
 
 # ============================================================================
@@ -199,180 +203,10 @@ def analyze_shortage_by_zone(shortage_zone_data, location):
     return pd.DataFrame(zone_stats), all_shortages
 
 
-def print_summary_statistics(stats_df, dataset_id, location):
-    """Print summary statistics to console."""
-    loc_label = LOCATION_LABELS[location]
-    print(f"\n{'='*80}")
-    print(f"{loc_label.upper()} SHORTAGE ANALYSIS: "
-          f"{DATASET_LABELS.get(dataset_id, dataset_id)}")
-    print(f"{'='*80}")
-
-    print(f"\n{'Zone':<25} {'Days':>10} {'% Days':>10} "
-          f"{'Volume (MG)':>15} {'% Volume':>10}")
-    print("-" * 72)
-
-    for _, row in stats_df.iterrows():
-        if row['n_shortage_days'] == 0:
-            continue
-        print(f"{row['zone_name']:<25} "
-              f"{row['n_shortage_days']:>10,} "
-              f"{row['pct_of_all_shortage_days']:>10.1f} "
-              f"{row['total_shortage_mg']:>15,.0f} "
-              f"{row['pct_of_all_shortage_volume']:>10.1f}")
-
-    print("-" * 72)
-
 
 # ============================================================================
-# PLOTTING
+# PLOTTING (delegated to methods.plotting.shortage_by_zone)
 # ============================================================================
-
-def plot_shortage_by_zone_summary(stats_df, dataset_id, location, fname=None):
-    """
-    Bar chart: % of shortage days and % of shortage volume by zone.
-    """
-    # Filter to zones with data
-    plot_df = stats_df[stats_df['zone'].isin(ZONES_TO_PLOT)].copy()
-
-    fig, (ax_days, ax_vol) = plt.subplots(1, 2, figsize=(13, 5))
-
-    zone_names = [ZONE_DEFINITIONS[z]['name'] for z in ZONES_TO_PLOT]
-    colors = [ZONE_DEFINITIONS[z]['color'] for z in ZONES_TO_PLOT]
-    x = np.arange(len(ZONES_TO_PLOT))
-
-    # Look up values by zone (handles missing zones gracefully)
-    pct_days = []
-    pct_vol = []
-    for z in ZONES_TO_PLOT:
-        row = plot_df[plot_df['zone'] == z]
-        pct_days.append(row['pct_of_all_shortage_days'].values[0] if len(row) else 0)
-        pct_vol.append(row['pct_of_all_shortage_volume'].values[0] if len(row) else 0)
-
-    pct_days = np.array(pct_days)
-    pct_vol = np.array(pct_vol)
-
-    # Left panel: shortage days
-    bars1 = ax_days.bar(x, pct_days, color=colors, alpha=0.8, edgecolor='black')
-    ax_days.set_xticks(x)
-    ax_days.set_xticklabels(zone_names, fontsize=FONTSIZE_SMALL)
-    ax_days.set_ylabel('% of All Shortage Days', fontsize=FONTSIZE_MEDIUM)
-    ax_days.set_xlabel('NYC Storage Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_days.set_title(f'{LOCATION_LABELS[location]} Shortage Days by Zone',
-                      fontsize=FONTSIZE_LARGE)
-    ax_days.grid(True, axis='y', alpha=0.3, linestyle='--')
-    ax_days.set_axisbelow(True)
-
-    for bar, pct in zip(bars1, pct_days):
-        if pct > 0:
-            ax_days.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                         f'{pct:.1f}%', ha='center', va='bottom',
-                         fontsize=FONTSIZE_SMALL)
-
-    # Right panel: shortage volume
-    bars2 = ax_vol.bar(x, pct_vol, color=colors, alpha=0.8, edgecolor='black')
-    ax_vol.set_xticks(x)
-    ax_vol.set_xticklabels(zone_names, fontsize=FONTSIZE_SMALL)
-    ax_vol.set_ylabel('% of Total Shortage Volume', fontsize=FONTSIZE_MEDIUM)
-    ax_vol.set_xlabel('NYC Storage Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_vol.set_title(f'{LOCATION_LABELS[location]} Shortage Volume by Zone',
-                     fontsize=FONTSIZE_LARGE)
-    ax_vol.grid(True, axis='y', alpha=0.3, linestyle='--')
-    ax_vol.set_axisbelow(True)
-
-    for bar, pct in zip(bars2, pct_vol):
-        if pct > 0:
-            ax_vol.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
-                        f'{pct:.1f}%', ha='center', va='bottom',
-                        fontsize=FONTSIZE_SMALL)
-
-    dataset_label = DATASET_LABELS.get(dataset_id, dataset_id)
-    fig.suptitle(f'{LOCATION_LABELS[location]} Flow Target Shortage: {dataset_label}',
-                 fontsize=FONTSIZE_LARGE, y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-
-    if fname is None:
-        fname = (f"{FIG_OUTPUT_DIR}/"
-                 f"shortage_by_zone_{location}_{dataset_id}.png")
-    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"  Saved: {fname}")
-    plt.close()
-
-
-def plot_shortage_magnitude_distributions(all_shortages, dataset_id,
-                                          location, fname=None):
-    """
-    Histogram + box plot of shortage magnitudes by zone.
-    """
-    fig, (ax_hist, ax_box) = plt.subplots(2, 1, figsize=(14, 10))
-
-    zone_data_list = []
-    zone_labels_list = []
-    zone_colors_list = []
-    box_data = []
-    box_labels = []
-    box_colors = []
-
-    for z in ZONES_TO_PLOT:
-        zdf = all_shortages[all_shortages['zone'] == z]
-        vals = zdf[location]
-        if len(vals) == 0:
-            continue
-        zone_info = ZONE_DEFINITIONS[z]
-        label = f"{zone_info['name'].replace(chr(10), ' ')} (n={len(vals):,})"
-        zone_data_list.append(vals)
-        zone_labels_list.append(label)
-        zone_colors_list.append(zone_info['color'])
-        box_data.append(vals.values)
-        box_labels.append(zone_info['name'].replace('\n', ' '))
-        box_colors.append(zone_info['color'])
-
-    if not zone_data_list:
-        plt.close()
-        return
-
-    # Top: stacked histogram
-    max_shortage = np.percentile(
-        np.concatenate([v.values for v in zone_data_list]), 99
-    )
-    bins = np.linspace(0, max_shortage * 1.1, 30)
-
-    ax_hist.hist(zone_data_list, bins=bins, stacked=True,
-                 color=zone_colors_list, label=zone_labels_list,
-                 edgecolor='black', linewidth=0.3, alpha=0.8)
-    ax_hist.set_xlabel('Shortage Magnitude (MGD)', fontsize=FONTSIZE_MEDIUM)
-    ax_hist.set_ylabel('Frequency (days)', fontsize=FONTSIZE_MEDIUM)
-    ax_hist.set_title(f'{LOCATION_LABELS[location]} Shortage Magnitudes by Zone',
-                      fontsize=FONTSIZE_LARGE)
-    ax_hist.legend(fontsize=FONTSIZE_SMALL, loc='upper right')
-    ax_hist.grid(True, axis='y', alpha=0.3, linestyle='--')
-    ax_hist.set_axisbelow(True)
-
-    # Bottom: box plot
-    bp = ax_box.boxplot(box_data, labels=box_labels, patch_artist=True,
-                        showfliers=False, widths=0.6,
-                        medianprops=dict(color='black', linewidth=2))
-    for patch, color in zip(bp['boxes'], box_colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    ax_box.set_ylabel('Shortage Magnitude (MGD)', fontsize=FONTSIZE_MEDIUM)
-    ax_box.set_xlabel('NYC Storage Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_box.set_title('Shortage Distribution by Zone', fontsize=FONTSIZE_MEDIUM)
-    ax_box.grid(True, axis='y', alpha=0.3, linestyle='--')
-    ax_box.set_axisbelow(True)
-    ax_box.tick_params(axis='x', labelsize=FONTSIZE_SMALL)
-
-    dataset_label = DATASET_LABELS.get(dataset_id, dataset_id)
-    fig.suptitle(f'{LOCATION_LABELS[location]} Shortage Magnitude: {dataset_label}',
-                 fontsize=FONTSIZE_LARGE, y=0.995)
-    plt.tight_layout()
-
-    if fname is None:
-        fname = (f"{FIG_OUTPUT_DIR}/"
-                 f"shortage_magnitude_{location}_{dataset_id}.png")
-    plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"  Saved: {fname}")
-    plt.close()
 
 
 # ============================================================================
@@ -408,10 +242,22 @@ def main():
             print(f"  No {loc_label} shortages found — skipping.")
             continue
 
-        print_summary_statistics(stats_df, dataset_id, location)
-        plot_shortage_by_zone_summary(stats_df, dataset_id, location)
+        print_summary_statistics(stats_df, dataset_id, loc_label)
+        plot_shortage_by_zone_summary(
+            stats_df, dataset_id,
+            title_label=loc_label,
+            zone_definitions=ZONE_DEFINITIONS,
+            zones_to_plot=ZONES_TO_PLOT,
+            fig_output_dir=FIG_OUTPUT_DIR,
+        )
         plot_shortage_magnitude_distributions(
-            all_shortages, dataset_id, location
+            all_shortages, dataset_id,
+            shortage_col=location,
+            title_label=loc_label,
+            zone_definitions=ZONE_DEFINITIONS,
+            zones_to_plot=ZONES_TO_PLOT,
+            zone_col='zone',
+            fig_output_dir=FIG_OUTPUT_DIR,
         )
 
         # Save CSV summary

@@ -15,6 +15,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
+from methods.water_year import vectorized_water_year
 from methods.metrics.shortfall import (
     add_trenton_equiv_flow,
     get_flow_and_target_values,
@@ -31,34 +32,6 @@ from methods.config import (
     PERFORMANCE_METRICS_DIR,
 )
 from methods.ensemble_utils import get_ensemble_set_spec
-
-
-def assign_water_year(index):
-    """
-    Assign water year labels to a datetime index.
-
-    Water year starts June 1. Dates June 1 - Dec 31 belong to that calendar
-    year's water year; dates Jan 1 - May 31 belong to the previous year's.
-
-    Example: WY2030 = June 1 2030 through May 31 2031.
-    """
-    return np.where(index.month >= 6, index.year, index.year - 1)
-
-
-def _max_consec_in_mask(series, mask):
-    """
-    Find longest consecutive run of True values in *series* within days
-    where *mask* is True.
-
-    If mask has no True values, returns 0.
-    """
-    if not mask.any():
-        return 0
-    masked = series[mask]
-    if not masked.any():
-        return 0
-    groups = (masked != masked.shift()).cumsum()
-    return int(masked.groupby(groups).sum().max())
 
 
 def _build_drought_day_mask(index, drought_events_df, realization_id):
@@ -315,7 +288,7 @@ def calculate_annual_metrics(data, dataset_id, realizations, drought_events_df):
             nyc_zone_level = nyc_zone_level.reindex(common_idx, fill_value=3)
 
         # Assign water years
-        wy_labels = assign_water_year(common_idx)
+        wy_labels = vectorized_water_year(common_idx)
 
         # Build drought day mask for this realization
         drought_mask_full = _build_drought_day_mask(common_idx, drought_events_df, r)
@@ -454,34 +427,6 @@ def calculate_hashimoto_all(data, dataset_id, realizations):
           f"{len(hashimoto_events_df)} shortage events")
 
     return hashimoto_metrics_df, hashimoto_events_df
-
-
-def classify_years_by_max_zone(res_level_df):
-    """
-    Classify each year by the maximum drought zone reached.
-
-    Parameters
-    ----------
-    res_level_df : pd.DataFrame
-        Reservoir level DataFrame with 'nyc' column and datetime index
-
-    Returns
-    -------
-    year_classifications : dict
-        Dictionary mapping year -> {'max_zone': int, 'max_zone_date': pd.Timestamp}
-    """
-    nyc = res_level_df['nyc']
-    years = nyc.index.year
-
-    # Vectorized: find max zone per year and its first occurrence date
-    max_zone_per_year = nyc.groupby(years).max()
-    max_zone_date_per_year = nyc.groupby(years).idxmax()
-
-    return {
-        year: {'max_zone': max_zone_per_year[year],
-               'max_zone_date': max_zone_date_per_year[year]}
-        for year in max_zone_per_year.index
-    }
 
 
 def _contribution_metrics_for_realization(args):
@@ -744,150 +689,5 @@ def calculate_and_save_zone_duration_events(data, dataset_id, realizations, outp
     print(f"  Saved: {fname} ({len(events_df)} episodes across {len(realizations)} realizations)")
 
     return events_df
-
-
-
-
-def _compute_shortage(data, dataset_id):
-    """Compute shortage from major_flow and mrf_target, matching MPI postprocessing logic."""
-    realizations = sorted(data.major_flow[dataset_id].keys())
-    nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
-
-    shortage_dict = {}
-    for r in realizations:
-        node_shortages = {}
-        for node in nodes:
-            flow_series, target_series = get_flow_and_target_values(
-                data, node, dataset_id, r, start_date=None, end_date=None
-            )
-            node_shortages[node] = calculate_shortage_series(target_series, flow_series)
-
-        shortage_dict[r] = pd.DataFrame(node_shortages)
-
-    data.shortage = {dataset_id: shortage_dict}
-
-
-def _compute_contribution(data, dataset_id):
-    """Compute NYC contribution to downstream targets from nyc_release_components."""
-    realizations = sorted(data.nyc_release_components[dataset_id].keys())
-    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-    contribution_columns = [f'mrf_montagueTrenton_{res}' for res in nyc_reservoirs]
-
-    contribution_dict = {}
-    for r in realizations:
-        release_components = data.nyc_release_components[dataset_id][r]
-        total_nyc_contribution = release_components.loc[:, contribution_columns].sum(axis=1)
-        contribution_dict[r] = total_nyc_contribution.to_frame(name='mrf_montagueTrenton_nyc')
-
-    data.contribution = {dataset_id: contribution_dict}
-
-
-def _load_gage_flow(data, dataset_id):
-    """Load gage flow from hydrologic model flow files and combine with global realization IDs."""
-    from methods.load import load_gage_flow_data
-    data.gage_flow = {dataset_id: load_gage_flow_data(dataset_id)}
-
-
-def combine_ensemble_sets(dataset_id, recombine=True):
-    """
-    Load and combine all ensemble sets into a single unified dataset.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    recombine : bool
-        If True, reload from individual ensemble sets.
-        If False, try to load pre-combined file.
-
-    Returns
-    -------
-    data : pywrdrb.Data
-        Combined data object with all realizations
-    """
-    fname_combined = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-
-    # Check if combined file exists and we don't need to recombine
-    if not recombine and os.path.exists(fname_combined):
-        print(f"  Loading pre-combined data from {fname_combined}")
-        data = pywrdrb.Data()
-        data.load_from_export(fname_combined)
-        return data
-
-    print(f"  Combining {N_ENSEMBLE_SETS} ensemble sets...")
-
-    # Load data from all ensemble sets
-    data = pywrdrb.Data()
-
-    # Results to load from raw pywrdrb output files
-    # Note: shortage and contribution are computed after loading (not in raw output)
-    results_sets = [
-        'major_flow', 'mrf_target', 'res_storage', 'res_release',
-        'inflow', 'ibt_diversions', 'ibt_demands',
-        'nyc_release_components', 'res_level',
-    ]
-
-    for results_set in results_sets:
-        print(f"    Loading {results_set}...")
-
-        full_results_set_dict = {}
-        full_results_set_dict[dataset_id] = {}
-
-        for i in range(N_ENSEMBLE_SETS):
-            set_spec = get_ensemble_set_spec(i, dataset_id)
-
-            if not os.path.exists(set_spec.output_file):
-                raise FileNotFoundError(
-                    f"Output file not found for set {i}: {set_spec.output_file}"
-                )
-
-            # Load this ensemble set (raw pywrdrb output format)
-            temp_data = pywrdrb.Data()
-            temp_data.load_output(
-                output_filenames=[set_spec.output_file],
-                results_sets=[results_set],
-            )
-
-            # Extract data using filename stem as key
-            file_label = os.path.splitext(os.path.basename(set_spec.output_file))[0]
-            set_data = getattr(temp_data, results_set)[file_label]
-
-            # Get local realization IDs for this set
-            local_ids = sorted(set_data.keys())
-            min_local_id = min(local_ids)
-
-            # Renumber to global IDs and combine
-            combined_data = full_results_set_dict[dataset_id]
-            for local_id, df in set_data.items():
-                # Calculate global realization ID
-                local_id_normalized = local_id - min_local_id
-                global_id = i * N_REALIZATIONS_PER_ENSEMBLE_SET + local_id_normalized
-                combined_data[global_id] = df
-
-        # Store combined data back
-        full_results_set_dict[dataset_id] = combined_data
-        setattr(data, results_set, full_results_set_dict)
-
-    # Add Trenton equivalent flow AFTER combining datasets
-    data = add_trenton_equiv_flow(data)
-
-    # Add NYC aggregate inflow column (matching MPI postprocessing logic)
-    nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
-    for r, df in data.inflow[dataset_id].items():
-        df['nyc'] = df[nyc_reservoirs].sum(axis=1)
-
-    # Compute shortage and contribution from loaded data
-    print("    Computing shortage...")
-    _compute_shortage(data, dataset_id)
-    print("    Computing contribution...")
-    _compute_contribution(data, dataset_id)
-
-    # Load gage_flow from hydrologic model flow files (input data, not simulation output)
-    print("    Loading gage_flow...")
-    _load_gage_flow(data, dataset_id)
-
-    print("  Data loading complete")
-
-    return data
 
 

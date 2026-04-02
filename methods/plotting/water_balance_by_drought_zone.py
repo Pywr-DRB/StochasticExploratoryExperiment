@@ -46,6 +46,7 @@ import pywrdrb
 from methods.config import *
 from methods.plotting.styles import DPI_HIGH
 from methods.config import NYC_TOTAL_CAPACITY, WRF1960s_OUTPUT_FNAME
+from methods.contribution import classify_years_by_max_zone
 
 # Output directory
 FIG_DIR_DROUGHT_ZONE = f"{FIG_DIR}/water_balance_by_drought_zone"
@@ -134,44 +135,6 @@ def compute_kde_on_grid(data, x_grid, bw_method='scott'):
         return np.zeros_like(x_grid)
     kde = gaussian_kde(data, bw_method=bw_method)
     return kde(x_grid)
-
-
-def classify_years_by_max_zone(res_level_df):
-    """
-    Classify each year by the minimum drought zone reached.
-
-    Parameters
-    ----------
-    res_level_df : pd.DataFrame
-        Reservoir level DataFrame with 'nyc' column and datetime index
-
-    Returns
-    -------
-    year_classifications : dict
-        Dictionary mapping year -> (max_zone, max_zone_date)
-    """
-    # Add year column
-    df = res_level_df.copy()
-    df['year'] = df.index.year
-
-    year_classifications = {}
-
-    for year in df['year'].unique():
-        year_data = df[df['year'] == year]
-
-        # Find maximum zone value (higher zone = more severe drought)
-        # Zone 6 is most severe drought, Zone 1 is flood
-        max_zone = year_data['nyc'].max()
-
-        # Find date when maximum zone occurred
-        max_zone_date = year_data[year_data['nyc'] == max_zone].index[0]
-
-        year_classifications[year] = {
-            'max_zone': max_zone,
-            'max_zone_date': max_zone_date
-        }
-
-    return year_classifications
 
 
 def calculate_n_month_aggregates(year_classifications, inflow_series, contribution_series):

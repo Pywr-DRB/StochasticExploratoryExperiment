@@ -28,7 +28,8 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import FIG_DIR, EVENT_METRICS_DIR
+from methods.config import FIG_DIR
+from methods.load import load_event_metrics
 from methods.plotting.styles import (
     DATASET_LABELS, DATASET_COLORS,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
@@ -49,14 +50,7 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 # ── data loading ─────────────────────────────────────────────────────
 
 def load_events(dataset_id, ssi_window):
-    df = pd.read_csv(
-        f'{EVENT_METRICS_DIR}/'
-        f'{dataset_id}_ssi{ssi_window}_event_metrics.csv'
-    )
-    df = df[df['duration_days'] >= MIN_DURATION].copy()
-    df['severity'] = df['severity'].abs()
-    df['magnitude'] = df['magnitude'].abs()
-    return df
+    return load_event_metrics(dataset_id, ssi_window, min_duration=MIN_DURATION)
 
 
 # ── bin statistics ───────────────────────────────────────────────────
