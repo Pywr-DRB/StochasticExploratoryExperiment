@@ -9,9 +9,8 @@ from methods.water_year import count_water_years
 
 # =============================================================================
 # CONFIGURATION NAME — determines output directory
-# Override via environment: CONFIG_NAME=regression_disagg python 03_run_...
 # =============================================================================
-CONFIG_NAME = os.environ.get("CONFIG_NAME", "reference")
+CONFIG_NAME = "perf_foresight_baseline"
 
 # =============================================================================
 # ENSEMBLE CONFIGURATION
@@ -31,7 +30,7 @@ N_PYWRDRB_BATCHES_PER_SET = N_REALIZATIONS_PER_ENSEMBLE_SET // N_REALIZATIONS_PE
 
 # Temporal configuration
 START_DATE = '2030-01-01'
-END_DATE = '2099-12-31'
+END_DATE = '2100-12-31'
 
 N_YEARS = count_water_years(START_DATE, END_DATE)
 
