@@ -47,7 +47,7 @@ S5=$(sbatch --parsable --dependency=afterok:$S4 S5_calculate_performance_metrics
 echo "S5 performance metrics:      job $S5 (after S4)"
 
 
-S5_DEP=$(IFS=:; echo "${S5_IDS[*]}")
+S5_DEP=$S5
 
 # --- S6 & S7: Figures (parallel, after all S5 jobs) ---
 S6=$(sbatch --parsable --dependency=afterok:$S5_DEP S6_run_figure_generation.sh)
@@ -61,4 +61,4 @@ echo "============================================================"
 echo "ALL JOBS SUBMITTED"
 echo "============================================================"
 echo "Monitor with: squeue -u \$USER"
-echo "Cancel all:   scancel $S0 $S1 $S2 $S3 ${S4_IDS[*]} ${S5_IDS[*]} $S6 $S7"
+echo "Cancel all:   scancel $S0 $S1 $S2 $S3 $S4 $S5 $S6 $S7"

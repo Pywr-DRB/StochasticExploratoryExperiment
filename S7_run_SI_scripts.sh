@@ -6,143 +6,81 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=48:00:00
 
-
 # Load modules and environment
 module load python/3.11.5
 source venv/bin/activate
-np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # Configuration name (determines output directory)
 export CONFIG_NAME=${CONFIG_NAME:-default}
 
-# make directories
 mkdir -p logs
 
-# Workflow flags
-PLOT_ENSEMBLE_DIAGNOSTICS=${PLOT_ENSEMBLE_DIAGNOSTICS:-false}
-PLOT_SHORTAGE_OCCURRENCE=${PLOT_SHORTAGE_OCCURRENCE:-false}
-PLOT_DIVERSION_DIAGNOSTICS=${PLOT_DIVERSION_DIAGNOSTICS:-false}
-PLOT_STORAGE_ZONE_PROBABILITIES=${PLOT_STORAGE_ZONE_PROBABILITIES:-false}
-PLOT_NYC_DIVERSION_BY_ZONE=${PLOT_NYC_DIVERSION_BY_ZONE:-false}
-PLOT_CONTRIBUTION_TIMESERIES=${PLOT_CONTRIBUTION_TIMESERIES:-false}
-PLOT_DROUGHT_SATISFICING=${PLOT_DROUGHT_SATISFICING:-false}
-PLOT_STORAGE_EXCEEDANCE=${PLOT_STORAGE_EXCEEDANCE:-false}
-PLOT_METRIC_DISTRIBUTIONS=${PLOT_METRIC_DISTRIBUTIONS:-false}
-PLOT_SHORTAGE_BY_ZONE=${PLOT_SHORTAGE_BY_ZONE:-false}
-PLOT_DROUGHT_HEATMAP=${PLOT_DROUGHT_HEATMAP:-true}
-PLOT_LOWER_BASIN_STORAGE=${PLOT_LOWER_BASIN_STORAGE:-false}
-
+run() {
+    echo "========================================"
+    echo "Running: $*"
+    echo "========================================"
+    python3 "$@"
+    if [ $? -ne 0 ]; then
+        echo "ERROR: $* failed"
+        exit 1
+    fi
+}
 
 ### SI0: Detailed stationary ensemble diagnostics
-if [ "$PLOT_ENSEMBLE_DIAGNOSTICS" = true ]; then
-    echo "========================================"
-    echo "SI0: Generating ensemble diagnostics..."
-    echo "========================================"
-    python3 si_scripts/SI0_full_ensemble_diagnostics.py stationary_ensemble
-fi
-
+run si_scripts/SI0_full_ensemble_diagnostics.py stationary_ensemble
 
 ### SI1: NYC, Montague, Trenton shortage occurrence by day of year
-if [ "$PLOT_SHORTAGE_OCCURRENCE" = true ]; then
-    echo "========================================"
-    echo "SI1: Generating shortage occurrence by day figures..."
-    echo "========================================"
-    python3 si_scripts/SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
-fi
-
+run si_scripts/SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
 
 ### SI2: Diversion diagnostics/distributions
-if [ "$PLOT_DIVERSION_DIAGNOSTICS" = true ]; then
-    echo "========================================"
-    echo "SI2: Generating diversion diagnostics figures..."
-    echo "========================================"
-    python3 si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
-    python3 si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
-    python3 si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
-fi
-
+run si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
 ### SI3 + SI4: Storage zone probabilities (calculate and plot)
-if [ "$PLOT_STORAGE_ZONE_PROBABILITIES" = true ]; then
-    echo "========================================"
-    echo "SI3-SI4: Calculating and plotting storage zone probabilities..."
-    echo "========================================"
-    python3 si_scripts/SI3_calculate_storage_zone_probabilities.py --all
-    python3 si_scripts/SI4_plot_reservoir_storage_zone_probabilities.py comparison
-fi
-
+run si_scripts/SI3_calculate_storage_zone_probabilities.py --all
+run si_scripts/SI4_plot_reservoir_storage_zone_probabilities.py comparison
 
 ### SI5: NYC diversions relative to storage zone classification
-if [ "$PLOT_NYC_DIVERSION_BY_ZONE" = true ]; then
-    echo "========================================"
-    echo "SI5: Generating NYC diversion shortage by zone figures..."
-    echo "========================================"
-    python3 si_scripts/SI5_plot_shortages_by_zone.py stationary_ensemble
-fi
-
+run si_scripts/SI5_plot_shortages_by_zone.py stationary_ensemble
 
 ### SI6: Contribution ratio for years with storage < 20%
-if [ "$PLOT_CONTRIBUTION_TIMESERIES" = true ]; then
-    echo "========================================"
-    echo "SI6: Generating contribution storage timeseries figures..."
-    echo "========================================"
-    python3 si_scripts/SI6_plot_contribution_storage_timeseries.py --multipanel
-fi
-
+run si_scripts/SI6_plot_contribution_storage_timeseries.py --multipanel
 
 ### SI7: Drought event scatter colored by satisficing outcomes
-if [ "$PLOT_DROUGHT_SATISFICING" = true ]; then
-    echo "========================================"
-    echo "SI7: Generating drought satisficing scatter figures..."
-    echo "========================================"
-    python3 si_scripts/SI7_plot_drought_satisficing_scatter.py 3
-    python3 si_scripts/SI7_plot_drought_satisficing_scatter.py 6
-    python3 si_scripts/SI7_plot_drought_satisficing_scatter.py 12
-fi
-
+run si_scripts/SI7_plot_drought_satisficing_scatter.py 3
+run si_scripts/SI7_plot_drought_satisficing_scatter.py 6
+run si_scripts/SI7_plot_drought_satisficing_scatter.py 12
 
 ### SI8: Rank contributions and storage for percentile-based realizations
-if [ "$PLOT_STORAGE_EXCEEDANCE" = true ]; then
-    echo "========================================"
-    echo "SI8: Generating storage/Montague exceedance figures..."
-    echo "========================================"
-    python3 si_scripts/SI8_plot_storage_montague_exceedance.py 0.5
-    python3 si_scripts/SI8_plot_storage_montague_exceedance.py 0.1
-fi
-
+run si_scripts/SI8_plot_storage_montague_exceedance.py 0.5
+run si_scripts/SI8_plot_storage_montague_exceedance.py 0.1
 
 ### SI9: All performance metrics as CDFs
-if [ "$PLOT_METRIC_DISTRIBUTIONS" = true ]; then
-    echo "========================================"
-    echo "SI9: Generating metric distribution figures..."
-    echo "========================================"
-    python3 si_scripts/SI9_plot_metric_distributions.py
-fi
-
+run si_scripts/SI9_plot_metric_distributions.py
 
 ### SI10: Montague/Trenton shortage by NYC storage zone
-if [ "$PLOT_SHORTAGE_BY_ZONE" = true ]; then
-    echo "========================================"
-    echo "SI10: Generating Montague/Trenton shortage by zone figures..."
-    echo "========================================"
-    python3 si_scripts/SI10_plot_montague_trenton_shortage_by_zone.py stationary_ensemble
-fi
-
+run si_scripts/SI10_plot_montague_trenton_shortage_by_zone.py stationary_ensemble
 
 ### SI11: Lower basin reservoir storage
-if [ "$PLOT_LOWER_BASIN_STORAGE" = true ]; then
-    echo "========================================"
-    echo "SI11: Generating lower basin reservoir storage figures..."
-    echo "========================================"
-    python3 si_scripts/SI11_plot_lower_basin_reservoir_storage.py
-fi
+run si_scripts/SI11_plot_lower_basin_reservoir_storage.py
 
+### SI12: Drought duration vs magnitude scatter
+run si_scripts/SI12_duration_magnitude_scatter.py
 
 ### SI13: Drought outcome heatmaps (severity x magnitude)
-if [ "$PLOT_DROUGHT_HEATMAP" = true ]; then
-    echo "========================================"
-    echo "SI13: Generating drought outcome heatmap figures..."
-    echo "========================================"
-    python3 si_scripts/SI13_plot_drought_heatmap_with_storage_outcomes.py 3
-fi
+run si_scripts/SI13_plot_drought_heatmap_with_storage_outcomes.py 3
 
+### SI14: Drought magnitude vs minimum storage
+run si_scripts/SI14_plot_drought_storage_3d_scatter.py 3
+
+### SI15: SSI window drought emergency capture rate
+run si_scripts/SI15_plot_ssi_window_emergency_capture.py
+
+### SI16: Performance outcomes (exceedance curves, ridgelines, quantile strips)
+run si_scripts/SI16_plot_performance_outcomes.py
+
+echo ""
+echo "========================================"
+echo "All SI scripts completed successfully."
+echo "========================================"
