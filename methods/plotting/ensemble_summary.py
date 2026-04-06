@@ -524,22 +524,21 @@ def plot_weekly_streamflow_percentiles(
 def _compute_weekly_pvalues(
     hist_agg: pd.Series,
     syn_agg: dict,
-    rng: np.random.Generator = None,
+    significance_threshold: float = 0.05,
 ) -> tuple:
     """
-    Compute Wilcoxon rank-sum and Levene p-values for each of 52 weeks.
+    Compute per-realization Wilcoxon and Levene pass fractions for each of 52 weeks.
 
-    The synthetic pool is subsampled (without replacement) to match the
-    historic sample size for each week, preventing the large ensemble from
-    inflating test power and producing spuriously low p-values.
+    For each week, each realization is tested independently against the full
+    historic record.  The returned arrays contain the *fraction of realizations*
+    whose p-value exceeds ``significance_threshold`` — i.e. values close to 1.0
+    indicate that nearly all realizations are statistically indistinguishable
+    from the historic for that week.
 
     Returns
     -------
-    wilcoxon_pvals, levene_pvals : np.ndarray of shape (52,)
+    wilcoxon_pass_frac, levene_pass_frac : np.ndarray of shape (52,)
     """
-    if rng is None:
-        rng = np.random.default_rng(42)
-
     n_weeks = 52
     weeks = np.arange(1, n_weeks + 1)
 
@@ -547,36 +546,53 @@ def _compute_weekly_pvalues(
     hist_week_nums = Q_hist_weekly.index.isocalendar().week.values.astype(int)
     hist_vals_arr = Q_hist_weekly.values
 
-    syn_weekly_by_week = {w: [] for w in range(1, n_weeks + 1)}
+    # Pre-compute weekly values per realization
+    syn_by_real_week = {}
     for real_id, flow_series in syn_agg.items():
         weekly = flow_series.resample('W').mean()
         w_arr = weekly.index.isocalendar().week.values.astype(int)
         v_arr = weekly.values
+        real_weeks = {}
         for w in weeks:
             vals = v_arr[w_arr == w]
             vals = vals[~np.isnan(vals)]
-            if len(vals) > 0:
-                syn_weekly_by_week[w].extend(vals.tolist())
+            real_weeks[w] = vals
+        syn_by_real_week[real_id] = real_weeks
 
-    wilcoxon_pvals = np.full(n_weeks, np.nan)
-    levene_pvals = np.full(n_weeks, np.nan)
+    realization_ids = list(syn_by_real_week.keys())
+    n_real = len(realization_ids)
+
+    wilcoxon_pass_frac = np.full(n_weeks, np.nan)
+    levene_pass_frac = np.full(n_weeks, np.nan)
 
     for w in weeks:
-        try:
-            h_vals = hist_vals_arr[hist_week_nums == w]
-            h_valid = h_vals[~np.isnan(h_vals)]
-            s_valid = np.array(syn_weekly_by_week[w])
-            s_valid = s_valid[~np.isnan(s_valid)]
-            if len(h_valid) > 1 and len(s_valid) > 1:
-                # Subsample synthetic pool to match historic sample size
-                n = min(len(h_valid), len(s_valid))
-                s_sample = rng.choice(s_valid, size=n, replace=False)
-                wilcoxon_pvals[w - 1] = ranksums(h_valid, s_sample)[1]
-                levene_pvals[w - 1] = levene(h_valid, s_sample)[1]
-        except Exception:
-            pass
+        h_valid = hist_vals_arr[hist_week_nums == w]
+        h_valid = h_valid[~np.isnan(h_valid)]
+        if len(h_valid) < 2:
+            continue
 
-    return wilcoxon_pvals, levene_pvals
+        wilcoxon_passes = 0
+        levene_passes = 0
+        n_tested = 0
+
+        for real_id in realization_ids:
+            s_valid = syn_by_real_week[real_id][w]
+            if len(s_valid) < 2:
+                continue
+            try:
+                if ranksums(h_valid, s_valid)[1] > significance_threshold:
+                    wilcoxon_passes += 1
+                if levene(h_valid, s_valid)[1] > significance_threshold:
+                    levene_passes += 1
+                n_tested += 1
+            except Exception:
+                pass
+
+        if n_tested > 0:
+            wilcoxon_pass_frac[w - 1] = wilcoxon_passes / n_tested
+            levene_pass_frac[w - 1] = levene_passes / n_tested
+
+    return wilcoxon_pass_frac, levene_pass_frac
 
 
 def plot_pvalue_comparison(
@@ -588,13 +604,20 @@ def plot_pvalue_comparison(
     ylabel: str = None,
     xlabel: str = None,
     significance_threshold: float = 0.05,
+    pass_threshold: float = 0.9,
     show_xticklabels: bool = True,
     show_legend: bool = False,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
     """
-    Plot Wilcoxon rank-sum or Levene p-values comparing historic vs synthetic by week.
+    Plot per-realization Wilcoxon or Levene pass fraction by week.
+
+    Each bar shows the fraction of realizations whose p-value vs the historic
+    record exceeds ``significance_threshold`` (default 0.05).  Values near 1.0
+    indicate most realizations are statistically indistinguishable from the
+    historic for that week.  A reference line is drawn at ``pass_threshold``
+    (default 0.9).
 
     Parameters
     ----------
@@ -611,11 +634,13 @@ def plot_pvalue_comparison(
     ylabel, xlabel : str, optional
         Axis labels. Auto-set from `which` if None.
     significance_threshold : float
-        Threshold for significance line (default 0.05)
+        p-value cutoff for pass/fail per realization (default 0.05).
+    pass_threshold : float
+        Reference line for fraction-passing (default 0.9).
     show_xticklabels : bool
-        Whether to show x-axis tick labels (suppress on upper of stacked panels).
+        Whether to show x-axis tick labels.
     show_legend : bool
-        Whether to show legend
+        Whether to show legend.
     _hist_agg : pd.Series, optional
         Pre-aggregated historic flow.
     _syn_agg : dict, optional
@@ -633,23 +658,25 @@ def plot_pvalue_comparison(
     if _syn_agg is None:
         _syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    wilcoxon_pvals, levene_pvals = _compute_weekly_pvalues(_hist_agg, _syn_agg)
+    wilcoxon_pass_frac, levene_pass_frac = _compute_weekly_pvalues(
+        _hist_agg, _syn_agg, significance_threshold=significance_threshold,
+    )
 
-    pvals = wilcoxon_pvals if which == 'wilcoxon' else levene_pvals
+    pass_frac = wilcoxon_pass_frac if which == 'wilcoxon' else levene_pass_frac
 
     if ylabel is None:
-        ylabel = 'Wilcoxon\np-value' if which == 'wilcoxon' else "Levene\np-value"
+        ylabel = 'Wilcoxon\nfrac. pass' if which == 'wilcoxon' else 'Levene\nfrac. pass'
     if xlabel is None:
         xlabel = 'Week of Year' if show_xticklabels else ''
 
     weeks = np.arange(1, 53)
     bar_width = 0.75
 
-    ax.bar(weeks, pvals, bar_width, align='edge',
+    ax.bar(weeks, pass_frac, bar_width, align='edge',
            facecolor='white', edgecolor='black', linewidth=0.5)
 
-    ax.axhline(significance_threshold, color='k', linewidth=1, linestyle='--',
-               label=f'p={significance_threshold}')
+    ax.axhline(pass_threshold, color='k', linewidth=1, linestyle='--',
+               label=f'{int(pass_threshold * 100)}% pass')
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
