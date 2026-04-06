@@ -104,7 +104,7 @@ def plot_panel_A_zone_probability(ax):
                 linewidth=2.5, linestyle='-', alpha=0.90, zorder=3)
 
     # Axis formatting
-    ax.set_ylabel('Probability NYC Reservoirs are Within\nDrought Watch, Warning or Emergency Zones (%)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Probability NYC Reservoirs are Within\nDrought Watch, Warning or Emergency Zones (%)', fontsize=FONTSIZE_LABEL, labelpad=10)
     ax.set_ylim(0, None)
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
@@ -145,12 +145,6 @@ def add_combined_legend(fig, show_historic=False):
                   edgecolor='black', linewidth=1.2,
                   label=DATASET_LABELS[dataset_id]))
 
-    # Mean marker
-    legend_elements.append(
-        Line2D([0], [0], color='gray', marker='o', linestyle='None',
-               markersize=6, markeredgecolor='white',
-               markeredgewidth=0.8, label='Mean'))
-
     # Historic marker
     if show_historic:
         legend_elements.append(
@@ -160,7 +154,7 @@ def add_combined_legend(fig, show_historic=False):
     fig.legend(handles=legend_elements, loc='lower center',
                ncol=4, fontsize=FONTSIZE_SMALL,
                frameon=False,
-               bbox_to_anchor=(0.5, -0.04))
+               bbox_to_anchor=(0.5, 0.04))
 
 
 # ============================================================================
@@ -183,7 +177,7 @@ def create_figure(show_historic=False):
         height_ratios=[1, 1],
         width_ratios=[1.5, 1],
         hspace=0.25, wspace=0.35,
-        left=0.10, right=0.95, top=0.92, bottom=0.18,
+        left=0.10, right=0.95, top=0.92, bottom=0.22,
     )
 
     ax_A = fig.add_subplot(gs[0:2, 0])    # Zone prob spans left column
@@ -203,7 +197,7 @@ def create_figure(show_historic=False):
     ax_B2.set_xlabel('NYC Reservoir Storage Zone', fontsize=FONTSIZE_LABEL)
 
     # Align y-axis labels for right-side panels
-    label_x = -0.2
+    label_x = -0.14
     for ax in [ax_B1, ax_B2]:
         ax.yaxis.set_label_coords(label_x, 0.5)
 

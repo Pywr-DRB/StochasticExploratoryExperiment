@@ -6,14 +6,13 @@ scenarios, with consistent styling and formatting.
 """
 
 import os
-import numpy as np
 import pandas as pd
 
 from methods.load import load_annual_metrics
 from methods.config import N_YEARS, RECONSTRUCTION_N_YEARS, PERFORMANCE_METRICS_DIR
 from methods.plotting.styles import (
     DATASET_COLORS,
-    FONTSIZE_SMALL, FONTSIZE_LABEL,
+    FONTSIZE_LABEL,
     label_panel,
 )
 
@@ -21,7 +20,7 @@ from methods.plotting.styles import (
 DEFAULT_SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
 
-def style_boxplot(bp, colors_all, data_all, ax):
+def style_boxplot(bp, colors_all):
     """
     Style boxplot elements: color whiskers/caps/fliers by dataset,
     keep medians black, and add circle markers for means.
@@ -43,14 +42,6 @@ def style_boxplot(bp, colors_all, data_all, ax):
         bp['fliers'][i].set_markeredgecolor(color)
         bp['fliers'][i].set_markerfacecolor(color)
         bp['fliers'][i].set_alpha(0.5)
-
-        # Mean circle marker
-        vals = data_all[i]
-        if len(vals) > 0:
-            mean_val = np.mean(vals)
-            ax.scatter(bp['medians'][i].get_xdata().mean(), mean_val,
-                       marker='o', s=25, color=color, edgecolors='white',
-                       linewidths=0.8, zorder=10)
 
 
 def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
@@ -124,13 +115,13 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
                     medianprops=dict(linewidth=1.5, color='black'),
                     flierprops=dict(marker='o', markersize=3))
 
-    style_boxplot(bp, colors_all, data_all, ax)
+    style_boxplot(bp, colors_all)
 
     # Format axes
     ax.set_xticks(range(n_zones))
-    ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_SMALL)
+    ax.set_xticklabels(zone_labels, fontsize=FONTSIZE_LABEL)
     ax.tick_params(axis='x', length=0)
-    ax.set_ylabel(f'Number of Realization Years\nZone Experienced (out of {N_YEARS})', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel(f'No. of Realization Years\nZone Experienced\n(out of {N_YEARS})', fontsize=FONTSIZE_LABEL)
     ax.set_xlim(-0.5, n_zones - 0.5)
     ax.set_ylim(bottom=0)
     ax.grid(False)
@@ -251,7 +242,7 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
                     medianprops=dict(linewidth=1.5, color='black'),
                     flierprops=dict(marker='o', markersize=3))
 
-    style_boxplot(bp, colors_all, data_all, ax)
+    style_boxplot(bp, colors_all)
 
     # Historic markers
     if show_historic:
@@ -267,9 +258,9 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
 
     # Format axes
     ax.set_xticks(range(n_zones))
-    ax.set_xticklabels([zone_labels_map[z] for z in zone_order], fontsize=FONTSIZE_SMALL)
+    ax.set_xticklabels([zone_labels_map[z] for z in zone_order], fontsize=FONTSIZE_LABEL)
     ax.tick_params(axis='x', length=0)
-    ax.set_ylabel('Time Spent in Zone\nBefore Recovery (months)', fontsize=FONTSIZE_LABEL)
+    ax.set_ylabel('Time Spent in Zone\nBefore Recovery\n(months)', fontsize=FONTSIZE_LABEL)
     ax.set_xlim(-0.5, n_zones - 0.5)
     ax.set_ylim(bottom=0, top=24)
     ax.grid(False)

@@ -44,6 +44,13 @@ METRIC_AXIS_LABELS = {
     'duration': 'Duration (months)',
 }
 
+# Multiline x-axis labels for the right-panel (CDF) bottom row
+METRIC_CDF_AXIS_LABELS = {
+    'severity': 'Severity\n(max deficit)',
+    'magnitude': 'Magnitude\n(cumulative deficit)',
+    'duration': 'Duration\n(months)',
+}
+
 PANEL_LETTERS = list('abcdefghij')
 
 # Number of years for exceedance rate normalization (from config)
@@ -238,7 +245,7 @@ def plot_drought_manuscript_figure(
     n_cols = len(cdf_metrics)
 
     if figsize is None:
-        figsize = (11.5, 9) 
+        figsize = (11.5, 8) 
     
     # ------------------------------------------------------------------
     # Load data
@@ -265,7 +272,7 @@ def plot_drought_manuscript_figure(
         2, 2,
         width_ratios=[1.3, 1.0],
         height_ratios=[1, 0.04],
-        hspace=0.55, wspace=0.35,
+        hspace=0.25, wspace=0.35,
     )
 
     # Top-left: hexbin
@@ -342,8 +349,6 @@ def plot_drought_manuscript_figure(
     ax_hex.set_xlabel(METRIC_AXIS_LABELS[hexbin_x], fontsize=FONTSIZE_MEDIUM)
     ax_hex.set_ylabel(METRIC_AXIS_LABELS[hexbin_y], fontsize=FONTSIZE_MEDIUM)
     ax_hex.tick_params(labelsize=FONTSIZE_SMALL)
-    ax_hex.spines['top'].set_visible(False)
-    ax_hex.spines['right'].set_visible(False)
     ax_hex.text(
         0.03, 0.97, f'({PANEL_LETTERS[0]})',
         transform=ax_hex.transAxes, fontsize=FONTSIZE_MEDIUM,
@@ -496,7 +501,7 @@ def plot_drought_manuscript_figure(
 
             # --- Common formatting ---
             if r == n_rows - 1:
-                ax.set_xlabel(METRIC_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
+                ax.set_xlabel(METRIC_CDF_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
             else:
                 ax.set_xlabel('')
                 ax.set_xticklabels([])
@@ -510,8 +515,6 @@ def plot_drought_manuscript_figure(
             ax.grid(True, which='both', color='gray', alpha=0.15,
                     linewidth=0.5, linestyle='--')
             ax.set_axisbelow(True)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
 
             ax.text(
                 0.03, 0.97, f'({PANEL_LETTERS[panel_idx]})',
@@ -522,7 +525,7 @@ def plot_drought_manuscript_figure(
             # Row label on right side of rightmost column
             if c == n_cols - 1:
                 ax.text(
-                    1.02, 0.5, DATASET_LABELS.get(dataset_id, dataset_id),
+                    1.12, 0.5, DATASET_LABELS.get(dataset_id, dataset_id),
                     transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
                     va='center', ha='left', rotation=-90,
                 )
@@ -591,20 +594,18 @@ def plot_drought_manuscript_figure(
         legend_handles.append((patch_outer, patch_inner, line))
         legend_labels.append(f'{DATASET_LABELS.get(dataset_id, dataset_id)} (1-99th, 25-75th %ile, median)')
     if plot_relative_change:
-        baseline_handle = mlines.Line2D([], [], color='gray', linestyle='--', linewidth=0.8)
-        legend_handles.append(baseline_handle)
-        legend_labels.append('Baseline (stationary median)')
         no_data_handle = mpatches.Patch(facecolor='#d0d0d0', alpha=0.3,
                                          hatch='///', edgecolor='grey', linewidth=0.5)
         legend_handles.append(no_data_handle)
         legend_labels.append('No scenario droughts beyond this value')
 
-    # Place legend in the bottom-right cell
+    # Place legend in the bottom-right cell, shifted down to add whitespace above
     ax_legend.legend(
         handles=legend_handles,
         labels=legend_labels,
-        loc='center',
-        ncol=2,
+        loc='upper center',
+        bbox_to_anchor=(0.5, 1.25),
+        ncol=1,
         frameon=False,
         fontsize=FONTSIZE_SMALL,
         columnspacing=1.0,
@@ -628,7 +629,7 @@ def plot_drought_manuscript_figure(
 
 def main():
     """Generate the F2 manuscript figure."""
-    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 12
+    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     if ssi_window not in SSI_WINDOWS:
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
