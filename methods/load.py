@@ -446,8 +446,6 @@ def load_and_process_historical_models(dataset_id):
     # Load historical model outputs
     output_filenames = [
         RECONSTRUCTION_OUTPUT_FNAME,
-        WRFAORC_OUTPUT_FNAME,
-        WRF1960s_OUTPUT_FNAME
     ]
 
     results_sets = [
@@ -474,7 +472,7 @@ def load_and_process_historical_models(dataset_id):
     data = add_trenton_equiv_flow(data)
 
     # Process historical models
-    historical_models = ['reconstruction', 'wrfaorc_withObsScaled', 'wrf1960s_calib_nlcd2016']
+    historical_models = ['reconstruction']
     nodes = ['delMontague', 'delTrenton', 'nyc', 'nj']
     nyc_reservoirs = ['cannonsville', 'pepacton', 'neversink']
 

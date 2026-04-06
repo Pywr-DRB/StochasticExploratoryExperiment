@@ -99,6 +99,6 @@ def plot_kde_panel(ax, categorized_data, n_months_prior=None, panel_label='a)'):
     ax.set_axisbelow(True)
 
     # Panel label
-    ax.text(-0.05, 1.02, panel_label, transform=ax.transAxes, fontsize=14, va='bottom', ha='right')
+    ax.text(0.02, 0.97, panel_label, transform=ax.transAxes, fontsize=12, va='top', ha='left')
 
     return ax.get_legend_handles_labels()

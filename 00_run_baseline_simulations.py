@@ -14,6 +14,10 @@ comm, rank, size = get_comm()
 model_date_ranges = pywrdrb.utils.dates.model_date_ranges
 flowtypes = sys.argv[1:] if len(sys.argv) > 1 else list(model_date_ranges.keys())
 
+# Run only the pub_nhmv10_BC_withObsScaled flow 
+flowtypes = ['pub_nhmv10_BC_withObsScaled']
+
+
 # Split flowtypes among MPI ranks
 rank_flowtypes = flowtypes[rank::size] if rank < len(flowtypes) else []
 

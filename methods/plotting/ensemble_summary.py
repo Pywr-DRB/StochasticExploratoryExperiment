@@ -29,6 +29,9 @@ MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 # Approximate week numbers for start of each month
 MONTH_WEEK_STARTS = [1, 5, 9, 14, 18, 22, 27, 31, 35, 40, 44, 48]
 
+# Unit conversion: 1 MGD = 0.003785411784 MCM/day
+MGD_TO_MCM = 3.785411784e-3
+
 
 def _get_aggregate_flow(df: pd.DataFrame, sites: list = None) -> pd.Series:
     """
@@ -124,7 +127,7 @@ def plot_fdc_percentile_comparison(
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
-    ylabel: str = 'Streamflow (MGD)',
+    ylabel: str = 'Streamflow (MCM/day)',
     xlabel: str = 'Exceedance Probability',
     percentiles: tuple = (5, 95),
     show_legend: bool = False,
@@ -217,9 +220,12 @@ def plot_fdc_percentile_comparison(
             all_syn_fdcs.append(fdcs)
 
     all_syn_fdcs = np.vstack(all_syn_fdcs)
-    syn_median = np.median(all_syn_fdcs, axis=0)
-    syn_p_low = np.percentile(all_syn_fdcs, percentiles[0], axis=0)
-    syn_p_high = np.percentile(all_syn_fdcs, percentiles[1], axis=0)
+    syn_median = np.median(all_syn_fdcs, axis=0) * MGD_TO_MCM
+    syn_p_low = np.percentile(all_syn_fdcs, percentiles[0], axis=0) * MGD_TO_MCM
+    syn_p_high = np.percentile(all_syn_fdcs, percentiles[1], axis=0) * MGD_TO_MCM
+    hist_median = hist_median * MGD_TO_MCM
+    hist_p_low = hist_p_low * MGD_TO_MCM
+    hist_p_high = hist_p_high * MGD_TO_MCM
 
     # Plot synthetic range and median
     ax.fill_between(
@@ -371,7 +377,7 @@ def plot_weekly_streamflow_percentiles(
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
-    ylabel: str = 'Streamflow (MGD)',
+    ylabel: str = 'Streamflow (MCM/day)',
     xlabel: str = 'Week of Year',
     percentiles: tuple = (5, 95),
     show_legend: bool = False,
@@ -469,6 +475,14 @@ def plot_weekly_streamflow_percentiles(
         else:
             syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
 
+    # Convert MGD to MCM/day before plotting
+    syn_p_low   = syn_p_low   * MGD_TO_MCM
+    syn_p_high  = syn_p_high  * MGD_TO_MCM
+    syn_median  = syn_median  * MGD_TO_MCM
+    hist_p_low  = hist_p_low  * MGD_TO_MCM
+    hist_p_high = hist_p_high * MGD_TO_MCM
+    hist_median = hist_median * MGD_TO_MCM
+
     # Plot synthetic range and median
     ax.fill_between(
         weeks, syn_p_low, syn_p_high,
@@ -495,7 +509,7 @@ def plot_weekly_streamflow_percentiles(
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_xlim(1, n_weeks)
+    ax.set_xlim(1, 52.85)
     ax.set_yscale('log')
     ax.set_xticks(MONTH_WEEK_STARTS)
     ax.set_xticklabels(MONTH_LABELS)
@@ -507,22 +521,69 @@ def plot_weekly_streamflow_percentiles(
     return ax
 
 
+def _compute_weekly_pvalues(
+    hist_agg: pd.Series,
+    syn_agg: dict,
+) -> tuple:
+    """
+    Compute Wilcoxon rank-sum and Levene p-values for each of 52 weeks.
+
+    Returns
+    -------
+    wilcoxon_pvals, levene_pvals : np.ndarray of shape (52,)
+    """
+    n_weeks = 52
+    weeks = np.arange(1, n_weeks + 1)
+
+    Q_hist_weekly = hist_agg.resample('W').mean()
+    hist_week_nums = Q_hist_weekly.index.isocalendar().week.values.astype(int)
+    hist_vals_arr = Q_hist_weekly.values
+
+    syn_weekly_by_week = {w: [] for w in range(1, n_weeks + 1)}
+    for real_id, flow_series in syn_agg.items():
+        weekly = flow_series.resample('W').mean()
+        w_arr = weekly.index.isocalendar().week.values.astype(int)
+        v_arr = weekly.values
+        for w in weeks:
+            vals = v_arr[w_arr == w]
+            vals = vals[~np.isnan(vals)]
+            if len(vals) > 0:
+                syn_weekly_by_week[w].extend(vals.tolist())
+
+    wilcoxon_pvals = np.full(n_weeks, np.nan)
+    levene_pvals = np.full(n_weeks, np.nan)
+
+    for w in weeks:
+        try:
+            h_vals = hist_vals_arr[hist_week_nums == w]
+            h_valid = h_vals[~np.isnan(h_vals)]
+            s_valid = np.array(syn_weekly_by_week[w])
+            s_valid = s_valid[~np.isnan(s_valid)]
+            if len(h_valid) > 1 and len(s_valid) > 1:
+                wilcoxon_pvals[w - 1] = ranksums(h_valid, s_valid)[1]
+                levene_pvals[w - 1] = levene(h_valid, s_valid)[1]
+        except Exception:
+            pass
+
+    return wilcoxon_pvals, levene_pvals
+
+
 def plot_pvalue_comparison(
     Q_historic: pd.DataFrame,
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
-    ylabel: str = 'p-value',
-    xlabel: str = 'Month',
+    which: str = 'wilcoxon',
+    ylabel: str = None,
+    xlabel: str = None,
     significance_threshold: float = 0.05,
-    wilcoxon_color: str = '#648FFF',
-    levene_color: str = '#DC267F',
+    show_xticklabels: bool = True,
     show_legend: bool = False,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
     """
-    Plot Levene and Wilcoxon test p-values comparing historic vs synthetic by month.
+    Plot Wilcoxon rank-sum or Levene p-values comparing historic vs synthetic by week.
 
     Parameters
     ----------
@@ -534,14 +595,14 @@ def plot_pvalue_comparison(
         List of sites to aggregate. Defaults to NYC_RESERVOIRS.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on.
-    ylabel, xlabel : str
-        Axis labels
+    which : str
+        Which test to plot: 'wilcoxon' or 'levene'.
+    ylabel, xlabel : str, optional
+        Axis labels. Auto-set from `which` if None.
     significance_threshold : float
         Threshold for significance line (default 0.05)
-    wilcoxon_color : str
-        Color for Wilcoxon test bars
-    levene_color : str
-        Color for Levene test bars
+    show_xticklabels : bool
+        Whether to show x-axis tick labels (suppress on upper of stacked panels).
     show_legend : bool
         Whether to show legend
     _hist_agg : pd.Series, optional
@@ -554,76 +615,40 @@ def plot_pvalue_comparison(
     ax : matplotlib.axes.Axes
     """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 4))
+        fig, ax = plt.subplots(figsize=(10, 2))
 
-    # Use pre-aggregated data if available
     if _hist_agg is None:
         _hist_agg = _get_aggregate_flow(Q_historic, sites)
     if _syn_agg is None:
         _syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    # Process historic data to monthly
-    Q_hist_monthly = _hist_agg.resample('M').mean()
-    H_df = Q_hist_monthly.to_frame(name='flow')
-    H_pivot = H_df.pivot_table(
-        index=H_df.index.year, columns=H_df.index.month, values='flow'
-    )
-    H_pivot = H_pivot.reindex(columns=range(1, 13))
-    H_proc = H_pivot.values
+    wilcoxon_pvals, levene_pvals = _compute_weekly_pvalues(_hist_agg, _syn_agg)
 
-    # Process synthetic data to monthly (vectorized pivot per realization)
-    syn_monthly_list = []
-    for real_id, flow_series in _syn_agg.items():
-        monthly = flow_series.resample('M').mean()
-        monthly_df = monthly.to_frame(name='flow')
-        monthly_pivot = monthly_df.pivot_table(
-            index=monthly_df.index.year, columns=monthly_df.index.month, values='flow'
-        )
-        monthly_pivot = monthly_pivot.reindex(columns=range(1, 13))
-        syn_monthly_list.append(monthly_pivot.values)
+    pvals = wilcoxon_pvals if which == 'wilcoxon' else levene_pvals
 
-    S_proc = np.vstack(syn_monthly_list)
+    if ylabel is None:
+        ylabel = 'Wilcoxon\np-value' if which == 'wilcoxon' else "Levene\np-value"
+    if xlabel is None:
+        xlabel = 'Week of Year' if show_xticklabels else ''
 
-    # Compute p-values for each month
-    n_months = 12
-    wilcoxon_pvals = np.zeros(n_months)
-    levene_pvals = np.zeros(n_months)
+    weeks = np.arange(1, 53)
+    bar_width = 0.75
 
-    for i in range(n_months):
-        try:
-            h_vals = H_proc[:, i]
-            s_vals = S_proc[:, i]
-            h_valid = h_vals[~np.isnan(h_vals)]
-            s_valid = s_vals[~np.isnan(s_vals)]
-
-            if len(h_valid) > 0 and len(s_valid) > 0:
-                wilcoxon_pvals[i] = ranksums(h_valid, s_valid)[1]
-                levene_pvals[i] = levene(h_valid, s_valid)[1]
-            else:
-                wilcoxon_pvals[i] = np.nan
-                levene_pvals[i] = np.nan
-        except Exception:
-            wilcoxon_pvals[i] = np.nan
-            levene_pvals[i] = np.nan
-
-    # Create grouped bar chart
-    months = np.arange(1, 13)
-    bar_width = 0.35
-
-    ax.bar(months - bar_width/2, wilcoxon_pvals, bar_width,
-           label='Wilcoxon', color=wilcoxon_color, edgecolor='k')
-    ax.bar(months + bar_width/2, levene_pvals, bar_width,
-           label='Levene', color=levene_color, edgecolor='k')
+    ax.bar(weeks, pvals, bar_width, align='edge',
+           facecolor='white', edgecolor='black', linewidth=0.5)
 
     ax.axhline(significance_threshold, color='k', linewidth=1, linestyle='--',
                label=f'p={significance_threshold}')
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_xlim(0.5, 12.5)
+    ax.set_xlim(1, 52 + bar_width + 0.1)
     ax.set_ylim(0, 1.05)
-    ax.set_xticks(months)
-    ax.set_xticklabels(MONTH_LABELS)
+    ax.set_xticks(MONTH_WEEK_STARTS)
+    if show_xticklabels:
+        ax.set_xticklabels(MONTH_LABELS)
+    else:
+        ax.set_xticklabels([])
 
     if show_legend:
         ax.legend(loc='upper right', frameon=True)
@@ -685,21 +710,19 @@ def plot_ensemble_summary_figure(
     synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
     synthetic_label = DATASET_LABELS.get(dataset_id, 'Synthetic')
 
-    wilcoxon_color = "#2E2E2E"
-    levene_color = "#B0B0B0"
-
     # Pre-aggregate flows ONCE for all panels
     hist_agg = _get_aggregate_flow(Q_historic, sites)
     syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    # Create figure with GridSpec layout
+    # Create figure with GridSpec layout: 2 content rows + 2 thin p-value rows
     fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(3, 2, figure=fig, height_ratios=[1, 1, 0.3])
+    gs = gridspec.GridSpec(4, 2, figure=fig, height_ratios=[1, 1, 0.22, 0.22])
 
     ax_autocorr = fig.add_subplot(gs[0, 0])
-    ax_fdc = fig.add_subplot(gs[0, 1])
-    ax_monthly = fig.add_subplot(gs[1, :])
-    ax_pvalues = fig.add_subplot(gs[2, :])
+    ax_fdc      = fig.add_subplot(gs[0, 1])
+    ax_monthly  = fig.add_subplot(gs[1, :])
+    ax_wilcoxon = fig.add_subplot(gs[2, :])
+    ax_levene   = fig.add_subplot(gs[3, :])
 
     # Panel A: Autocorrelation comparison
     plot_autocorrelation_comparison(
@@ -709,8 +732,8 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    ax_autocorr.text(-0.05, 1.02, 'a)', transform=ax_autocorr.transAxes,
-                     fontsize=14, va='bottom', ha='right')
+    ax_autocorr.text(0.02, 0.97, 'a)', transform=ax_autocorr.transAxes,
+                     fontsize=12, va='top', ha='left')
 
     # Panel B: FDC percentile comparison
     plot_fdc_percentile_comparison(
@@ -720,8 +743,8 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    ax_fdc.text(-0.05, 1.02, 'b)', transform=ax_fdc.transAxes,
-                fontsize=14, va='bottom', ha='right')
+    ax_fdc.text(0.02, 0.97, 'b)', transform=ax_fdc.transAxes,
+                fontsize=12, va='top', ha='left')
 
     # Panel C: Weekly streamflow percentiles
     plot_weekly_streamflow_percentiles(
@@ -731,21 +754,32 @@ def plot_ensemble_summary_figure(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    ax_monthly.text(-0.03, 1.02, 'c)', transform=ax_monthly.transAxes,
-                    fontsize=14, va='bottom', ha='right')
+    ax_monthly.text(0.01, 0.97, 'c)', transform=ax_monthly.transAxes,
+                    fontsize=12, va='top', ha='left')
 
-    # Panel D: Levene & Wilcoxon p-values
+    # Panel D: Wilcoxon rank-sum p-values (no x-tick labels — shared with panel E)
     plot_pvalue_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_pvalues,
-        wilcoxon_color=wilcoxon_color, levene_color=levene_color,
+        ax=ax_wilcoxon, which='wilcoxon',
+        show_xticklabels=False,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    ax_pvalues.text(-0.03, 1.02, 'd)', transform=ax_pvalues.transAxes,
-                    fontsize=14, va='bottom', ha='right')
+    ax_wilcoxon.text(0.01, 0.85, 'd)', transform=ax_wilcoxon.transAxes,
+                     fontsize=12, va='top', ha='left')
 
-    # Shared legend
+    # Panel E: Levene p-values (x-tick labels shown here)
+    plot_pvalue_comparison(
+        Q_historic, Q_synthetic,
+        ax=ax_levene, which='levene',
+        show_xticklabels=True,
+        show_legend=False,
+        _hist_agg=hist_agg, _syn_agg=syn_agg,
+    )
+    ax_levene.text(0.01, 0.85, 'e)', transform=ax_levene.transAxes,
+                   fontsize=12, va='top', ha='left')
+
+    # Shared legend (flow panels only; p-value panels are self-labeled via ylabel)
     legend_handles = [
         Patch(facecolor=synthetic_color, alpha=ALPHA_FILL,
               label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'),
@@ -755,19 +789,27 @@ def plot_ensemble_summary_figure(
               label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'),
         Line2D([0], [0], color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK,
                linestyle='--', label=f'{HISTORIC_LABEL} (median)'),
-        Patch(facecolor=wilcoxon_color, label='Wilcoxon p'),
-        Patch(facecolor=levene_color, label='Levene p'),
         Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p=0.05'),
     ]
 
     fig.legend(
         handles=legend_handles,
-        loc='lower center', ncol=7, frameon=False,
+        loc='lower center', ncol=5, frameon=False,
         bbox_to_anchor=(0.5, -0.02), fontsize=9,
     )
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.08)
+    plt.subplots_adjust(bottom=0.07)
+
+    # Align y-axis labels across the three full-width panels
+    fig.align_ylabels([ax_autocorr, ax_monthly, ax_wilcoxon, ax_levene])
+
+    # Reduce blank space between panels d and e
+    pos_w = ax_wilcoxon.get_position()
+    pos_l = ax_levene.get_position()
+    gap = pos_w.y0 - (pos_l.y0 + pos_l.height)
+    shift = gap * 0.6
+    ax_levene.set_position([pos_l.x0, pos_l.y0 + shift, pos_l.width, pos_l.height])
 
     if fname:
         plt.savefig(fname, dpi=DPI_PRINT, bbox_inches='tight')

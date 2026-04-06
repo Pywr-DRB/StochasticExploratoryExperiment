@@ -314,7 +314,7 @@ def combine_temp_files_to_final(dataset_id, temp_files, ensemble_set_specs):
 
     fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     keep_data.export(fname)
-    print(f"[POST] {dataset_id}: Complete → {os.path.basename(fname)}")
+    print(f"[POST] {dataset_id}: Complete -> {os.path.basename(fname)}")
 
     # Clean up temp directory
     try:
@@ -378,7 +378,7 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
 
     fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
     keep_data.export(fname)
-    print(f"[POST] {dataset_id}: Complete → {os.path.basename(fname)}")
+    print(f"[POST] {dataset_id}: Complete -> {os.path.basename(fname)}")
 
     return keep_data
 
