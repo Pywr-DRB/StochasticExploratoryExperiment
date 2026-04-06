@@ -524,14 +524,22 @@ def plot_weekly_streamflow_percentiles(
 def _compute_weekly_pvalues(
     hist_agg: pd.Series,
     syn_agg: dict,
+    rng: np.random.Generator = None,
 ) -> tuple:
     """
     Compute Wilcoxon rank-sum and Levene p-values for each of 52 weeks.
+
+    The synthetic pool is subsampled (without replacement) to match the
+    historic sample size for each week, preventing the large ensemble from
+    inflating test power and producing spuriously low p-values.
 
     Returns
     -------
     wilcoxon_pvals, levene_pvals : np.ndarray of shape (52,)
     """
+    if rng is None:
+        rng = np.random.default_rng(42)
+
     n_weeks = 52
     weeks = np.arange(1, n_weeks + 1)
 
@@ -560,8 +568,11 @@ def _compute_weekly_pvalues(
             s_valid = np.array(syn_weekly_by_week[w])
             s_valid = s_valid[~np.isnan(s_valid)]
             if len(h_valid) > 1 and len(s_valid) > 1:
-                wilcoxon_pvals[w - 1] = ranksums(h_valid, s_valid)[1]
-                levene_pvals[w - 1] = levene(h_valid, s_valid)[1]
+                # Subsample synthetic pool to match historic sample size
+                n = min(len(h_valid), len(s_valid))
+                s_sample = rng.choice(s_valid, size=n, replace=False)
+                wilcoxon_pvals[w - 1] = ranksums(h_valid, s_sample)[1]
+                levene_pvals[w - 1] = levene(h_valid, s_sample)[1]
         except Exception:
             pass
 
