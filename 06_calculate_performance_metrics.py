@@ -115,7 +115,7 @@ def main(dataset_id, ssi_windows):
 
     if primary_drought_events is None or len(primary_drought_events) == 0:
         print(f"Rank {rank} ERROR: No SSI-{primary_ssi_window} drought events found. "
-              f"Run 04_calculate_ssi_drought_metrics.py first.")
+              f"Run 05_calculate_ssi_drought_metrics.py first.")
         return
 
     # =========================================================================

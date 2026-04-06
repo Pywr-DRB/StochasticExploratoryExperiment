@@ -76,19 +76,23 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
         realization_ids, rank, size
     )
 
-    # Each rank loads ONLY its assigned realizations (staggered I/O)
-    local_data = load_rank_subset_from_export(
-        fname, my_realizations, [results_set_key], rank, size
-    )
+    # Ranks with no realizations skip loading but still participate in gathers
+    if len(my_realizations) == 0:
+        local_syn_ensemble = {}
+    else:
+        # Each rank loads ONLY its assigned realizations (staggered I/O)
+        local_data = load_rank_subset_from_export(
+            fname, my_realizations, [results_set_key], rank, size
+        )
 
-    # Extract local ensemble dict from the configured results_set
-    local_syn_ensemble = getattr(local_data, results_set_key)[dataset_id]
-    del local_data  # free wrapper
+        # Extract local ensemble dict from the configured results_set
+        local_syn_ensemble = getattr(local_data, results_set_key)[dataset_id]
+        del local_data  # free wrapper
 
-    # Derive the target node column if needed
-    if node_config['derived']:
-        for real_id, df in local_syn_ensemble.items():
-            df[node] = df[node_config['derive_from']].sum(axis=1)
+        # Derive the target node column if needed
+        if node_config['derived']:
+            for real_id, df in local_syn_ensemble.items():
+                df[node] = df[node_config['derive_from']].sum(axis=1)
 
 
     # SSI Drought Metrics
@@ -188,6 +192,10 @@ def main(dataset_id):
 
     # Calculate drought metrics (using default SSI windows)
     success = calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3,6,12])
+
+    # Barrier so all ranks finish before MPI_Finalize
+    if comm is not None:
+        comm.Barrier()
 
     if rank == 0:
         if not success:

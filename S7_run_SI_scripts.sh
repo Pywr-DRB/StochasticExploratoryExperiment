@@ -32,8 +32,8 @@ run si_scripts/SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
 
 ### SI2: Diversion diagnostics/distributions
 run si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
-run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
-run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
+# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
+# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
 ### SI3 + SI4: Storage zone probabilities (calculate and plot)
 run si_scripts/SI3_calculate_storage_zone_probabilities.py --all

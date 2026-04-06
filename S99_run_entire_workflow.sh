@@ -4,8 +4,8 @@
 # Execution order:
 #   S0  (baseline)
 #   S1 & S2  (stationary + climate-adjusted ensembles, in parallel)
-#   S3  (SSI drought metrics)
-#   S4  (postprocess all 3 datasets, in parallel)
+#   S3  (postprocess all 3 datasets)
+#   S4  (SSI drought metrics)
 #   S5  (performance metrics, all 3 datasets in parallel)
 #   S6 & S7  (figures + SI figures, in parallel)
 #
@@ -22,7 +22,7 @@ echo "============================================================"
 echo "SUBMITTING FULL WORKFLOW"
 echo "============================================================"
 
-# --- S0: Baseline historic simulations ---
+# # --- S0: Baseline historic simulations ---
 S0=$(sbatch --parsable S0_run_baseline_historic.sh)
 echo "S0 baseline:         job $S0"
 
@@ -33,13 +33,13 @@ echo "S1 stationary:       job $S1 (after S0)"
 S2=$(sbatch --parsable --dependency=afterok:$S0 S2_run_climate_adjusted_ensemble.sh)
 echo "S2 climate-adjusted: job $S2 (after S0)"
 
-# --- S3: SSI drought metrics (after S1 & S2) ---
-S3=$(sbatch --parsable --dependency=afterok:$S1:$S2 S3_calculate_ssi.sh)
-echo "S3 SSI metrics:      job $S3 (after S1,S2)"
+# --- S3: Postprocess each dataset (after S1 & S2) ---
+S3=$(sbatch --parsable --dependency=afterok:$S1:$S2 S3_postprocess_all.sh)
+echo "S3 postprocess:      job $S3 (after S1,S2)"
 
-# --- S4: Postprocess each dataset (parallel, after S3) ---
-S4=$(sbatch --parsable --dependency=afterok:$S3 S4_postprocess_all.sh)
-echo "S4 postprocess:      job $S4 (after S3)"
+# --- S4: SSI drought metrics (after S3) ---
+S4=$(sbatch --parsable --dependency=afterok:$S3 S4_calculate_ssi.sh)
+echo "S4 SSI metrics:      job $S4 (after S3)"
 
 
 # --- S5: Performance metrics per dataset (parallel, after all S4 jobs) ---

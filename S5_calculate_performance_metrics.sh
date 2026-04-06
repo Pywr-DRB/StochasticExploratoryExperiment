@@ -2,7 +2,7 @@
 #SBATCH --job-name=perf_metrics
 #SBATCH --output=./logs/perf_metrics.out
 #SBATCH --error=./logs/perf_metrics.err
-#SBATCH --nodes=1
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=20
 #SBATCH --exclusive
 
@@ -45,4 +45,18 @@ for DATASET_ID in "${DATASETS[@]}"; do
 done
 
 echo ""
-echo "All datasets processed successfully."
+echo "All performance metrics processed successfully."
+
+################################################################################
+echo "========================================"
+echo "Calculating storage zone probabilities..."
+echo "========================================"
+python3 si_scripts/SI3_calculate_storage_zone_probabilities.py --all
+
+if [ $? -ne 0 ]; then
+    echo "ERROR: Zone probability calculation failed"
+    exit 1
+fi
+
+echo ""
+echo "All metrics and zone probabilities completed successfully."
