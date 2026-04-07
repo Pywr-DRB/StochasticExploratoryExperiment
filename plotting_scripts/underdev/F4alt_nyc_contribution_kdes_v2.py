@@ -19,7 +19,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
-import matplotlib.patheffects as pe
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -30,8 +30,8 @@ import pywrdrb
 from methods.config import FIG_DIR, OUTPUT_DIR, verify_dataset_id
 from methods.plotting.styles import (
     DPI_HIGH,
-    DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_LABEL, FONTSIZE_SMALL,
+    DATASET_COLORS,
+    FONTSIZE_LABEL,
     apply_publication_style,
 )
 import methods.plotting.water_balance_by_drought_zone as F4_module
@@ -47,6 +47,7 @@ from methods.plotting.water_balance_by_drought_zone import (
 # ============================================================================
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
+SCENARIO = 'stationary_ensemble'
 WINDOW_MONTHS = [3, 6, 9]
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 
@@ -103,14 +104,13 @@ def _get_ratios(categorized, zone):
 
 
 def build_long_df(all_categorized):
-    """Build long-form DataFrame with columns [zone, scenario, ratio]."""
+    """Build long-form DataFrame with columns [zone, ratio] for stationary ensemble."""
     rows = []
-    for sc in SCENARIOS:
-        for zone in ZONE_ORDER:
-            r = _get_ratios(all_categorized[sc], zone)
-            if r is not None and len(r) > 0:
-                for val in r.values:
-                    rows.append({'zone': zone, 'scenario': sc, 'ratio': val})
+    for zone in ZONE_ORDER:
+        r = _get_ratios(all_categorized[SCENARIO], zone)
+        if r is not None and len(r) > 0:
+            for val in r.values:
+                rows.append({'zone': zone, 'ratio': val})
     return pd.DataFrame(rows)
 
 
@@ -150,24 +150,22 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
         rc={"axes.facecolor": (0, 0, 0, 0), "axes.linewidth": 1.5},
     )
 
-    # FacetGrid rows = zone, hue = scenario for per-dataset colours
-    scenario_palette = {sc: DATASET_COLORS[sc] for sc in SCENARIOS}
+    sc_color = DATASET_COLORS[SCENARIO]
 
     g = sns.FacetGrid(
         df,
         row="zone",
-        hue="scenario",
-        palette=scenario_palette,
+        hue="zone",
         row_order=ZONE_ORDER,
-        hue_order=SCENARIOS,
+        hue_order=ZONE_ORDER,
         aspect=9,
         height=1.2,
         sharey=False,
     )
 
-    # Unfilled KDE lines with white path-effect outline so overlapping lines separate
-    g.map_dataframe(sns.kdeplot, x="ratio", fill=False, linewidth=2.0, clip=(0, x_max),
-                    path_effects=[pe.Stroke(linewidth=4.0, foreground="white"), pe.Normal()])
+    # Filled KDE using the stationary ensemble color, black outline on top
+    g.map_dataframe(sns.kdeplot, x="ratio", fill=True, color=sc_color, alpha=1, clip=(0, x_max))
+    g.map_dataframe(sns.kdeplot, x="ratio", fill=False, color="black", linewidth=1.5, clip=(0, x_max))
 
     g.figure.subplots_adjust(hspace=-0.1)
     g.set_titles("")
@@ -206,21 +204,6 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
         tick_height = (ylim[1] - ylim[0]) * 0.07
         ax_emg.vlines(recon_ratio, ylim[0], ylim[0] + tick_height,
                       color="black", linewidth=3.5, zorder=5)
-
-    # Legend
-    from matplotlib.lines import Line2D
-    handles = [
-        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.0, label=DATASET_LABELS[sc])
-        for sc in SCENARIOS
-    ]
-    g.figure.legend(
-        handles=handles,
-        loc='lower center',
-        ncol=len(SCENARIOS),
-        fontsize=FONTSIZE_SMALL,
-        frameon=False,
-        bbox_to_anchor=(0.5, -0.04),
-    )
 
     return g.figure
 
