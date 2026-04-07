@@ -128,6 +128,8 @@ def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
     # x range: 95th percentile of emergency zone data
     r_emergency = _get_ratios(categorized, 'emergency')
     x_max = float(np.percentile(r_emergency.values, 95)) if (r_emergency is not None and len(r_emergency) > 0) else 100.0
+    
+    x_max = max(x_max, 100.0)
     if recon_ratio is not None and recon_ratio <= x_max * 1.1:
         x_max = max(x_max, recon_ratio)
 
