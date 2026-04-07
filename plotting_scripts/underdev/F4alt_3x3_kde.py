@@ -134,91 +134,61 @@ def _kde(data, x_grid):
 
 def create_figure(all_categorized, n_months_prior, recon_ratio):
     """
-    3-row × 3-col KDE grid.  Each row = dataset, each col = zone group.
+    3-row × 1-col KDE grid.  Each row = zone group, all datasets overlaid.
     """
-    # Per-column x_max: 95th percentile of emergency data (col 2), then match cols 0-1
-    emg_vals = []
-    for sc in SCENARIOS:
-        r = _get_col_ratios(all_categorized[sc], 'emergency')
-        if r is not None:
-            emg_vals.extend(r.values)
-    x_max_emg = float(np.percentile(emg_vals, 95)) if emg_vals else 100.0
-    x_max_emg = max(x_max_emg, 100.0)
+    x_grid = np.linspace(0, 100, N_KDE_POINTS)
 
-    # Each column gets its own x_max based on 99th pct of that group's data
-    col_x_max = {}
-    for col in COL_ZONES:
-        vals = []
-        for sc in SCENARIOS:
-            r = _get_col_ratios(all_categorized[sc], col)
-            if r is not None:
-                vals.extend(r.values)
-        col_x_max[col] = float(np.percentile(vals, 99)) if vals else x_max_emg
-
-    # Precompute KDE grids
-    x_grids = {col: np.linspace(0, col_x_max[col], N_KDE_POINTS) for col in COL_ZONES}
+    # Precompute KDEs for all (scenario, zone) combinations
     kdes = {}
     for sc in SCENARIOS:
         for col in COL_ZONES:
             r = _get_col_ratios(all_categorized[sc], col)
-            kdes[(sc, col)] = _kde(r, x_grids[col])
+            kdes[(sc, col)] = _kde(r, x_grid)
 
     apply_publication_style()
     fig, axes = plt.subplots(
-        3, 3,
-        figsize=(9, 9),
-        sharey=True,
+        3, 1,
+        figsize=(5, 9),
         sharex=True,
         constrained_layout=True,
     )
 
-    for row_i, sc in enumerate(SCENARIOS):
-        color = DATASET_COLORS[sc]
-        for col_i, col in enumerate(COL_ZONES):
-            ax = axes[row_i, col_i]
-            x = x_grids[col]
+    for row_i, col in enumerate(COL_ZONES):
+        ax = axes[row_i]
+
+        for sc in SCENARIOS:
+            color = DATASET_COLORS[sc]
             y = kdes[(sc, col)]
+            ax.fill_between(x_grid, y, alpha=0.4, color=color)
+            ax.plot(x_grid, y, color=color, linewidth=1.5)
 
-            ax.fill_between(x, y, alpha=0.75, color=color)
-            ax.plot(x, y, color='black', linewidth=1.2)
+        # 1964 reconstruction tick on emergency row only
+        if col == 'emergency' and recon_ratio is not None and recon_ratio <= 100:
+            peak = max(kdes[(sc, col)].max() for sc in SCENARIOS)
+            ax.vlines(recon_ratio, 0, peak * 0.15, color='black', linewidth=3.0, zorder=5)
 
-            # 1964 reconstruction tick on emergency column only
-            if col == 'emergency' and recon_ratio is not None and recon_ratio <= col_x_max[col]:
-                ylim = ax.get_ylim()
-                tick_h = (y.max()) * 0.12
-                ax.vlines(recon_ratio, 0, tick_h, color='black', linewidth=3.0, zorder=5)
+        ax.set_yticks([])
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 0.12)
+        ax.set_title(COL_LABELS[col], fontsize=FONTSIZE_MEDIUM, pad=4)
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_linewidth(0.8)
+            spine.set_color('#444444')
 
-            ax.set_yticks([])
-            ax.set_xlim(0, 100)
-            ax.set_ylim(0, 0.12)
-            ax.set_aspect(100 / 0.12)  # square subplot
-            for spine in ax.spines.values():
-                spine.set_visible(True)
-                spine.set_linewidth(0.8)
-                spine.set_color('#444444')
+    axes[-1].set_xlabel(
+        f'NYC contribution / inflow ({n_months_prior}-mo, %)',
+        fontsize=FONTSIZE_LABEL,
+    )
 
-            # Column headers on top row
-            if row_i == 0:
-                ax.set_title(COL_LABELS[col], fontsize=FONTSIZE_MEDIUM, pad=6)
-
-            # x-axis label on bottom row only
-            if row_i == len(SCENARIOS) - 1:
-                ax.set_xlabel(
-                    f'NYC contribution / inflow ({n_months_prior}-mo, %)',
-                    fontsize=FONTSIZE_SMALL,
-                )
-            else:
-                ax.set_xlabel('')
-                ax.tick_params(axis='x', labelbottom=False)
-
-    # Row labels (dataset names) on left
-    for row_i, sc in enumerate(SCENARIOS):
-        axes[row_i, 0].set_ylabel(
-            DATASET_LABELS[sc],
-            fontsize=FONTSIZE_MEDIUM,
-            rotation=90,
-            labelpad=8,
-        )
+    # Legend
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.0, label=DATASET_LABELS[sc])
+        for sc in SCENARIOS
+    ]
+    axes[0].legend(handles=handles, fontsize=FONTSIZE_SMALL, frameon=False,
+                   loc='upper right')
 
     return fig
 
