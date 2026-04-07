@@ -128,12 +128,38 @@ def _order_segments(segments):
     return paths
 
 
-def plot_combined_heatmap(all_data, ssi_window):
-    """Create the 3x1 combined heatmap figure."""
+def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_count=5):
+    """Create the 3x1 combined heatmap figure.
+
+    Parameters
+    ----------
+    all_data : dict
+        ``{dataset_id: DataFrame}`` of event metrics.
+    ssi_window : int
+        SSI window used (for filename).
+    n_bins : int
+        Number of bins per axis (default 20).  Fewer bins → larger cells →
+        more events per cell and less grey (NaN) area.
+    log_mag : bool
+        If True, use log-spaced bins on the magnitude axis and plot on a
+        log scale.  Bin edges and centers are recomputed as geometric
+        sequences after the shared severity range is determined.
+    min_count : int
+        Minimum number of events required to colour a bin (default 5).
+        Bins below this threshold are shown as grey (NaN).
+    """
     apply_publication_style()
 
     sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges(
-        all_data, DATASETS, n_bins=10)
+        all_data, DATASETS, n_bins=n_bins)
+
+    if log_mag:
+        # Replace linear magnitude bins with log-spaced ones.
+        # mag_edges[0] from make_shared_edges is all_mag.min(); clip to > 0.
+        mag_min = mag_edges[0] if mag_edges[0] > 0 else mag_edges[mag_edges > 0].min()
+        mag_max = mag_edges[-1]
+        mag_edges = np.logspace(np.log10(mag_min), np.log10(mag_max), n_bins + 1)
+        mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])
 
     # -- colour map & norm (fraction avoiding emergency) --------------------
     cmap_frac = plt.cm.plasma_r
@@ -156,8 +182,8 @@ def plot_combined_heatmap(all_data, ssi_window):
         ax = fig.add_subplot(gs[row_idx, 0])
 
         # Compute both grids
-        frac_grid, _ = compute_emergency_grid(df, sev_edges, mag_edges)
-        min_grid, _ = compute_min_storage_grid(df, sev_edges, mag_edges)
+        frac_grid, _ = compute_emergency_grid(df, sev_edges, mag_edges, min_count=min_count)
+        min_grid, _ = compute_min_storage_grid(df, sev_edges, mag_edges, min_count=min_count)
 
         # Background: fraction avoiding emergency
         ax.pcolormesh(
@@ -188,6 +214,8 @@ def plot_combined_heatmap(all_data, ssi_window):
 
         ax.set_xlim(sev_edges[0], sev_edges[-1])
         ax.set_ylim(mag_edges[0], mag_edges[-1])
+        if log_mag:
+            ax.set_yscale('log')
 
         # Panel label
         letter = PANEL_LETTERS[row_idx]
@@ -250,8 +278,17 @@ def plot_combined_heatmap(all_data, ssi_window):
 # -- main -------------------------------------------------------------------
 
 def main():
-    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else SSI_WINDOW_DEFAULT
-    print(f"F5alt: Combined Drought Satisficing Heatmap (SSI-{ssi_window})")
+    """Usage: python F5alt_plot_drought_satisficing_heatmap.py [ssi_window] [n_bins] [min_count] [--log-mag]"""
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    flags = [a for a in sys.argv[1:] if a.startswith('--')]
+
+    ssi_window = int(args[0]) if len(args) > 0 else SSI_WINDOW_DEFAULT
+    n_bins     = int(args[1]) if len(args) > 1 else 20
+    min_count  = int(args[2]) if len(args) > 2 else 5
+    log_mag    = '--log-mag' in flags
+
+    print(f"F5alt: Combined Drought Satisficing Heatmap (SSI-{ssi_window}, "
+          f"n_bins={n_bins}, min_count={min_count}, log_mag={log_mag})")
 
     all_data = {}
     for did in DATASETS:
@@ -259,7 +296,7 @@ def main():
         all_data[did] = df
         print(f"  {DATASET_LABELS.get(did, did)}: {len(df)} events")
 
-    plot_combined_heatmap(all_data, ssi_window)
+    plot_combined_heatmap(all_data, ssi_window, n_bins=n_bins, log_mag=log_mag, min_count=min_count)
     print("Done.")
 
 

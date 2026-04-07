@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -195,12 +196,13 @@ def plot_drought_manuscript_figure(
     log_hexbin_counts=False,
     log_exceedance=True,
     plot_relative_change=True,
+    gridshape='square',
 ):
     """Create the multipanel drought distribution manuscript figure.
 
     Layout
     ------
-    Left: hexbin of severity vs magnitude (stationary ensemble).
+    Left: 2-D distribution of severity vs magnitude (stationary ensemble).
     Right: 3x2 grid - rows are datasets (stationary, low, high),
            columns are metrics (severity, magnitude).
     Each right subplot shows that dataset's realization bands plus historic markers.
@@ -212,9 +214,9 @@ def plot_drought_manuscript_figure(
     cdf_metrics : list of str, optional
         Metrics for CDF columns. Default: ['severity', 'magnitude'].
     hexbin_dataset : str
-        Dataset used for the hexbin panel.
+        Dataset used for the left panel.
     hexbin_x, hexbin_y : str
-        Metrics for hexbin x/y axes.
+        Metrics for left-panel x/y axes.
     figsize : tuple, optional
         Figure size. Auto-computed if None.
     fname : str, optional
@@ -222,7 +224,7 @@ def plot_drought_manuscript_figure(
     log_magnitude : bool
         If True, use log scale for magnitude axes.
     log_hexbin_counts : bool
-        If True, use log scale for hexbin colorbar counts.
+        If True, use log scale for the left-panel count colorbar.
     log_exceedance : bool
         If True, use log scale for the exceedance-rate y-axis.
     plot_relative_change : bool
@@ -233,6 +235,9 @@ def plot_drought_manuscript_figure(
         realizations; the solid line is the median Δ.  A dashed y = 0 line marks
         the baseline.  Historic markers are expressed as Δ relative to the
         stationary median curve.  Default: False.
+    gridshape : str
+        Left-panel bin shape: 'square' (default, uses hist2d) or 'hex'
+        (uses hexbin, legacy behaviour).
 
     Returns
     -------
@@ -297,22 +302,47 @@ def plot_drought_manuscript_figure(
     ax_legend.set_axis_off()
 
     # ------------------------------------------------------------------
-    # Left panel: hexbin
+    # Left panel: 2-D distribution (square bins or hexbin)
     # ------------------------------------------------------------------
-    hexbin_kwargs = dict(
-        gridsize=30,
-        cmap=CMAP_SEQUENTIAL,
-        mincnt=1,
-    )
-    if log_hexbin_counts:
-        hexbin_kwargs['bins'] = 'log'
-    if log_magnitude and hexbin_y == 'magnitude':
-        hexbin_kwargs['yscale'] = 'log'
-    hb = ax_hex.hexbin(
-        hexbin_droughts[hexbin_x].values,
-        hexbin_droughts[hexbin_y].values,
-        **hexbin_kwargs,
-    )
+    mag_lim = 100 if ssi_window == 3 else 200
+
+    if gridshape == 'hex':
+        hexbin_kwargs = dict(gridsize=30, cmap=CMAP_SEQUENTIAL, mincnt=1)
+        if log_hexbin_counts:
+            hexbin_kwargs['bins'] = 'log'
+        if log_magnitude and hexbin_y == 'magnitude':
+            hexbin_kwargs['yscale'] = 'log'
+        hb = ax_hex.hexbin(
+            hexbin_droughts[hexbin_x].values,
+            hexbin_droughts[hexbin_y].values,
+            **hexbin_kwargs,
+        )
+    else:  # square
+        x_data = hexbin_droughts[hexbin_x].values
+        y_data = hexbin_droughts[hexbin_y].values
+
+        x_max = mag_lim if hexbin_x == 'magnitude' else x_data.max()
+        y_max = mag_lim if hexbin_y == 'magnitude' else y_data.max()
+
+        if log_magnitude and hexbin_x == 'magnitude':
+            x_min = x_data[x_data > 0].min() if np.any(x_data > 0) else 1e-3
+            x_bins = np.logspace(np.log10(x_min), np.log10(x_max), 31)
+        else:
+            x_bins = np.linspace(x_data.min(), x_max, 31)
+
+        if log_magnitude and hexbin_y == 'magnitude':
+            y_min = y_data[y_data > 0].min() if np.any(y_data > 0) else 1e-3
+            y_bins = np.logspace(np.log10(y_min), np.log10(y_max), 31)
+        else:
+            y_bins = np.linspace(y_data.min(), y_max, 31)
+
+        hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1)
+        if log_hexbin_counts:
+            hist2d_kwargs['norm'] = mcolors.LogNorm()
+        _, _, _, hb = ax_hex.hist2d(x_data, y_data, **hist2d_kwargs)
+
+        if log_magnitude and hexbin_y == 'magnitude':
+            ax_hex.set_yscale('log')
 
     # Overlay observed
     if len(obs_droughts) > 0:
@@ -341,7 +371,6 @@ def plot_drought_manuscript_figure(
             linewidths=0.6, alpha=0.9, zorder=11,
         )
 
-    mag_lim = 100 if ssi_window == 3 else 200
     if hexbin_x == 'magnitude':
         ax_hex.set_xlim(right=mag_lim)
     if hexbin_y == 'magnitude':
@@ -361,7 +390,8 @@ def plot_drought_manuscript_figure(
     cb = fig.colorbar(hb, cax=ax_cbar, orientation='horizontal')
     cb.set_label('Number of Droughts in Ensemble', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
-    if log_hexbin_counts:
+    if log_hexbin_counts and gridshape == 'hex':
+        # hexbin stores log10(count) internally; convert tick positions to labels
         vmin, vmax = hb.get_clim()
         log_ticks = [np.log10(10**e) for e in range(0, 7)
                      if vmin <= np.log10(10**e) <= vmax]
@@ -370,6 +400,7 @@ def plot_drought_manuscript_figure(
         if log_ticks:
             cb.set_ticks(log_ticks)
             cb.set_ticklabels(log_labels)
+    # For gridshape='square' with log_hexbin_counts, LogNorm handles ticks automatically
 
     # ------------------------------------------------------------------
     # Right panels: exceedance-rate CDFs (3x2) - one dataset per row
