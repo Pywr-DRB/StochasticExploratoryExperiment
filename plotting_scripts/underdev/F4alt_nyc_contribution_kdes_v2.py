@@ -141,6 +141,7 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
             r = _get_ratios(all_categorized[sc], zone)
             if r is not None and len(r) > 0:
                 all_vals.extend(r.values)
+    XLIM_MAX_MANUAL = 100 if n_months_prior == 9 else None
     x_max = (XLIM_MAX_MANUAL if XLIM_MAX_MANUAL is not None
              else np.percentile(all_vals, 99.5))
     # Ensure the 1964 line is visible if within a reasonable range
