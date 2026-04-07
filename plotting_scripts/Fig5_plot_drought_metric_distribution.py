@@ -404,6 +404,10 @@ def plot_drought_manuscript_figure(
         if log_ticks:
             cb.set_ticks(log_ticks)
             cb.set_ticklabels(log_labels)
+    else:
+        # Force a tick at the minimum bin count so it is always labelled
+        auto_ticks = [t for t in cb.get_ticks() if t > bin_min]
+        cb.set_ticks([bin_min] + auto_ticks)
     # For gridshape='square' with log_hexbin_counts, LogNorm handles ticks automatically
 
     # ------------------------------------------------------------------
