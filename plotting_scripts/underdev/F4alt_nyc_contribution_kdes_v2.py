@@ -1,16 +1,14 @@
 """
-F4 (Alternative v2): NYC contribution / inflow ratio — ridgeline KDE design.
+F4 (Alternative v2): NYC contribution / inflow ratio — joy-division ridgeline.
 
-4-row ridgeline layout where each row shows the distribution of the NYC
-Montague contribution-to-inflow ratio for one FFMP drought zone category:
-  Row 1 (top): Normal / Above
+4-row ridgeline layout (seaborn FacetGrid) where each row shows the
+distribution of the NYC Montague contribution-to-inflow ratio for one
+FFMP drought zone category (stationary ensemble only):
+
+  Row 1 (top): Normal / Flood
   Row 2:       Drought Warning
   Row 3:       Drought Watch
   Row 4 (bottom): Drought Emergency
-
-Three overlaid KDE curves per row, one per climate scenario, coloured by
-DATASET_COLORS.  A dashed vertical line marks the 1964 reconstruction value.
-One figure is produced per aggregation window (3, 6, 9 months).
 
 Usage:
     python F4alt_nyc_contribution_kdes_v2.py
@@ -21,10 +19,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.lines import Line2D
-from scipy.stats import gaussian_kde
+import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -32,8 +29,7 @@ import pywrdrb
 from methods.config import FIG_DIR, OUTPUT_DIR, verify_dataset_id
 from methods.plotting.styles import (
     DPI_HIGH,
-    DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_SMALL, FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    FONTSIZE_LABEL, FONTSIZE_MEDIUM,
     apply_publication_style,
 )
 import methods.plotting.water_balance_by_drought_zone as F4_module
@@ -44,60 +40,51 @@ from methods.plotting.water_balance_by_drought_zone import (
     MIN_INFLOW_THRESHOLD,
 )
 
-# Import contribution_kde to pick up the FFMP-aligned zone color overrides
-from methods.plotting.contribution_kde import DROUGHT_CATEGORIES
-
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
+SCENARIO = 'stationary_ensemble'
 WINDOW_MONTHS = [3, 6, 9]
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 
 # Zone display order: least severe → most severe (top → bottom)
-ZONE_ORDER  = ['other', 'warning', 'watch', 'emergency']
+ZONE_ORDER = ['other', 'warning', 'watch', 'emergency']
 ZONE_LABELS = {
-    'other':     'Normal or\nFlood',
-    'warning':   'Drought\nWarning',
-    'watch':     'Drought\nWatch',
-    'emergency': 'Drought\nEmergency',
+    'other':     'Normal / Flood',
+    'warning':   'Drought Warning',
+    'watch':     'Drought Watch',
+    'emergency': 'Drought Emergency',
 }
 
-N_KDE_POINTS = 600
+# Color palette: lightest for normal, darkest for emergency
+ZONE_PALETTE = sns.color_palette("crest", len(ZONE_ORDER))
 
 # ============================================================================
 # DATA LOADING
 # ============================================================================
 
-def load_all_data():
-    """Load pywrdrb.Data for all three scenarios."""
-    all_data = {}
-    results_sets = [
+def load_data():
+    """Load pywrdrb.Data for the stationary ensemble."""
+    verify_dataset_id(SCENARIO)
+    fname = f'{OUTPUT_DIR}/{SCENARIO}_with_postprocessing.hdf5'
+    data = pywrdrb.Data()
+    data.load_from_export(fname, results_sets=[
         'res_level', 'inflow', 'contribution',
         'res_storage', 'ibt_diversions', 'ibt_demands',
-    ]
-    for dataset_id in SCENARIOS:
-        verify_dataset_id(dataset_id)
-        fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-        data = pywrdrb.Data()
-        data.load_from_export(fname, results_sets=results_sets)
-        all_data[dataset_id] = data
-    return all_data
+    ])
+    return data
 
 
-def categorize_all_scenarios(all_data, n_months_prior):
-    """Aggregate and categorize by drought zone for all scenarios."""
+def categorize_scenario(data, n_months_prior):
+    """Aggregate and categorize by drought zone."""
     F4_module.N_MONTHS_PRIOR = n_months_prior
-    all_categorized = {}
-    for dataset_id in SCENARIOS:
-        agg = aggregate_across_realizations(all_data[dataset_id], dataset_id)
-        all_categorized[dataset_id] = categorize_by_drought_zone(agg)
-    return all_categorized
+    agg = aggregate_across_realizations(data, SCENARIO)
+    return categorize_by_drought_zone(agg)
 
 
 # ============================================================================
-# KDE HELPERS
+# DATA HELPERS
 # ============================================================================
 
 def _get_ratios(categorized, zone):
@@ -110,228 +97,102 @@ def _get_ratios(categorized, zone):
     return ratio.replace([np.inf, -np.inf], np.nan).dropna()
 
 
-def _kde_on_grid(data, x_grid):
-    if data is None or len(data) < 2:
-        return np.zeros_like(x_grid, dtype=float)
-    return gaussian_kde(data.values)(x_grid)
+def build_long_df(categorized):
+    """Build long-form DataFrame with columns [zone, ratio] for FacetGrid."""
+    rows = []
+    for zone in ZONE_ORDER:
+        r = _get_ratios(categorized, zone)
+        if r is not None and len(r) > 0:
+            for val in r.values:
+                rows.append({'zone': zone, 'ratio': val})
+    return pd.DataFrame(rows)
 
 
 # ============================================================================
 # RIDGELINE FIGURE
 # ============================================================================
 
-def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
+def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
     """
-    Build a 4-row ridgeline figure.
+    Build a joy-division style ridgeline using seaborn FacetGrid.
 
     Parameters
     ----------
-    all_categorized : dict
-        {scenario: {zone: DataFrame}} from categorize_by_drought_zone / cached path.
+    categorized : dict
+        {zone: DataFrame} from categorize_by_drought_zone.
     n_months_prior : int
         Aggregation window length (for x-axis label).
     recon_ratio : float or None
         1964 reconstruction contribution ratio (%).
     """
-    # --- x range: 95th percentile of emergency zone data across all scenarios ---
-    emergency_vals = []
-    for sc in SCENARIOS:
-        r = _get_ratios(all_categorized[sc], 'emergency')
-        if r is not None and len(r) > 0:
-            emergency_vals.extend(r.values)
-    x_max = np.percentile(emergency_vals, 95) if emergency_vals else 100.0
-    # Ensure the 1964 line is visible if within a reasonable range
+    # x range: 95th percentile of emergency zone data
+    r_emergency = _get_ratios(categorized, 'emergency')
+    x_max = float(np.percentile(r_emergency.values, 95)) if (r_emergency is not None and len(r_emergency) > 0) else 100.0
     if recon_ratio is not None and recon_ratio <= x_max * 1.1:
         x_max = max(x_max, recon_ratio)
-    x_grid = np.linspace(0, x_max, N_KDE_POINTS)
 
-    # --- precompute all KDE curves ---
-    kdes = {}
-    for zone in ZONE_ORDER:
-        for sc in SCENARIOS:
-            r = _get_ratios(all_categorized[sc], zone)
-            kdes[(zone, sc)] = _kde_on_grid(r, x_grid)
+    df = build_long_df(categorized)
 
-    # per-zone peak density (used to scale y-limits consistently within each row)
-    zone_peak = {
-        z: max(kdes[(z, sc)].max() for sc in SCENARIOS)
-        for z in ZONE_ORDER
-    }
-
-    # -----------------------------------------------------------------------
-    # Layout
-    # Taller figure so that row centres are ~1.5 in apart, giving rotated
-    # labels room to breathe.  hspace=-0.45 keeps the ridgeline aesthetic
-    # while leaving enough visible band per row.
-    # -----------------------------------------------------------------------
-    n_rows = len(ZONE_ORDER)
-    fig = plt.figure(figsize=(8.5, 9))
-    gs = gridspec.GridSpec(
-        n_rows, 1,
-        hspace=-0.45,
-        top=0.95, bottom=0.14,
-        left=0.17, right=0.97,
-    )
-    axes = []
-    for i in range(n_rows):
-        ax = fig.add_subplot(gs[i], sharex=axes[0] if i > 0 else None)
-        axes.append(ax)
-
-    # Shared x tick positions — spaced every 20 up to x_max
-    tick_step = 20
-    X_TICKS = list(range(0, int(np.floor(x_max / tick_step) + 1) * tick_step, tick_step))
-    X_TICKS = [t for t in X_TICKS if t <= x_max]
-
-    # KDE tail threshold — fraction of zone peak below which the line is
-    # masked so curves end naturally rather than running flat to x_max.
-    KDE_TAIL_THRESH = 0.003
-
-    # Upper rows rendered on top — critical for white-background masking
-    for i, ax in enumerate(axes):
-        ax.set_zorder(n_rows - i)
-        ax.patch.set_facecolor('white')
-        ax.patch.set_alpha(1.0)
-
-    # -----------------------------------------------------------------------
-    # Draw each row
-    # -----------------------------------------------------------------------
-    for i, zone in enumerate(ZONE_ORDER):
-        ax = axes[i]
-        peak = zone_peak[zone]
-
-        ax.set_ylim(-peak * 0.05, peak * 2.3)
-        ax.set_xlim(0, x_max)
-
-        # --- KDE lines (tails masked below threshold) ---
-        for sc in SCENARIOS:
-            kv    = kdes[(zone, sc)]
-            r     = _get_ratios(all_categorized[sc], zone)
-            color = DATASET_COLORS[sc]
-
-            # Mask values below threshold so flat tails disappear naturally
-            thresh = peak * KDE_TAIL_THRESH
-            kv_plot = kv.copy().astype(float)
-            kv_plot[kv_plot < thresh] = np.nan
-            ax.plot(x_grid, kv_plot, color=color, linewidth=2.0,
-                    alpha=0.90, zorder=3)
-
-            # Mean: dotted vertical tick of constant height (= zone peak)
-            if r is not None and len(r) > 0:
-                mean_val = float(r.mean())
-                ax.vlines(mean_val, 0, peak, color=color,
-                          linewidth=1.2, linestyle=':', alpha=0.85, zorder=4)
-
-        # --- 1964 reconstruction line: Emergency row only ---
-        if zone == 'emergency' and recon_ratio is not None and recon_ratio <= x_max:
-            ax.vlines(recon_ratio, 0, peak, color='#444444', linestyle='--',
-                      linewidth=1.1, alpha=0.65, zorder=4)
-
-        # --- thin baseline ---
-        ax.axhline(0, color='#bbbbbb', linewidth=0.6, zorder=1)
-
-        # --- no grid ---
-        ax.grid(False)
-
-        # --- spines ---
-        ax.set_yticks([])
-        for spine in ('left', 'top', 'right'):
-            ax.spines[spine].set_visible(False)
-        ax.spines['bottom'].set_visible(i == n_rows - 1)
-        if i == n_rows - 1:
-            ax.spines['bottom'].set_color('#888888')
-
-        # --- x ticks: only bottom row gets labels and marks ---
-        if i == n_rows - 1:
-            ax.set_xticks(X_TICKS)
-            ax.tick_params(axis='x', labelsize=FONTSIZE_MEDIUM,
-                           colors='#333333', length=3, pad=3)
-        else:
-            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-
-    axes[-1].set_xlabel(
-        f'NYC contributions / total inflow  ({n_months_prior}-month window prior to min zone, %)',
-        fontsize=FONTSIZE_LABEL,
-        labelpad=8,
+    sns.set_theme(
+        style="white",
+        rc={"axes.facecolor": (0, 0, 0, 0), "axes.linewidth": 1.5},
     )
 
-    # -----------------------------------------------------------------------
-    # Zone labels and y-axis suptitle — via fig.text() in figure coordinates
-    # so they are never obscured by overlapping axes' white patches.
-    #
-    # LABEL_FRAC: fraction of each subplot's HEIGHT where the visible KDE
-    # band centre sits.  With ylim=(-peak*0.05, peak*2.3):
-    #   baseline  → 0.05/2.35 ≈ 0.021 of axes height
-    #   KDE peak  → 1.05/2.35 ≈ 0.447 of axes height
-    #   mid-band  → ~0.23; use 0.26 to sit slightly above centre.
-    # -----------------------------------------------------------------------
-    fig.canvas.draw()
+    g = sns.FacetGrid(
+        df,
+        palette=ZONE_PALETTE,
+        row="zone",
+        hue="zone",
+        row_order=ZONE_ORDER,
+        hue_order=ZONE_ORDER,
+        aspect=9,
+        height=1.2,
+    )
 
-    LABEL_FRAC    = 0.26
-    LABEL_X_OFFSET = 0.032   # figure-width units left of the plot left edge
+    # Filled KDE (colour) then black outline on top — joy-division style
+    g.map_dataframe(sns.kdeplot, x="ratio", fill=True, alpha=1, clip=(0, x_max))
+    g.map_dataframe(sns.kdeplot, x="ratio", color="black", linewidth=1.5, clip=(0, x_max))
 
-    for i, zone in enumerate(ZONE_ORDER):
-        pos   = axes[i].get_position()
-        y_fig = pos.y0 + LABEL_FRAC * pos.height
-        x_fig = pos.x0 - LABEL_X_OFFSET
-
-        fig.text(
-            x_fig, y_fig,
-            ZONE_LABELS[zone],
+    # Row labels drawn inside each axes at the left edge
+    def label(x, color, label):
+        ax = plt.gca()
+        ax.text(
+            0.01, 0.25,
+            ZONE_LABELS[label],
+            color="black",
             fontsize=FONTSIZE_MEDIUM,
-            va='center', ha='center',
-            color='#111111',
-            fontweight='normal',
-            rotation=90,
-            clip_on=False,
+            ha="left", va="center",
+            transform=ax.transAxes,
         )
 
-    # Suptitle: immediately left of zone labels, larger font
-    top_pos  = axes[0].get_position()
-    bot_pos  = axes[-1].get_position()
-    y_center = (top_pos.y0 + LABEL_FRAC * top_pos.height +
-                bot_pos.y0 + LABEL_FRAC * bot_pos.height) / 2.0
+    g.map(label, "zone")
 
-    # x position: just far enough left to not overlap the zone labels
-    suptitle_x = axes[0].get_position().x0 - LABEL_X_OFFSET - 0.065
-
-    fig.text(
-        suptitle_x, y_center,
-        'Water-years where minimum\nNYC reservoir storage zone is:',
-        fontsize=FONTSIZE_LABEL + 3,
-        va='center', ha='center',
-        rotation=90,
-        color='#444444',
-        clip_on=False,
+    g.fig.subplots_adjust(hspace=-0.5)
+    g.set_titles("")
+    g.set(
+        yticks=[],
+        ylabel="",
+        xlim=(0, x_max),
+        xlabel=f"NYC contributions / total inflow  ({n_months_prior}-month window prior to min zone, %)",
     )
+    g.despine(left=True)
 
-    # -----------------------------------------------------------------------
-    # Legend — bottom centre, 2 columns
-    # -----------------------------------------------------------------------
-    legend_handles = [
-        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.0,
-               label=DATASET_LABELS[sc])
-        for sc in SCENARIOS
-    ]
-    legend_handles.append(
-        Line2D([0], [0], color='#444444', linestyle=':',
-               linewidth=1.2, label='Dataset mean')
-    )
-    if recon_ratio is not None:
-        legend_handles.append(
-            Line2D([0], [0], color='#444444', linestyle='--',
-                   linewidth=1.1, label='1964 Drought (DE only)')
-        )
-    fig.legend(
-        handles=legend_handles,
-        loc='lower center',
-        ncol=2,
-        fontsize=FONTSIZE_SMALL,
-        frameon=False,
-        bbox_to_anchor=(0.58, -0.01),
-        columnspacing=1.4,
-    )
+    # Remove any residual "Density" y-axis labels
+    for ax in g.axes.flat:
+        ax.set_ylabel("")
 
-    return fig
+    # Style the x-axis label on the bottom subplot only
+    g.axes[-1, 0].xaxis.label.set_fontsize(FONTSIZE_LABEL)
+
+    # 1964 reconstruction: bold black tick on the emergency (bottom) row baseline
+    if recon_ratio is not None and recon_ratio <= x_max:
+        ax_emg = g.axes[-1, 0]
+        ylim = ax_emg.get_ylim()
+        tick_height = (ylim[1] - ylim[0]) * 0.07
+        ax_emg.vlines(recon_ratio, ylim[0], ylim[0] + tick_height,
+                      color="black", linewidth=3.5, zorder=5)
+
+    return g.fig
 
 
 # ============================================================================
@@ -340,13 +201,6 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
 
 def main():
     apply_publication_style()
-    plt.rcParams.update({
-        'font.size': 12,
-        'axes.labelsize': 13,
-        'xtick.labelsize': 11,
-        'ytick.labelsize': 11,
-        'legend.fontsize': 11,
-    })
 
     os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
@@ -358,12 +212,12 @@ def main():
     try:
         from methods.load import load_contribution_metrics
         from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
-        metrics_cache = {sc: load_contribution_metrics(sc) for sc in SCENARIOS}
+        metrics_cache = load_contribution_metrics(SCENARIO)
     except (ImportError, FileNotFoundError):
         use_cached = False
 
     if not use_cached:
-        all_data = load_all_data()
+        data = load_data()
 
     zone_categories = {
         'emergency': [6],
@@ -385,17 +239,15 @@ def main():
                 f'demand_satisfaction_{window_days}d': 'demand_satisfaction',
                 f'worst_1mo_demand_sat_{window_days}d': 'worst_1mo_demand_sat',
             }
-            all_categorized = {}
-            for sc in SCENARIOS:
-                df = get_metrics_for_window(metrics_cache[sc], window_days)
-                df = df.rename(columns=col_map)
-                all_categorized[sc] = categorize_by_zone(df, zone_categories)
+            df = get_metrics_for_window(metrics_cache, window_days)
+            df = df.rename(columns=col_map)
+            categorized = categorize_by_zone(df, zone_categories)
         else:
-            all_categorized = categorize_all_scenarios(all_data, n_mo)
+            categorized = categorize_scenario(data, n_mo)
 
         recon_ratio = calculate_reconstruction_contribution_ratio()
 
-        fig = create_ridgeline_figure(all_categorized, n_mo, recon_ratio)
+        fig = create_ridgeline_figure(categorized, n_mo, recon_ratio)
         fname = f"{FIG_OUTPUT_DIR}/F4alt_kde_v2_{n_mo}mo.png"
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"    Saved: {fname}")
