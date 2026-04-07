@@ -42,7 +42,6 @@ from methods.plotting.water_balance_by_drought_zone import (
     categorize_by_drought_zone,
     calculate_reconstruction_contribution_ratio,
     MIN_INFLOW_THRESHOLD,
-    XLIM_MAX_MANUAL,
 )
 
 # Import contribution_kde to pick up the FFMP-aligned zone color overrides
@@ -134,16 +133,13 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
     recon_ratio : float or None
         1964 reconstruction contribution ratio (%).
     """
-    # --- shared x range ---
-    all_vals = []
-    for zone in ZONE_ORDER:
-        for sc in SCENARIOS:
-            r = _get_ratios(all_categorized[sc], zone)
-            if r is not None and len(r) > 0:
-                all_vals.extend(r.values)
-    XLIM_MAX_MANUAL = 100 if n_months_prior == 9 else None
-    x_max = (XLIM_MAX_MANUAL if XLIM_MAX_MANUAL is not None
-             else np.percentile(all_vals, 99.5))
+    # --- x range: 95th percentile of emergency zone data across all scenarios ---
+    emergency_vals = []
+    for sc in SCENARIOS:
+        r = _get_ratios(all_categorized[sc], 'emergency')
+        if r is not None and len(r) > 0:
+            emergency_vals.extend(r.values)
+    x_max = np.percentile(emergency_vals, 95) if emergency_vals else 100.0
     # Ensure the 1964 line is visible if within a reasonable range
     if recon_ratio is not None and recon_ratio <= x_max * 1.1:
         x_max = max(x_max, recon_ratio)
@@ -176,10 +172,15 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
         top=0.95, bottom=0.14,
         left=0.17, right=0.97,
     )
-    axes = [fig.add_subplot(gs[i]) for i in range(n_rows)]
+    axes = []
+    for i in range(n_rows):
+        ax = fig.add_subplot(gs[i], sharex=axes[0] if i > 0 else None)
+        axes.append(ax)
 
-    # Shared x tick positions — drawn on every row
-    X_TICKS = [0, 20, 40, 60, 80, 100]
+    # Shared x tick positions — spaced every 20 up to x_max
+    tick_step = 20
+    X_TICKS = list(range(0, int(np.floor(x_max / tick_step) + 1) * tick_step, tick_step))
+    X_TICKS = [t for t in X_TICKS if t <= x_max]
 
     # KDE tail threshold — fraction of zone peak below which the line is
     # masked so curves end naturally rather than running flat to x_max.
@@ -200,12 +201,6 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
 
         ax.set_ylim(-peak * 0.05, peak * 2.3)
         ax.set_xlim(0, x_max)
-
-        # --- vertical grid lines clipped to visible KDE band only ---
-        # Using vlines (not axvline) so they don't bleed into the overlap zone.
-        for xg in X_TICKS:
-            ax.vlines(xg, 0, peak, color='#e4e4e4', linewidth=0.6,
-                      linestyle='-', zorder=0)
 
         # --- KDE lines (tails masked below threshold) ---
         for sc in SCENARIOS:
@@ -234,6 +229,9 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
         # --- thin baseline ---
         ax.axhline(0, color='#bbbbbb', linewidth=0.6, zorder=1)
 
+        # --- no grid ---
+        ax.grid(False)
+
         # --- spines ---
         ax.set_yticks([])
         for spine in ('left', 'top', 'right'):
@@ -242,17 +240,13 @@ def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
         if i == n_rows - 1:
             ax.spines['bottom'].set_color('#888888')
 
-        # --- x tick labels on ALL rows ---
-        # Upper rows: negative pad floats labels up into the visible KDE band
-        # so they aren't hidden under the overlapping row above.
-        ax.set_xticks(X_TICKS)
-        ax.set_xticklabels([str(x) for x in X_TICKS])
-        if i < n_rows - 1:
-            ax.tick_params(axis='x', labelsize=FONTSIZE_MEDIUM - 1,
-                           colors='#666666', length=0, pad=-13)
-        else:
+        # --- x ticks: only bottom row gets labels and marks ---
+        if i == n_rows - 1:
+            ax.set_xticks(X_TICKS)
             ax.tick_params(axis='x', labelsize=FONTSIZE_MEDIUM,
                            colors='#333333', length=3, pad=3)
+        else:
+            ax.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
 
     axes[-1].set_xlabel(
         f'NYC contributions / total inflow  ({n_months_prior}-month window prior to min zone, %)',
