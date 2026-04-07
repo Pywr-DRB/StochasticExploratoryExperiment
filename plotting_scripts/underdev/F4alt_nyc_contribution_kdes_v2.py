@@ -147,6 +147,7 @@ def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
         hue_order=ZONE_ORDER,
         aspect=9,
         height=1.2,
+        sharey=False,
     )
 
     # Filled KDE (colour) then black outline on top — joy-division style
@@ -167,7 +168,7 @@ def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
 
     g.map(label, "zone")
 
-    g.fig.subplots_adjust(hspace=-0.5)
+    g.fig.subplots_adjust(hspace=-0.1)
     g.set_titles("")
     g.set(
         yticks=[],
