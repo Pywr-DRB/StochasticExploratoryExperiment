@@ -377,8 +377,9 @@ def plot_weekly_streamflow_percentiles(
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
+    timescale: str = 'weekly',
     ylabel: str = 'Streamflow (MCM/day)',
-    xlabel: str = 'Week of Year',
+    xlabel: str = None,
     percentiles: tuple = (5, 95),
     show_legend: bool = False,
     synthetic_color: str = None,
@@ -387,7 +388,7 @@ def plot_weekly_streamflow_percentiles(
     _syn_agg: dict = None,
 ):
     """
-    Plot weekly streamflow percentile bands for synthetic vs historic data.
+    Plot streamflow percentile bands for synthetic vs historic data.
 
     Parameters
     ----------
@@ -399,8 +400,10 @@ def plot_weekly_streamflow_percentiles(
         List of sites to aggregate. Defaults to NYC_RESERVOIRS.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on.
+    timescale : str
+        'weekly' (52 periods) or 'monthly' (12 periods).
     ylabel, xlabel : str
-        Axis labels
+        Axis labels. xlabel auto-set from timescale if None.
     percentiles : tuple
         Lower and upper percentiles for range (default 5, 95)
     show_legend : bool
@@ -430,50 +433,103 @@ def plot_weekly_streamflow_percentiles(
     if _syn_agg is None:
         _syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    n_weeks = 52
-    weeks = np.arange(1, n_weeks + 1)
+    if timescale == 'monthly':
+        n_periods = 12
+        periods = np.arange(1, n_periods + 1)
 
-    # Process historic data to weekly
-    Q_hist_weekly = _hist_agg.resample('W').mean()
-    hist_weeks = Q_hist_weekly.index.isocalendar().week.values.astype(int)
-    hist_values = Q_hist_weekly.values
+        Q_hist_res = _hist_agg.resample('ME').mean()
+        hist_period_nums = Q_hist_res.index.month.values
+        hist_values = Q_hist_res.values
 
-    hist_median = np.empty(n_weeks)
-    hist_p_low = np.empty(n_weeks)
-    hist_p_high = np.empty(n_weeks)
-    for w in weeks:
-        vals = hist_values[hist_weeks == w]
-        vals = vals[~np.isnan(vals)]
-        if len(vals) > 0:
-            hist_median[w - 1] = np.median(vals)
-            hist_p_low[w - 1] = np.percentile(vals, percentiles[0])
-            hist_p_high[w - 1] = np.percentile(vals, percentiles[1])
-        else:
-            hist_median[w - 1] = hist_p_low[w - 1] = hist_p_high[w - 1] = np.nan
-
-    # Process synthetic data: collect all weekly values by week
-    syn_weekly_by_week = {w: [] for w in range(1, n_weeks + 1)}
-    for real_id, flow_series in _syn_agg.items():
-        weekly = flow_series.resample('W').mean()
-        w_arr = weekly.index.isocalendar().week.values.astype(int)
-        v_arr = weekly.values
-        for w in weeks:
-            vals = v_arr[w_arr == w]
+        hist_median = np.empty(n_periods)
+        hist_p_low = np.empty(n_periods)
+        hist_p_high = np.empty(n_periods)
+        for p in periods:
+            vals = hist_values[hist_period_nums == p]
             vals = vals[~np.isnan(vals)]
             if len(vals) > 0:
-                syn_weekly_by_week[w].append(vals)
+                hist_median[p - 1] = np.median(vals)
+                hist_p_low[p - 1] = np.percentile(vals, percentiles[0])
+                hist_p_high[p - 1] = np.percentile(vals, percentiles[1])
+            else:
+                hist_median[p - 1] = hist_p_low[p - 1] = hist_p_high[p - 1] = np.nan
 
-    syn_median = np.empty(n_weeks)
-    syn_p_low = np.empty(n_weeks)
-    syn_p_high = np.empty(n_weeks)
-    for w in weeks:
-        if syn_weekly_by_week[w]:
-            all_vals = np.concatenate(syn_weekly_by_week[w])
-            syn_median[w - 1] = np.median(all_vals)
-            syn_p_low[w - 1] = np.percentile(all_vals, percentiles[0])
-            syn_p_high[w - 1] = np.percentile(all_vals, percentiles[1])
-        else:
-            syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
+        syn_by_period = {p: [] for p in periods}
+        for flow_series in _syn_agg.values():
+            res = flow_series.resample('ME').mean()
+            p_arr = res.index.month.values
+            v_arr = res.values
+            for p in periods:
+                vals = v_arr[p_arr == p]
+                vals = vals[~np.isnan(vals)]
+                if len(vals) > 0:
+                    syn_by_period[p].extend(vals.tolist())
+
+        syn_median = np.empty(n_periods)
+        syn_p_low = np.empty(n_periods)
+        syn_p_high = np.empty(n_periods)
+        for p in periods:
+            if syn_by_period[p]:
+                all_vals = np.array(syn_by_period[p])
+                syn_median[p - 1] = np.median(all_vals)
+                syn_p_low[p - 1] = np.percentile(all_vals, percentiles[0])
+                syn_p_high[p - 1] = np.percentile(all_vals, percentiles[1])
+            else:
+                syn_median[p - 1] = syn_p_low[p - 1] = syn_p_high[p - 1] = np.nan
+
+        xtick_positions = periods
+        xtick_labels = MONTH_LABELS
+        xlim = (0.5, n_periods + 0.5)
+        xlabel = xlabel or 'Month'
+
+    else:  # weekly
+        n_periods = 52
+        periods = np.arange(1, n_periods + 1)
+
+        Q_hist_weekly = _hist_agg.resample('W').mean()
+        hist_weeks = Q_hist_weekly.index.isocalendar().week.values.astype(int)
+        hist_values = Q_hist_weekly.values
+
+        hist_median = np.empty(n_periods)
+        hist_p_low = np.empty(n_periods)
+        hist_p_high = np.empty(n_periods)
+        for w in periods:
+            vals = hist_values[hist_weeks == w]
+            vals = vals[~np.isnan(vals)]
+            if len(vals) > 0:
+                hist_median[w - 1] = np.median(vals)
+                hist_p_low[w - 1] = np.percentile(vals, percentiles[0])
+                hist_p_high[w - 1] = np.percentile(vals, percentiles[1])
+            else:
+                hist_median[w - 1] = hist_p_low[w - 1] = hist_p_high[w - 1] = np.nan
+
+        syn_weekly_by_week = {w: [] for w in periods}
+        for flow_series in _syn_agg.values():
+            weekly = flow_series.resample('W').mean()
+            w_arr = weekly.index.isocalendar().week.values.astype(int)
+            v_arr = weekly.values
+            for w in periods:
+                vals = v_arr[w_arr == w]
+                vals = vals[~np.isnan(vals)]
+                if len(vals) > 0:
+                    syn_weekly_by_week[w].append(vals)
+
+        syn_median = np.empty(n_periods)
+        syn_p_low = np.empty(n_periods)
+        syn_p_high = np.empty(n_periods)
+        for w in periods:
+            if syn_weekly_by_week[w]:
+                all_vals = np.concatenate(syn_weekly_by_week[w])
+                syn_median[w - 1] = np.median(all_vals)
+                syn_p_low[w - 1] = np.percentile(all_vals, percentiles[0])
+                syn_p_high[w - 1] = np.percentile(all_vals, percentiles[1])
+            else:
+                syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
+
+        xtick_positions = MONTH_WEEK_STARTS
+        xtick_labels = MONTH_LABELS
+        xlim = (1, 52.85)
+        xlabel = xlabel or 'Week of Year'
 
     # Convert MGD to MCM/day before plotting
     syn_p_low   = syn_p_low   * MGD_TO_MCM
@@ -485,34 +541,34 @@ def plot_weekly_streamflow_percentiles(
 
     # Plot synthetic range and median
     ax.fill_between(
-        weeks, syn_p_low, syn_p_high,
+        periods, syn_p_low, syn_p_high,
         alpha=ALPHA_FILL, color=synthetic_color,
         label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
     )
     ax.plot(
-        weeks, syn_median,
+        periods, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
         label=f'{synthetic_label} (median)'
     )
 
     # Plot historic range and median
     ax.fill_between(
-        weeks, hist_p_low, hist_p_high,
+        periods, hist_p_low, hist_p_high,
         alpha=ALPHA_FILL * 0.7, color=HISTORIC_COLOR,
         label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'
     )
     ax.plot(
-        weeks, hist_median,
+        periods, hist_median,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
         label=f'{HISTORIC_LABEL} (median)'
     )
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_xlim(1, 52.85)
+    ax.set_xlim(*xlim)
     ax.set_yscale('log')
-    ax.set_xticks(MONTH_WEEK_STARTS)
-    ax.set_xticklabels(MONTH_LABELS)
+    ax.set_xticks(xtick_positions)
+    ax.set_xticklabels(xtick_labels)
 
     if show_legend:
         ax.legend(loc='upper right', frameon=True)
@@ -521,78 +577,86 @@ def plot_weekly_streamflow_percentiles(
     return ax
 
 
-def _compute_weekly_pvalues(
+def _compute_pooled_pvalues(
     hist_agg: pd.Series,
     syn_agg: dict,
-    significance_threshold: float = 0.05,
+    timescale: str = 'weekly',
 ) -> tuple:
     """
-    Compute per-realization Wilcoxon and Levene pass fractions for each of 52 weeks.
+    Compute Wilcoxon rank-sum and Levene p-values by pooling all synthetic
+    realizations and comparing directly to historic data.
 
-    For each week, each realization is tested independently against the full
-    historic record.  The returned arrays contain the *fraction of realizations*
-    whose p-value exceeds ``significance_threshold`` — i.e. values close to 1.0
-    indicate that nearly all realizations are statistically indistinguishable
-    from the historic for that week.
+    For each time period (week or month), all synthetic values from all
+    realizations are pooled into a single sample and tested against the
+    historic values for that period.  The size difference between the pooled
+    synthetic and historic samples is accepted by design.
+
+    Parameters
+    ----------
+    hist_agg : pd.Series
+        Aggregated historic flow.
+    syn_agg : dict
+        Aggregated synthetic flows keyed by realization ID.
+    timescale : str
+        'weekly' (52 periods, grouped by ISO week) or
+        'monthly' (12 periods, grouped by calendar month).
 
     Returns
     -------
-    wilcoxon_pass_frac, levene_pass_frac : np.ndarray of shape (52,)
+    wilcoxon_pvals, levene_pvals : np.ndarray
+        P-values for each period; NaN where data are insufficient.
     """
-    n_weeks = 52
-    weeks = np.arange(1, n_weeks + 1)
+    if timescale == 'weekly':
+        n_periods = 52
+        Q_hist_res = hist_agg.resample('W').mean()
+        hist_period_nums = Q_hist_res.index.isocalendar().week.values.astype(int)
+        hist_vals_arr = Q_hist_res.values
+        periods = np.arange(1, n_periods + 1)
 
-    Q_hist_weekly = hist_agg.resample('W').mean()
-    hist_week_nums = Q_hist_weekly.index.isocalendar().week.values.astype(int)
-    hist_vals_arr = Q_hist_weekly.values
+        syn_by_period = {p: [] for p in periods}
+        for flow_series in syn_agg.values():
+            res = flow_series.resample('W').mean()
+            p_arr = res.index.isocalendar().week.values.astype(int)
+            v_arr = res.values
+            for p in periods:
+                vals = v_arr[p_arr == p]
+                vals = vals[~np.isnan(vals)]
+                if len(vals) > 0:
+                    syn_by_period[p].extend(vals.tolist())
+    else:  # monthly
+        n_periods = 12
+        Q_hist_res = hist_agg.resample('ME').mean()
+        hist_period_nums = Q_hist_res.index.month.values
+        hist_vals_arr = Q_hist_res.values
+        periods = np.arange(1, n_periods + 1)
 
-    # Pre-compute weekly values per realization
-    syn_by_real_week = {}
-    for real_id, flow_series in syn_agg.items():
-        weekly = flow_series.resample('W').mean()
-        w_arr = weekly.index.isocalendar().week.values.astype(int)
-        v_arr = weekly.values
-        real_weeks = {}
-        for w in weeks:
-            vals = v_arr[w_arr == w]
-            vals = vals[~np.isnan(vals)]
-            real_weeks[w] = vals
-        syn_by_real_week[real_id] = real_weeks
+        syn_by_period = {p: [] for p in periods}
+        for flow_series in syn_agg.values():
+            res = flow_series.resample('ME').mean()
+            p_arr = res.index.month.values
+            v_arr = res.values
+            for p in periods:
+                vals = v_arr[p_arr == p]
+                vals = vals[~np.isnan(vals)]
+                if len(vals) > 0:
+                    syn_by_period[p].extend(vals.tolist())
 
-    realization_ids = list(syn_by_real_week.keys())
-    n_real = len(realization_ids)
+    wilcoxon_pvals = np.full(n_periods, np.nan)
+    levene_pvals = np.full(n_periods, np.nan)
 
-    wilcoxon_pass_frac = np.full(n_weeks, np.nan)
-    levene_pass_frac = np.full(n_weeks, np.nan)
-
-    for w in weeks:
-        h_valid = hist_vals_arr[hist_week_nums == w]
+    for p in periods:
+        h_valid = hist_vals_arr[hist_period_nums == p]
         h_valid = h_valid[~np.isnan(h_valid)]
-        if len(h_valid) < 2:
+        s_valid = np.array(syn_by_period[p])
+        if len(h_valid) < 2 or len(s_valid) < 2:
             continue
+        try:
+            wilcoxon_pvals[p - 1] = ranksums(h_valid, s_valid)[1]
+            levene_pvals[p - 1] = levene(h_valid, s_valid)[1]
+        except Exception:
+            pass
 
-        wilcoxon_passes = 0
-        levene_passes = 0
-        n_tested = 0
-
-        for real_id in realization_ids:
-            s_valid = syn_by_real_week[real_id][w]
-            if len(s_valid) < 2:
-                continue
-            try:
-                if ranksums(h_valid, s_valid)[1] > significance_threshold:
-                    wilcoxon_passes += 1
-                if levene(h_valid, s_valid)[1] > significance_threshold:
-                    levene_passes += 1
-                n_tested += 1
-            except Exception:
-                pass
-
-        if n_tested > 0:
-            wilcoxon_pass_frac[w - 1] = wilcoxon_passes / n_tested
-            levene_pass_frac[w - 1] = levene_passes / n_tested
-
-    return wilcoxon_pass_frac, levene_pass_frac
+    return wilcoxon_pvals, levene_pvals
 
 
 def plot_pvalue_comparison(
@@ -601,23 +665,22 @@ def plot_pvalue_comparison(
     sites: list = None,
     ax=None,
     which: str = 'wilcoxon',
+    timescale: str = 'weekly',
     ylabel: str = None,
     xlabel: str = None,
     significance_threshold: float = 0.05,
-    pass_threshold: float = 0.9,
     show_xticklabels: bool = True,
     show_legend: bool = False,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
     """
-    Plot per-realization Wilcoxon or Levene pass fraction by week.
+    Plot Wilcoxon rank-sum or Levene p-values by month or week.
 
-    Each bar shows the fraction of realizations whose p-value vs the historic
-    record exceeds ``significance_threshold`` (default 0.05).  Values near 1.0
-    indicate most realizations are statistically indistinguishable from the
-    historic for that week.  A reference line is drawn at ``pass_threshold``
-    (default 0.9).
+    All synthetic realizations are pooled for each period and compared
+    directly to the historic values.  Each bar shows the p-value for that
+    period; bars below ``significance_threshold`` are filled to indicate
+    a statistically significant difference.  Y-axis is linear (0–1).
 
     Parameters
     ----------
@@ -631,12 +694,12 @@ def plot_pvalue_comparison(
         Axes to plot on.
     which : str
         Which test to plot: 'wilcoxon' or 'levene'.
+    timescale : str
+        'weekly' (52 bars) or 'monthly' (12 bars).
     ylabel, xlabel : str, optional
-        Axis labels. Auto-set from `which` if None.
+        Axis labels. Auto-set if None.
     significance_threshold : float
-        p-value cutoff for pass/fail per realization (default 0.05).
-    pass_threshold : float
-        Reference line for fraction-passing (default 0.9).
+        Reference line for statistical significance (default 0.05).
     show_xticklabels : bool
         Whether to show x-axis tick labels.
     show_legend : bool
@@ -658,33 +721,51 @@ def plot_pvalue_comparison(
     if _syn_agg is None:
         _syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
-    wilcoxon_pass_frac, levene_pass_frac = _compute_weekly_pvalues(
-        _hist_agg, _syn_agg, significance_threshold=significance_threshold,
+    wilcoxon_pvals, levene_pvals = _compute_pooled_pvalues(
+        _hist_agg, _syn_agg, timescale=timescale,
     )
 
-    pass_frac = wilcoxon_pass_frac if which == 'wilcoxon' else levene_pass_frac
+    pvals = wilcoxon_pvals if which == 'wilcoxon' else levene_pvals
+
+    test_label = 'Wilcoxon' if which == 'wilcoxon' else 'Levene'
+    period_label = 'Month' if timescale == 'monthly' else 'Week'
 
     if ylabel is None:
-        ylabel = 'Wilcoxon\nfrac. pass' if which == 'wilcoxon' else 'Levene\nfrac. pass'
+        ylabel = f'{test_label}\np-value'
     if xlabel is None:
-        xlabel = 'Week of Year' if show_xticklabels else ''
+        xlabel = period_label if show_xticklabels else ''
 
-    weeks = np.arange(1, 53)
-    bar_width = 0.75
+    if timescale == 'monthly':
+        n_periods = 12
+        positions = np.arange(1, n_periods + 1)
+        bar_width = 0.75
+        xtick_positions = positions
+        xtick_labels = MONTH_LABELS
+        xlim = (0.5, n_periods + bar_width + 0.1)
+    else:
+        n_periods = 52
+        positions = np.arange(1, n_periods + 1)
+        bar_width = 0.75
+        xtick_positions = MONTH_WEEK_STARTS
+        xtick_labels = MONTH_LABELS
+        xlim = (1, n_periods + bar_width + 0.1)
 
-    ax.bar(weeks, pass_frac, bar_width, align='edge',
-           facecolor='white', edgecolor='black', linewidth=0.5)
+    # Color bars by significance
+    colors = ['#d73027' if (not np.isnan(p) and p < significance_threshold) else 'white'
+              for p in pvals]
+    ax.bar(positions, pvals, bar_width, align='edge',
+           color=colors, edgecolor='black', linewidth=0.5)
 
-    ax.axhline(pass_threshold, color='k', linewidth=1, linestyle='--',
-               label=f'{int(pass_threshold * 100)}% pass')
+    ax.axhline(significance_threshold, color='k', linewidth=1, linestyle='--',
+               label=f'p = {significance_threshold}')
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.set_xlim(1, 52 + bar_width + 0.1)
+    ax.set_xlim(*xlim)
     ax.set_ylim(0, 1.05)
-    ax.set_xticks(MONTH_WEEK_STARTS)
+    ax.set_xticks(xtick_positions)
     if show_xticklabels:
-        ax.set_xticklabels(MONTH_LABELS)
+        ax.set_xticklabels(xtick_labels)
     else:
         ax.set_xticklabels([])
 
@@ -704,15 +785,16 @@ def plot_ensemble_summary_figure(
     figsize: tuple = (12, 14),
     percentiles: tuple = (0, 100),
     max_lag: int = 30,
+    timescale: str = 'monthly',
 ):
     """
     Create 4-panel summary figure for manuscript with autocorrelation, FDC,
-    weekly flow ranges, and statistical test p-values.
+    periodic flow ranges, and statistical test p-values.
 
     Layout (2, 1, 1):
     - Top row: Autocorrelation (left), FDC ranges (right)
-    - Middle row: Weekly flow ranges (full width)
-    - Bottom row: Levene & Wilcoxon p-values bar chart (full width)
+    - Middle row: Flow percentile bands by month or week (full width)
+    - Bottom row: Wilcoxon & Levene p-values bar chart (full width)
 
     Uses aggregate flow from NYC reservoirs (sum of cannonsville, pepacton, neversink).
 
@@ -731,9 +813,12 @@ def plot_ensemble_summary_figure(
     figsize : tuple
         Figure size (width, height)
     percentiles : tuple
-        Lower and upper percentiles for range (default 5, 95)
+        Lower and upper percentiles for range (default 0, 100)
     max_lag : int
         Maximum lag for autocorrelation plot (default 30 days)
+    timescale : str
+        Time-period aggregation for panels C–E: 'monthly' (12 periods) or
+        'weekly' (52 periods). Default 'monthly'.
 
     Returns
     -------
@@ -758,7 +843,7 @@ def plot_ensemble_summary_figure(
 
     ax_autocorr = fig.add_subplot(gs[0, 0])
     ax_fdc      = fig.add_subplot(gs[0, 1])
-    ax_monthly  = fig.add_subplot(gs[1, :])
+    ax_periodic = fig.add_subplot(gs[1, :])
     ax_wilcoxon = fig.add_subplot(gs[2, :])
     ax_levene   = fig.add_subplot(gs[3, :])
 
@@ -784,21 +869,21 @@ def plot_ensemble_summary_figure(
     ax_fdc.text(0.02, 0.97, 'b)', transform=ax_fdc.transAxes,
                 fontsize=12, va='top', ha='left')
 
-    # Panel C: Weekly streamflow percentiles
+    # Panel C: Streamflow percentiles by timescale
     plot_weekly_streamflow_percentiles(
         Q_historic, Q_synthetic,
-        ax=ax_monthly, percentiles=percentiles,
+        ax=ax_periodic, timescale=timescale, percentiles=percentiles,
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    ax_monthly.text(0.01, 0.97, 'c)', transform=ax_monthly.transAxes,
-                    fontsize=12, va='top', ha='left')
+    ax_periodic.text(0.01, 0.97, 'c)', transform=ax_periodic.transAxes,
+                     fontsize=12, va='top', ha='left')
 
     # Panel D: Wilcoxon rank-sum p-values (no x-tick labels — shared with panel E)
     plot_pvalue_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_wilcoxon, which='wilcoxon',
+        ax=ax_wilcoxon, which='wilcoxon', timescale=timescale,
         show_xticklabels=False,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
@@ -809,7 +894,7 @@ def plot_ensemble_summary_figure(
     # Panel E: Levene p-values (x-tick labels shown here)
     plot_pvalue_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_levene, which='levene',
+        ax=ax_levene, which='levene', timescale=timescale,
         show_xticklabels=True,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
@@ -818,6 +903,7 @@ def plot_ensemble_summary_figure(
                    fontsize=12, va='top', ha='left')
 
     # Shared legend (flow panels only; p-value panels are self-labeled via ylabel)
+    period_label = 'month' if timescale == 'monthly' else 'week'
     legend_handles = [
         Patch(facecolor=synthetic_color, alpha=ALPHA_FILL,
               label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'),
@@ -827,20 +913,20 @@ def plot_ensemble_summary_figure(
               label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'),
         Line2D([0], [0], color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK,
                linestyle='--', label=f'{HISTORIC_LABEL} (median)'),
-        Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p=0.05'),
+        Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p = 0.05'),
     ]
 
     fig.legend(
         handles=legend_handles,
-        loc='lower center', ncol=5, frameon=False,
-        bbox_to_anchor=(0.5, -0.02), fontsize=9,
+        loc='lower center', ncol=3, frameon=False,
+        bbox_to_anchor=(0.5, -0.04), fontsize=9,
     )
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.07)
+    plt.subplots_adjust(bottom=0.09)
 
     # Align y-axis labels across the three full-width panels
-    fig.align_ylabels([ax_autocorr, ax_monthly, ax_wilcoxon, ax_levene])
+    fig.align_ylabels([ax_autocorr, ax_periodic, ax_wilcoxon, ax_levene])
 
     # Reduce blank space between panels d and e
     pos_w = ax_wilcoxon.get_position()

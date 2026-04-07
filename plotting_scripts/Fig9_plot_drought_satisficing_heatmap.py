@@ -38,7 +38,7 @@ from methods.plotting.heatmap import (
 )
 
 # ── configuration ────────────────────────────────────────────────────
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F5_drought_satisficing"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9_drought_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SSI_WINDOW_DEFAULT = 3
@@ -202,7 +202,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     )
 
     # ── save ─────────────────────────────────────────────────────────
-    fname = f"{FIG_OUTPUT_DIR}/F5_satisficing_heatmap_ssi{ssi_window}.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)

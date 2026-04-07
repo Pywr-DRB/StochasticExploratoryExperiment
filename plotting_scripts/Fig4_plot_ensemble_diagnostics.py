@@ -27,7 +27,7 @@ from methods.config import (
 from methods.ensemble_utils import ENSEMBLE_SETS
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F1_ensemble_diagnostics"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig4_ensemble_diagnostics"
 
 
 def plot_manuscript_ensemble_figure(dataset_id: str):
@@ -53,7 +53,7 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
 
     # Create output directory and generate figure
     os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-    fname = f"{FIG_OUTPUT_DIR}/F1_{dataset_id}_ensemble_diagnostics.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig4_{dataset_id}_ensemble_diagnostics.png"
 
     plot_ensemble_summary_figure(
         Q_historic=Q_historic,
@@ -62,6 +62,7 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
         fname=fname,
         percentiles=(0.5, 99.5),
         figsize=(9, 9),
+        timescale='weekly',
     )
 
     print(f"Saved: {fname}")

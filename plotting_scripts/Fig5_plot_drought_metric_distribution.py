@@ -34,7 +34,7 @@ from methods.plotting.styles import (
 HISTORIC_LABEL += " Droughts"
 
 # Output directory
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F2_drought_distributions"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig5_drought_distributions"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # Axis labels
@@ -619,7 +619,7 @@ def plot_drought_manuscript_figure(
     if fname is None:
         rc_suffix = '_relative_change' if plot_relative_change else ''
         metric_suffix = f"_{'_'.join(cdf_metrics)}" if cdf_metrics != ['severity', 'magnitude'] else ''
-        fname = f"{FIG_OUTPUT_DIR}/F2_drought_distributions_ssi{ssi_window}{metric_suffix}{rc_suffix}.png"
+        fname = f"{FIG_OUTPUT_DIR}/Fig5_drought_distributions_ssi{ssi_window}{metric_suffix}{rc_suffix}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")

@@ -25,22 +25,26 @@ run() {
     fi
 }
 
-# F1: Ensemble flow distribution and verification plots
-run plotting_scripts/F1_plot_ensemble_diagnostics.py stationary_ensemble
+# Fig4: Ensemble flow distribution and verification plots
+run plotting_scripts/Fig4_plot_ensemble_diagnostics.py stationary_ensemble
 
-# F2: Drought metric distributions
-run plotting_scripts/F2_plot_drought_metric_distribution.py 12
-run plotting_scripts/F2_plot_drought_metric_distribution.py 6
-run plotting_scripts/F2_plot_drought_metric_distribution.py 3
+# Fig5: Drought metric distributions
+# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
+# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
+run plotting_scripts/Fig5_plot_drought_metric_distribution.py 3
 
-# F3: Drought zone occurrence (temporal probability + frequency/duration boxplots)
-run plotting_scripts/F3_plot_drought_zone_occurrence.py
+# Fig6: Drought zone occurrence (temporal probability + frequency/duration boxplots)
+run plotting_scripts/Fig6_plot_drought_zone_occurrence.py
 
-# F4: NYC contribution distributions
-run plotting_scripts/F4_plot_contribution_distributions.py --montague --layout side_by_side
 
-# F5: Drought satisficing heatmaps (severity x magnitude)
-run plotting_scripts/F5_plot_drought_satisficing_heatmap.py 3
+# Fig7: KDEs of NYC contribution / total inflow
+run plotting_scripts/Fig7_nyc_contribution_kdes.py
+
+# Fig8: NYC contribution distributions
+run plotting_scripts/Fig8_plot_contribution_distributions.py --montague --layout side_by_side
+
+# Fig9: Drought satisficing heatmaps (severity x magnitude)
+run plotting_scripts/Fig9_plot_drought_satisficing_heatmap.py 3
 
 echo ""
 echo "========================================"

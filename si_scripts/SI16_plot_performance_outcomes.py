@@ -40,7 +40,7 @@ from methods.load import load_annual_metrics
 # ============================================================================
 # CONFIG
 # ============================================================================
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F5_performance_outcomes"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/SI16_performance_outcomes"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 DATASETS = list(DATASET_CONFIGS.keys())

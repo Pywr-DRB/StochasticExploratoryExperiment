@@ -12,7 +12,7 @@ Usage:
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import matplotlib.pyplot as plt
 import warnings
@@ -43,7 +43,7 @@ SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hi
 
 WINDOW_MONTHS = [3, 6, 9]
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig7_kde"
 
 # ============================================================================
 # DATA LOADING
@@ -153,7 +153,7 @@ def main():
             categorized = all_categorized['stationary_ensemble']
 
         fig = create_figure(categorized, n_mo)
-        fname = f"{FIG_OUTPUT_DIR}/F4alt_kde_{n_mo}mo.png"
+        fname = f"{FIG_OUTPUT_DIR}/Fig7_kde_{n_mo}mo.png"
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"    Saved: {fname}")
         plt.close(fig)

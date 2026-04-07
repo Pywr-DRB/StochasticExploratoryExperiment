@@ -44,7 +44,7 @@ from methods.plotting.drought_zone_boxplots import (
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F3_zone_occurence"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig6_zone_occurence"
 
 # Water-year axis constants (Jun-May)
 WY_MONTH_STARTS = [1, 5, 9, 14, 18, 23, 27, 32, 36, 40, 45, 49]
@@ -242,14 +242,14 @@ def main():
 
     # Version without historic data
     fig = create_figure(show_historic=False)
-    fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
     # Version with historic data
     fig = create_figure(show_historic=True)
-    fname = f"{FIG_OUTPUT_DIR}/F3_zone_occurrence_with_historic.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence_with_historic.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)

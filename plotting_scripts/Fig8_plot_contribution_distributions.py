@@ -55,7 +55,7 @@ from methods.plotting.percentile_bands import (
 # CONFIGURATION
 # ============================================================================
 
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F4_contribution_timeseries"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig8_contribution_timeseries"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
@@ -276,7 +276,7 @@ def plot_single_dataset(dataset_id):
 
     plt.tight_layout()
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(FILTER_BY_ZONES, reverse=True))) if FILTER_BY_ZONES else ''
-    fname = f"{FIG_OUTPUT_DIR}/F4_{dataset_id}_contribution{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig8_{dataset_id}_contribution{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close()
@@ -324,7 +324,7 @@ def plot_comparison(baseline_id, comparison_id):
 
     plt.tight_layout()
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(FILTER_BY_ZONES, reverse=True))) if FILTER_BY_ZONES else ''
-    fname = f"{FIG_OUTPUT_DIR}/F4_{comparison_id}_vs_{baseline_id}_comparison{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig8_{comparison_id}_vs_{baseline_id}_comparison{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close()
@@ -370,7 +370,7 @@ def plot_montague_multipanel(zone_filter=None, layout='stacked'):
 
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(zone_filter, reverse=True))) if zone_filter else ''
     layout_suffix = f'_{layout}' if layout != 'side_by_side' else ''
-    fname = f"{FIG_OUTPUT_DIR}/F4_multipanel_contribution_comparison{layout_suffix}{zone_suffix}.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig8_multipanel_contribution_comparison{layout_suffix}{zone_suffix}.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
@@ -407,7 +407,7 @@ def plot_ratio_multipanel(window=None):
         diff_ylabel='Change in Contribution Ratio\nvs. Baseline (pp)',
     )
 
-    fname = f"{FIG_OUTPUT_DIR}/F4_contribution_ratio_{window}d_stacked.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig8_contribution_ratio_{window}d_stacked.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
@@ -532,7 +532,7 @@ def plot_combined(window=None):
 
     _add_shared_legend(fig)
 
-    fname = f"{FIG_OUTPUT_DIR}/F4_contribution_combined_{window}d.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig8_contribution_combined_{window}d.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
