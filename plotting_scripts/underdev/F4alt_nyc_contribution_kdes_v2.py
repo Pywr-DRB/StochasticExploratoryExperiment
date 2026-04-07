@@ -3,7 +3,7 @@ F4 (Alternative v2): NYC contribution / inflow ratio — joy-division ridgeline.
 
 4-row ridgeline layout (seaborn FacetGrid) where each row shows the
 distribution of the NYC Montague contribution-to-inflow ratio for one
-FFMP drought zone category (stationary ensemble only):
+FFMP drought zone category, with one KDE line per climate scenario.
 
   Row 1 (top): Normal / Flood
   Row 2:       Drought Warning
@@ -19,6 +19,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
+import matplotlib.patheffects as pe
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -29,7 +30,8 @@ import pywrdrb
 from methods.config import FIG_DIR, OUTPUT_DIR, verify_dataset_id
 from methods.plotting.styles import (
     DPI_HIGH,
-    FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    DATASET_COLORS, DATASET_LABELS,
+    FONTSIZE_LABEL, FONTSIZE_SMALL,
     apply_publication_style,
 )
 import methods.plotting.water_balance_by_drought_zone as F4_module
@@ -44,7 +46,7 @@ from methods.plotting.water_balance_by_drought_zone import (
 # CONFIGURATION
 # ============================================================================
 
-SCENARIO = 'stationary_ensemble'
+SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 WINDOW_MONTHS = [3, 6, 9]
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 
@@ -57,30 +59,33 @@ ZONE_LABELS = {
     'emergency': 'Drought Emergency',
 }
 
-# Color palette: lightest for normal, darkest for emergency
-ZONE_PALETTE = sns.color_palette("crest", len(ZONE_ORDER))
-
 # ============================================================================
 # DATA LOADING
 # ============================================================================
 
-def load_data():
-    """Load pywrdrb.Data for the stationary ensemble."""
-    verify_dataset_id(SCENARIO)
-    fname = f'{OUTPUT_DIR}/{SCENARIO}_with_postprocessing.hdf5'
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=[
-        'res_level', 'inflow', 'contribution',
-        'res_storage', 'ibt_diversions', 'ibt_demands',
-    ])
-    return data
+def load_all_data():
+    """Load pywrdrb.Data for all scenarios."""
+    all_data = {}
+    for sc in SCENARIOS:
+        verify_dataset_id(sc)
+        fname = f'{OUTPUT_DIR}/{sc}_with_postprocessing.hdf5'
+        data = pywrdrb.Data()
+        data.load_from_export(fname, results_sets=[
+            'res_level', 'inflow', 'contribution',
+            'res_storage', 'ibt_diversions', 'ibt_demands',
+        ])
+        all_data[sc] = data
+    return all_data
 
 
-def categorize_scenario(data, n_months_prior):
-    """Aggregate and categorize by drought zone."""
+def categorize_all_scenarios(all_data, n_months_prior):
+    """Aggregate and categorize by drought zone for all scenarios."""
     F4_module.N_MONTHS_PRIOR = n_months_prior
-    agg = aggregate_across_realizations(data, SCENARIO)
-    return categorize_by_drought_zone(agg)
+    all_categorized = {}
+    for sc in SCENARIOS:
+        agg = aggregate_across_realizations(all_data[sc], sc)
+        all_categorized[sc] = categorize_by_drought_zone(agg)
+    return all_categorized
 
 
 # ============================================================================
@@ -97,14 +102,15 @@ def _get_ratios(categorized, zone):
     return ratio.replace([np.inf, -np.inf], np.nan).dropna()
 
 
-def build_long_df(categorized):
-    """Build long-form DataFrame with columns [zone, ratio] for FacetGrid."""
+def build_long_df(all_categorized):
+    """Build long-form DataFrame with columns [zone, scenario, ratio]."""
     rows = []
-    for zone in ZONE_ORDER:
-        r = _get_ratios(categorized, zone)
-        if r is not None and len(r) > 0:
-            for val in r.values:
-                rows.append({'zone': zone, 'ratio': val})
+    for sc in SCENARIOS:
+        for zone in ZONE_ORDER:
+            r = _get_ratios(all_categorized[sc], zone)
+            if r is not None and len(r) > 0:
+                for val in r.values:
+                    rows.append({'zone': zone, 'scenario': sc, 'ratio': val})
     return pd.DataFrame(rows)
 
 
@@ -112,65 +118,58 @@ def build_long_df(categorized):
 # RIDGELINE FIGURE
 # ============================================================================
 
-def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
+def create_ridgeline_figure(all_categorized, n_months_prior, recon_ratio):
     """
     Build a joy-division style ridgeline using seaborn FacetGrid.
+    One KDE line per scenario, no fill, dataset colours.
 
     Parameters
     ----------
-    categorized : dict
-        {zone: DataFrame} from categorize_by_drought_zone.
+    all_categorized : dict
+        {scenario: {zone: DataFrame}}
     n_months_prior : int
         Aggregation window length (for x-axis label).
     recon_ratio : float or None
         1964 reconstruction contribution ratio (%).
     """
-    # x range: 95th percentile of emergency zone data
-    r_emergency = _get_ratios(categorized, 'emergency')
-    x_max = float(np.percentile(r_emergency.values, 95)) if (r_emergency is not None and len(r_emergency) > 0) else 100.0
-    
+    # x range: 95th percentile of emergency zone data across all scenarios
+    emergency_vals = []
+    for sc in SCENARIOS:
+        r = _get_ratios(all_categorized[sc], 'emergency')
+        if r is not None and len(r) > 0:
+            emergency_vals.extend(r.values)
+    x_max = float(np.percentile(emergency_vals, 95)) if emergency_vals else 100.0
     x_max = max(x_max, 100.0)
     if recon_ratio is not None and recon_ratio <= x_max * 1.1:
         x_max = max(x_max, recon_ratio)
 
-    df = build_long_df(categorized)
+    df = build_long_df(all_categorized)
 
     sns.set_theme(
         style="white",
         rc={"axes.facecolor": (0, 0, 0, 0), "axes.linewidth": 1.5},
     )
 
+    # FacetGrid rows = zone, hue = scenario for per-dataset colours
+    scenario_palette = {sc: DATASET_COLORS[sc] for sc in SCENARIOS}
+
     g = sns.FacetGrid(
         df,
-        palette=ZONE_PALETTE,
         row="zone",
-        hue="zone",
+        hue="scenario",
+        palette=scenario_palette,
         row_order=ZONE_ORDER,
-        hue_order=ZONE_ORDER,
+        hue_order=SCENARIOS,
         aspect=9,
         height=1.2,
         sharey=False,
     )
 
-    # Filled KDE (colour) then black outline on top — joy-division style
-    g.map_dataframe(sns.kdeplot, x="ratio", fill=True, alpha=1, clip=(0, x_max))
-    g.map_dataframe(sns.kdeplot, x="ratio", color="black", linewidth=1.5, clip=(0, x_max))
+    # Unfilled KDE lines with white path-effect outline so overlapping lines separate
+    g.map_dataframe(sns.kdeplot, x="ratio", fill=False, linewidth=2.0, clip=(0, x_max),
+                    path_effects=[pe.Stroke(linewidth=4.0, foreground="white"), pe.Normal()])
 
-    # Row labels drawn inside each axes at the left edge
-    def label(x, color, label):
-        ax = plt.gca()
-        ax.text(
-            0.01, 0.25,
-            ZONE_LABELS[label],
-            color="black",
-            fontsize=FONTSIZE_MEDIUM,
-            ha="left", va="center",
-            transform=ax.transAxes,
-        )
-
-    g.map(label, "zone")
-
-    g.fig.subplots_adjust(hspace=-0.1)
+    g.figure.subplots_adjust(hspace=-0.1)
     g.set_titles("")
     g.set(
         yticks=[],
@@ -180,11 +179,24 @@ def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
     )
     g.despine(left=True)
 
-    # Remove any residual "Density" y-axis labels
-    for ax in g.axes.flat:
-        ax.set_ylabel("")
+    # Per-zone max data value for trimming the bottom spine
+    zone_x_max = {}
+    for zone in ZONE_ORDER:
+        vals = []
+        for sc in SCENARIOS:
+            r = _get_ratios(all_categorized[sc], zone)
+            if r is not None and len(r) > 0:
+                vals.extend(r.values)
+        zone_x_max[zone] = float(np.percentile(vals, 99)) if vals else x_max
 
-    # Style the x-axis label on the bottom subplot only
+    for ax, zone in zip(g.axes.flat, ZONE_ORDER):
+        ax.set_ylabel("")
+        ax.text(0.01, 0.25, ZONE_LABELS[zone], color="black",
+                fontsize=FONTSIZE_LABEL, ha="left", va="center",
+                transform=ax.transAxes)
+        # Trim the bottom spine to the zone's max data extent
+        ax.spines["bottom"].set_bounds(0, zone_x_max[zone])
+
     g.axes[-1, 0].xaxis.label.set_fontsize(FONTSIZE_LABEL)
 
     # 1964 reconstruction: bold black tick on the emergency (bottom) row baseline
@@ -195,7 +207,22 @@ def create_ridgeline_figure(categorized, n_months_prior, recon_ratio):
         ax_emg.vlines(recon_ratio, ylim[0], ylim[0] + tick_height,
                       color="black", linewidth=3.5, zorder=5)
 
-    return g.fig
+    # Legend
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.0, label=DATASET_LABELS[sc])
+        for sc in SCENARIOS
+    ]
+    g.figure.legend(
+        handles=handles,
+        loc='lower center',
+        ncol=len(SCENARIOS),
+        fontsize=FONTSIZE_SMALL,
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.04),
+    )
+
+    return g.figure
 
 
 # ============================================================================
@@ -215,12 +242,12 @@ def main():
     try:
         from methods.load import load_contribution_metrics
         from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
-        metrics_cache = load_contribution_metrics(SCENARIO)
+        metrics_cache = {sc: load_contribution_metrics(sc) for sc in SCENARIOS}
     except (ImportError, FileNotFoundError):
         use_cached = False
 
     if not use_cached:
-        data = load_data()
+        all_data = load_all_data()
 
     zone_categories = {
         'emergency': [6],
@@ -242,15 +269,17 @@ def main():
                 f'demand_satisfaction_{window_days}d': 'demand_satisfaction',
                 f'worst_1mo_demand_sat_{window_days}d': 'worst_1mo_demand_sat',
             }
-            df = get_metrics_for_window(metrics_cache, window_days)
-            df = df.rename(columns=col_map)
-            categorized = categorize_by_zone(df, zone_categories)
+            all_categorized = {}
+            for sc in SCENARIOS:
+                df = get_metrics_for_window(metrics_cache[sc], window_days)
+                df = df.rename(columns=col_map)
+                all_categorized[sc] = categorize_by_zone(df, zone_categories)
         else:
-            categorized = categorize_scenario(data, n_mo)
+            all_categorized = categorize_all_scenarios(all_data, n_mo)
 
         recon_ratio = calculate_reconstruction_contribution_ratio()
 
-        fig = create_ridgeline_figure(categorized, n_mo, recon_ratio)
+        fig = create_ridgeline_figure(all_categorized, n_mo, recon_ratio)
         fname = f"{FIG_OUTPUT_DIR}/F4alt_kde_v2_{n_mo}mo.png"
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"    Saved: {fname}")
