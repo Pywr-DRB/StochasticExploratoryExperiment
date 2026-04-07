@@ -12,14 +12,17 @@ import numpy as np
 # ── default constants (importable, overridable) ─────────────────────
 N_HEAT_BINS = 10
 MIN_COUNT = 5
-SEV_MAX = 4.0
-MAG_MAX = 50.0
+SEV_MIN = 1.0
+SEV_MAX = 4.5
+MAG_MIN = 1.0
+MAG_MAX = 100.0
 WORST_STORAGE_THRESH = 10.0
 SATISFICING_THRESHOLD = 0.90
 
 
 def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
-                      sev_max=SEV_MAX, mag_max=MAG_MAX):
+                      sev_min=SEV_MIN, sev_max=SEV_MAX,
+                      mag_min=MAG_MIN, mag_max=MAG_MAX):
     """Compute shared severity/magnitude bin edges across datasets.
 
     Parameters
@@ -30,17 +33,15 @@ def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
         Dataset IDs to pool.
     n_bins : int
         Number of bins per axis.
-    sev_max, mag_max : float
-        Upper axis caps.
+    sev_min, sev_max, mag_min, mag_max : float
+        Axis bounds.
 
     Returns
     -------
     sev_edges, mag_edges, sev_centers, mag_centers : np.ndarray
     """
-    all_sev = np.concatenate([all_data[d]['severity'].values for d in datasets])
-    all_mag = np.concatenate([all_data[d]['magnitude'].values for d in datasets])
-    sev_edges = np.linspace(all_sev.min(), sev_max, n_bins + 1)
-    mag_edges = np.linspace(all_mag.min(), mag_max, n_bins + 1)
+    sev_edges = np.linspace(sev_min, sev_max, n_bins + 1)
+    mag_edges = np.linspace(mag_min, mag_max, n_bins + 1)
     sev_centers = 0.5 * (sev_edges[:-1] + sev_edges[1:])
     mag_centers = 0.5 * (mag_edges[:-1] + mag_edges[1:])
     return sev_edges, mag_edges, sev_centers, mag_centers

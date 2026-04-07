@@ -34,7 +34,7 @@ from methods.plotting.styles import (
     apply_publication_style, label_panel,
 )
 from methods.plotting.heatmap import (
-    make_shared_edges, compute_min_storage_grid, compute_emergency_grid,
+    MAG_MIN, make_shared_edges, compute_min_storage_grid, compute_emergency_grid,
     SATISFICING_THRESHOLD,
 )
 
@@ -156,7 +156,7 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
     if log_mag:
         # Replace linear magnitude bins with log-spaced ones.
         # mag_edges[0] from make_shared_edges is all_mag.min(); clip to > 0.
-        mag_min = mag_edges[0] if mag_edges[0] > 0 else mag_edges[mag_edges > 0].min()
+        mag_min = mag_edges[0]
         mag_max = mag_edges[-1]
         mag_edges = np.logspace(np.log10(mag_min), np.log10(mag_max), n_bins + 1)
         mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])
@@ -283,9 +283,9 @@ def main():
     flags = [a for a in sys.argv[1:] if a.startswith('--')]
 
     ssi_window = int(args[0]) if len(args) > 0 else SSI_WINDOW_DEFAULT
-    n_bins     = int(args[1]) if len(args) > 1 else 20
-    min_count  = int(args[2]) if len(args) > 2 else 5
-    log_mag    = '--log-mag' in flags
+    n_bins     = int(args[1]) if len(args) > 1 else 16
+    min_count  = int(args[2]) if len(args) > 2 else 1
+    log_mag    = True
 
     print(f"F5alt: Combined Drought Satisficing Heatmap (SSI-{ssi_window}, "
           f"n_bins={n_bins}, min_count={min_count}, log_mag={log_mag})")
@@ -296,7 +296,9 @@ def main():
         all_data[did] = df
         print(f"  {DATASET_LABELS.get(did, did)}: {len(df)} events")
 
-    plot_combined_heatmap(all_data, ssi_window, n_bins=n_bins, log_mag=log_mag, min_count=min_count)
+    plot_combined_heatmap(all_data, ssi_window, 
+                          n_bins=n_bins, log_mag=log_mag, 
+                          min_count=min_count)
     print("Done.")
 
 

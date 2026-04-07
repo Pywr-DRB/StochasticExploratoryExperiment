@@ -305,7 +305,8 @@ def plot_drought_manuscript_figure(
     # Left panel: 2-D distribution (square bins or hexbin)
     # ------------------------------------------------------------------
     mag_lim = 100 if ssi_window == 3 else 200
-
+    n_bins = 15
+    
     if gridshape == 'hex':
         hexbin_kwargs = dict(gridsize=30, cmap=CMAP_SEQUENTIAL, mincnt=1)
         if log_hexbin_counts:
@@ -326,15 +327,15 @@ def plot_drought_manuscript_figure(
 
         if log_magnitude and hexbin_x == 'magnitude':
             x_min = x_data[x_data > 0].min() if np.any(x_data > 0) else 1e-3
-            x_bins = np.logspace(np.log10(x_min), np.log10(x_max), 31)
+            x_bins = np.logspace(np.log10(x_min), np.log10(x_max), n_bins + 1)
         else:
-            x_bins = np.linspace(x_data.min(), x_max, 31)
+            x_bins = np.linspace(x_data.min(), x_max, n_bins + 1)
 
         if log_magnitude and hexbin_y == 'magnitude':
             y_min = y_data[y_data > 0].min() if np.any(y_data > 0) else 1e-3
-            y_bins = np.logspace(np.log10(y_min), np.log10(y_max), 31)
+            y_bins = np.logspace(np.log10(y_min), np.log10(y_max), n_bins + 1)
         else:
-            y_bins = np.linspace(y_data.min(), y_max, 31)
+            y_bins = np.linspace(y_data.min(), y_max, n_bins + 1)
 
         hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1)
         if log_hexbin_counts:
@@ -475,7 +476,7 @@ def plot_drought_manuscript_figure(
                            alpha=0.7, zorder=3)
 
                 if c == 0:
-                    ax.set_ylabel('Δ Exceedance rate (yr$^{-1}$)',
+                    ax.set_ylabel('Δ Exceedance\nrate (yr$^{-1}$)',
                                   fontsize=FONTSIZE_MEDIUM)
                 else:
                     ax.set_ylabel('')
@@ -520,7 +521,7 @@ def plot_drought_manuscript_figure(
                                    edgecolors='white', linewidths=0.4, zorder=7)
 
                 if c == 0:
-                    ax.set_ylabel('Exceedance rate (yr$^{-1}$)',
+                    ax.set_ylabel('Exceedance\nrate (yr$^{-1}$)',
                                   fontsize=FONTSIZE_MEDIUM)
                 else:
                     ax.set_ylabel('')
@@ -665,38 +666,40 @@ def main():
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
         sys.exit(1)
 
-    # --- Severity vs Magnitude (default) ---
-    print(f"F2: Drought metric distribution (SSI-{ssi_window})")
-    plot_drought_manuscript_figure(ssi_window=ssi_window,
-                                   log_magnitude=True,
-                                   log_exceedance=False,
-                                   plot_relative_change=False)
-    plt.close('all')
+    log_magnitude = True
+    
+    # # --- Severity vs Magnitude (default) ---
+    # print(f"F2: Drought metric distribution (SSI-{ssi_window})")
+    # plot_drought_manuscript_figure(ssi_window=ssi_window,
+    #                                log_magnitude=log_magnitude,
+    #                                log_exceedance=False,
+    #                                plot_relative_change=False)
+    # plt.close('all')
 
     print(f"F2: Relative change in exceedance rates (SSI-{ssi_window})")
     plot_drought_manuscript_figure(ssi_window=ssi_window,
-                                   log_magnitude=True,
+                                   log_magnitude=log_magnitude,
                                    log_exceedance=False,
                                    plot_relative_change=True)
     plt.close('all')
 
-    # --- Severity vs Duration variant ---
-    print(f"F2: Drought metric distribution - duration (SSI-{ssi_window})")
-    plot_drought_manuscript_figure(ssi_window=ssi_window,
-                                   cdf_metrics=['severity', 'duration'],
-                                   hexbin_y='duration',
-                                   log_magnitude=False,
-                                   log_exceedance=False,
-                                   plot_relative_change=False)
-    plt.close('all')
+    # # --- Severity vs Duration variant ---
+    # print(f"F2: Drought metric distribution - duration (SSI-{ssi_window})")
+    # plot_drought_manuscript_figure(ssi_window=ssi_window,
+    #                                cdf_metrics=['severity', 'duration'],
+    #                                hexbin_y='duration',
+    #                                log_magnitude=log_magnitude,
+    #                                log_exceedance=False,
+    #                                plot_relative_change=False)
+    # plt.close('all')
 
-    print(f"F2: Relative change - duration (SSI-{ssi_window})")
-    plot_drought_manuscript_figure(ssi_window=ssi_window,
-                                   cdf_metrics=['severity', 'duration'],
-                                   hexbin_y='duration',
-                                   log_magnitude=False,
-                                   log_exceedance=False,
-                                   plot_relative_change=True)
+    # print(f"F2: Relative change - duration (SSI-{ssi_window})")
+    # plot_drought_manuscript_figure(ssi_window=ssi_window,
+    #                                cdf_metrics=['severity', 'duration'],
+    #                                hexbin_y='duration',
+    #                                log_magnitude=False,
+    #                                log_exceedance=False,
+    #                                plot_relative_change=True)
     plt.close('all')
 
 

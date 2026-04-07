@@ -42,7 +42,7 @@ from methods.plotting.water_balance_by_drought_zone import (
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-xlims = {3: (0, 500), 6: (0, 300), 9: (0, 100)}
+xlims = {3: (0, 500), 6: (0, 600), 9: (0, 100)}
 
 # Per-zone y-limits: (other, watch_warning, emergency)
 ylims = {
