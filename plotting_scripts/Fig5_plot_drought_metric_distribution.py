@@ -338,9 +338,8 @@ def plot_drought_manuscript_figure(
         else:
             y_bins = np.linspace(y_data.min(), y_max, n_bins + 1)
 
-        hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1)
-        if log_hexbin_counts:
-            hist2d_kwargs['norm'] = mcolors.LogNorm()
+        hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1,
+                             norm=mcolors.LogNorm())
         counts_2d, _, _, hb = ax_hex.hist2d(x_data, y_data, **hist2d_kwargs)
         bin_min = int(counts_2d[counts_2d >= 1].min()) if np.any(counts_2d >= 1) else 1
 
