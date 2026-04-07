@@ -44,6 +44,13 @@ from methods.plotting.water_balance_by_drought_zone import (
 # ============================================================================
 xlims = {3: (0, 500), 6: (0, 300), 9: (0, 100)}
 
+# Per-zone y-limits: (other, watch_warning, emergency)
+ylims = {
+    'other':         (0, 0.12),
+    'watch_warning': (0, 0.06),
+    'emergency':     (0, 0.06),
+}
+
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 WINDOW_MONTHS = [3, 6, 9]
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
@@ -175,7 +182,7 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
         xmax = xlims.get(n_months_prior, 100)[1]
         
         ax.set_xlim(0, xmax)
-        ax.set_ylim(0, 0.12)
+        # ax.set_ylim(*ylims[col])
         ax.set_title(COL_LABELS[col], fontsize=FONTSIZE_MEDIUM, pad=4)
         for spine in ax.spines.values():
             spine.set_visible(True)
