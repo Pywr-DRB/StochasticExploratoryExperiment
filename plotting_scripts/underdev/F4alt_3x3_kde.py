@@ -42,9 +42,10 @@ from methods.plotting.water_balance_by_drought_zone import (
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+xlims = {3: (0, 500), 6: (0, 300), 9: (0, 100)}
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
-WINDOW_MONTHS = [9]
+WINDOW_MONTHS = [3, 6, 9]
 FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 
 # Column zone groupings
@@ -136,7 +137,8 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
     """
     3-row × 1-col KDE grid.  Each row = zone group, all datasets overlaid.
     """
-    x_grid = np.linspace(0, 100, N_KDE_POINTS)
+    xmax = xlims.get(n_months_prior, 100)[1]
+    x_grid = np.linspace(0, xmax, N_KDE_POINTS)
 
     # Precompute KDEs for all (scenario, zone) combinations
     kdes = {}
@@ -168,7 +170,11 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
             ax.vlines(recon_ratio, 0, peak * 0.15, color='black', linewidth=3.0, zorder=5)
 
         ax.set_yticks([])
-        ax.set_xlim(0, 100)
+        
+        
+        xmax = xlims.get(n_months_prior, 100)[1]
+        
+        ax.set_xlim(0, xmax)
         ax.set_ylim(0, 0.12)
         ax.set_title(COL_LABELS[col], fontsize=FONTSIZE_MEDIUM, pad=4)
         for spine in ax.spines.values():
