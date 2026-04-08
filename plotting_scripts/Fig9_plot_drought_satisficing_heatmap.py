@@ -168,7 +168,8 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=5)
     )
 
     # -- save ---------------------------------------------------------------
-    fname = f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}.png"
+    fname = (f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}"
+             f"_focal_sev{GRID_TARGET_SEV_BIN}_mag{GRID_TARGET_MAG_BIN}.png")
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)

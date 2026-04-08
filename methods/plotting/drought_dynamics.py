@@ -554,6 +554,10 @@ def plot_drought_dynamics_overlay(
                         )
                 ax.legend(loc='lower left', fontsize=7, ncol=3, framealpha=0.9)
 
+        if key == 'nyc_inflow':
+            ax.set_yscale('log')
+            ax.set_ylim(bottom=1.0)
+
         if key == 'montague_flow':
             ax.set_yscale('log')
             ax.set_ylim(bottom=100)

@@ -178,23 +178,28 @@ def main():
     print(f"Reference window: {reference_start.date()} to {reference_end.date()}")
 
     # 6. Load data and extract timeseries
+    #    Batch-load all realizations per dataset in one HDF5 open to avoid
+    #    repeated file I/O (major speedup in envelope mode with many events).
     aligned_timeseries = [None] * len(events)
 
-    groups = {}
+    ds_groups = {}
     for idx, ev in enumerate(events):
-        key = (ev['dataset_id'], ev['realization_id'])
-        groups.setdefault(key, []).append(idx)
+        ds_groups.setdefault(ev['dataset_id'], []).append(idx)
 
-    for (dataset_id, realization_id), indices in groups.items():
-        print(f"\nLoading: {dataset_id} R{realization_id:04d} "
-              f"({len(indices)} event(s))...")
-        data = load_realization_data(dataset_id, realization_id)
+    for dataset_id, indices in ds_groups.items():
+        unique_real_ids = sorted(set(events[i]['realization_id'] for i in indices))
+        print(f"\nLoading: {dataset_id} — {len(unique_real_ids)} realization(s), "
+              f"{len(indices)} event(s)...")
+        fname = os.path.join(OUTPUT_DIR, f'{dataset_id}_with_postprocessing.hdf5')
+        data = load_rank_subset_from_export(
+            fname, unique_real_ids, RESULTS_SETS, rank=0, size=1
+        )
 
         for idx in indices:
             ev = events[idx]
             plot_start, plot_end = get_plot_window(ev['start'], ev['end'])
             ts = extract_drought_timeseries(
-                data, dataset_id, realization_id, plot_start, plot_end
+                data, dataset_id, ev['realization_id'], plot_start, plot_end
             )
             aligned = align_to_reference(ts, plot_start, reference_start)
             aligned_timeseries[idx] = aligned
