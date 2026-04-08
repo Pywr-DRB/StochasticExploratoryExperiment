@@ -197,10 +197,13 @@ def main():
 
         for idx in indices:
             ev = events[idx]
-            plot_start, plot_end = get_plot_window(ev['start'], ev['end'])
+            plot_start, _plot_end = get_plot_window(ev['start'], ev['end'])
+            # Extract only the actual drought period, not the full annual window
             ts = extract_drought_timeseries(
-                data, dataset_id, ev['realization_id'], plot_start, plot_end
+                data, dataset_id, ev['realization_id'],
+                ev['start'], ev['end'],
             )
+            # Align using the plot window anchor so dates map correctly
             aligned = align_to_reference(ts, plot_start, reference_start)
             aligned_timeseries[idx] = aligned
 
