@@ -319,6 +319,7 @@ def plot_drought_manuscript_figure(
             **hexbin_kwargs,
         )
         bin_min = int(hb.get_array().min()) if len(hb.get_array()) > 0 else 1
+        bin_max = int(hb.get_array().max()) if len(hb.get_array()) > 0 else 1
     else:  # square
         x_data = hexbin_droughts[hexbin_x].values
         y_data = hexbin_droughts[hexbin_y].values
@@ -341,7 +342,8 @@ def plot_drought_manuscript_figure(
         hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1,
                              norm=mcolors.LogNorm())
         counts_2d, _, _, hb = ax_hex.hist2d(x_data, y_data, **hist2d_kwargs)
-        bin_min = int(counts_2d[counts_2d >= 1].min()) if np.any(counts_2d >= 1) else 1
+        bin_min = int(np.nanmin(counts_2d[counts_2d >= 1])) if np.any(counts_2d >= 1) else 1
+        bin_max = int(np.nanmax(counts_2d))
 
         if log_magnitude and hexbin_y == 'magnitude':
             ax_hex.set_yscale('log')
@@ -389,7 +391,7 @@ def plot_drought_manuscript_figure(
     # ------------------------------------------------------------------
     # Colorbar in bottom-left cell
     # ------------------------------------------------------------------
-    hb.set_clim(vmin=bin_min)
+    hb.set_clim(vmin=bin_min, vmax=bin_max)
     cb = fig.colorbar(hb, cax=ax_cbar, orientation='horizontal')
     cb.set_label('Number of Droughts in Ensemble', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)

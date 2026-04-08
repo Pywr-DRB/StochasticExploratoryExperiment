@@ -1,27 +1,28 @@
 """
-F5: Drought Satisficing Heatmaps
+F5alt: Combined Drought Satisficing Heatmap
 
-Six-panel figure (3 rows × 2 columns).
-  Rows    = climate scenarios (Baseline, Mixed Future, Wet Future)
-  Col 1   = Worst-case minimum NYC storage (%) during drought events
-  Col 2   = Fraction of events avoiding Drought Emergency
+Three-panel figure (3 rows x 1 column).
+  Rows = climate scenarios (Baseline, Mixed Future, Wet Future)
 
-Each cell in the severity × magnitude grid is coloured by its metric value.
-Cells that breach a threshold are marked with an ×.
+Each cell background colour = fraction of events avoiding FFMP Drought Emergency.
+Each cell text = worst-case minimum NYC combined reservoir storage (integer %).
 
 Usage:
-    python F5_plot_drought_satisficing_heatmap.py [ssi_window]
+    python F5alt_plot_drought_satisficing_heatmap.py [ssi_window]
 """
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+import matplotlib.patheffects as pe
+from collections import defaultdict
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -33,186 +34,261 @@ from methods.plotting.styles import (
     apply_publication_style, label_panel,
 )
 from methods.plotting.heatmap import (
-    make_shared_edges, compute_min_storage_grid, compute_emergency_grid,
-    WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
+    MAG_MIN, make_shared_edges, compute_min_storage_grid, compute_emergency_grid,
+    SATISFICING_THRESHOLD,
 )
 
-# ── configuration ────────────────────────────────────────────────────
-FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9_drought_satisficing"
+WORST_STORAGE_THRESH = 15.0  # local threshold for triangle markers
+BOUNDARY_THRESHOLD = 0.80   # fraction threshold for boundary line
+
+# -- configuration -----------------------------------------------------------
+FIG_OUTPUT_DIR = f"{FIG_DIR}/F5_drought_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SSI_WINDOW_DEFAULT = 3
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
-PANEL_LETTERS = list('abcdef')
+PANEL_LETTERS = list('abc')
 
 
-def plot_satisficing_heatmaps(all_data, ssi_window):
-    """Create the 3×2+colorbar publication figure."""
+def _compute_boundary_segments(frac_grid, sev_edges, mag_edges,
+                                threshold=BOUNDARY_THRESHOLD):
+    """Grid-aligned boundary segments between cells above/below threshold.
+
+    Returns a list of ((x1,y1),(x2,y2)) segments that lie on grid edges
+    separating a cell >= threshold from a cell < threshold.
+    """
+    ns, nm = frac_grid.shape
+    segments = []
+
+    for i in range(ns):
+        for j in range(nm):
+            if np.isnan(frac_grid[i, j]):
+                continue
+            below = frac_grid[i, j] < threshold
+
+            # Right neighbour
+            if i + 1 < ns and not np.isnan(frac_grid[i + 1, j]):
+                if (frac_grid[i + 1, j] < threshold) != below:
+                    x = sev_edges[i + 1]
+                    segments.append(((x, mag_edges[j]), (x, mag_edges[j + 1])))
+
+            # Top neighbour
+            if j + 1 < nm and not np.isnan(frac_grid[i, j + 1]):
+                if (frac_grid[i, j + 1] < threshold) != below:
+                    y = mag_edges[j + 1]
+                    segments.append(((sev_edges[i], y), (sev_edges[i + 1], y)))
+
+    return segments
+
+
+def _order_segments(segments):
+    """Connect boundary segments into continuous polyline paths."""
+    if not segments:
+        return []
+
+    def rnd(pt):
+        return (round(pt[0], 8), round(pt[1], 8))
+
+    adj = defaultdict(list)
+    for seg in segments:
+        a, b = rnd(seg[0]), rnd(seg[1])
+        adj[a].append(b)
+        adj[b].append(a)
+
+    visited = set()
+    paths = []
+
+    # Start from degree-1 nodes (open endpoints) first, then remaining
+    starts = [p for p in adj if len(adj[p]) == 1]
+    starts += [p for p in adj if len(adj[p]) != 1]
+
+    for start in starts:
+        if all((min(start, n), max(start, n)) in visited
+               for n in adj[start]):
+            continue
+
+        path = [start]
+        current = start
+        while True:
+            nxt = None
+            for n in adj[current]:
+                edge = (min(current, n), max(current, n))
+                if edge not in visited:
+                    nxt = n
+                    break
+            if nxt is None:
+                break
+            visited.add((min(current, nxt), max(current, nxt)))
+            path.append(nxt)
+            current = nxt
+
+        if len(path) > 1:
+            paths.append(path)
+
+    return paths
+
+
+def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_count=5):
+    """Create the 3x1 combined heatmap figure.
+
+    Parameters
+    ----------
+    all_data : dict
+        ``{dataset_id: DataFrame}`` of event metrics.
+    ssi_window : int
+        SSI window used (for filename).
+    n_bins : int
+        Number of bins per axis (default 20).  Fewer bins → larger cells →
+        more events per cell and less grey (NaN) area.
+    log_mag : bool
+        If True, use log-spaced bins on the magnitude axis and plot on a
+        log scale.  Bin edges and centers are recomputed as geometric
+        sequences after the shared severity range is determined.
+    min_count : int
+        Minimum number of events required to colour a bin (default 5).
+        Bins below this threshold are shown as grey (NaN).
+    """
     apply_publication_style()
 
     sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges(
-        all_data, DATASETS)
+        all_data, DATASETS, n_bins=n_bins)
 
-    # ── colour maps & norms ──────────────────────────────────────────
-    cmap_sto = plt.cm.plasma_r
-    norm_sto = mcolors.Normalize(vmin=0, vmax=60)
+    if log_mag:
+        # Replace linear magnitude bins with log-spaced ones.
+        # mag_edges[0] from make_shared_edges is all_mag.min(); clip to > 0.
+        mag_min = mag_edges[0]
+        mag_max = mag_edges[-1]
+        mag_edges = np.logspace(np.log10(mag_min), np.log10(mag_max), n_bins + 1)
+        mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])
 
+    # -- colour map & norm (fraction avoiding emergency) --------------------
     cmap_frac = plt.cm.plasma_r
     norm_frac = mcolors.Normalize(vmin=0.3, vmax=1.0)
 
-    # ── figure layout: 3 rows × 2 heatmaps, colorbars at top ──────────
-    fig = plt.figure(figsize=(10.0, 13.5))
+    # -- figure layout: 3 rows x 1 column ----------------------------------
+    fig = plt.figure(figsize=(6.0, 13.5))
     gs = gridspec.GridSpec(
-        3, 2,
-        width_ratios=[1, 1],
-        hspace=0.12, wspace=0.12,
-        left=0.10, right=0.95, bottom=0.06, top=0.90,
+        3, 1,
+        hspace=0.12,
+        left=0.14, right=0.92, bottom=0.06, top=0.90,
     )
 
-    axes_sto = []
-    axes_frac = []
+    axes = []
 
     for row_idx, did in enumerate(DATASETS):
         df = all_data[did]
         label = DATASET_LABELS.get(did, did)
 
-        # ── Col 0: worst-case min storage ────────────────────────────
-        ax_sto = fig.add_subplot(gs[row_idx, 0])
-        min_grid, _ = compute_min_storage_grid(df, sev_edges, mag_edges)
+        ax = fig.add_subplot(gs[row_idx, 0])
 
-        ax_sto.pcolormesh(
+        # Compute both grids
+        frac_grid, _ = compute_emergency_grid(df, sev_edges, mag_edges, min_count=min_count)
+        min_grid, _ = compute_min_storage_grid(df, sev_edges, mag_edges, min_count=min_count)
+
+        # Background: fraction avoiding emergency
+        ax.pcolormesh(
             sev_edges, mag_edges,
-            np.ma.masked_invalid(min_grid.T),
-            cmap=cmap_sto, norm=norm_sto, rasterized=True,
+            np.ma.masked_invalid(frac_grid.T),
+            cmap=cmap_frac, norm=norm_frac, rasterized=True,
         )
-        ax_sto.set_facecolor('#f0f0f0')
+        ax.set_facecolor('#f0f0f0')
 
-        # Mark bins where worst-case storage < threshold (▽)
+        # 80% avoidance boundary line
+        boundary_segs = _compute_boundary_segments(
+            frac_grid, sev_edges, mag_edges)
+        boundary_effect = [pe.withStroke(linewidth=3.5, foreground='#333333')]
+        for path in _order_segments(boundary_segs):
+            xs, ys = zip(*path)
+            ax.plot(xs, ys, color='white', linewidth=2,
+                    solid_capstyle='round', solid_joinstyle='round',
+                    zorder=4, path_effects=boundary_effect)
+
+        # Triangle markers where worst-case storage < threshold
         for i, sc in enumerate(sev_centers):
             for j, mc in enumerate(mag_centers):
                 if np.isnan(min_grid[i, j]):
                     continue
                 if min_grid[i, j] < WORST_STORAGE_THRESH:
-                    ax_sto.scatter(sc, mc, s=55, marker='v', color='black',
-                                   linewidths=0.8, zorder=5)
+                    ax.scatter(sc, mc, s=55, marker='v', color='black',
+                               linewidths=0.8, zorder=5)
 
-        ax_sto.set_xlim(sev_edges[0], sev_edges[-1])
-        ax_sto.set_ylim(mag_edges[0], mag_edges[-1])
+        ax.set_xlim(sev_edges[0], sev_edges[-1])
+        ax.set_ylim(mag_edges[0], mag_edges[-1])
+        if log_mag:
+            ax.set_yscale('log')
 
         # Panel label
-        letter = PANEL_LETTERS[row_idx * 2]
-        label_panel(ax_sto, letter, label=label, fontsize=FONTSIZE_LABEL)
+        letter = PANEL_LETTERS[row_idx]
+        label_panel(ax, letter, label=label, fontsize=FONTSIZE_LABEL)
 
         # Axis labels
-        ax_sto.set_ylabel('Drought Magnitude\n(cumulative SSI deficit)',
+        ax.set_ylabel('Drought Magnitude\n(cumulative SSI deficit)',
+                       fontsize=FONTSIZE_LABEL)
+        if row_idx == 2:
+            ax.set_xlabel('Drought Severity\n(peak SSI deviation)',
                           fontsize=FONTSIZE_LABEL)
-        if row_idx == 2:
-            ax_sto.set_xlabel('Drought Severity\n(peak SSI deviation)',
-                              fontsize=FONTSIZE_LABEL)
         else:
-            ax_sto.set_xticklabels([])
+            ax.set_xticklabels([])
 
-        ax_sto.tick_params(labelsize=FONTSIZE_SMALL)
-        axes_sto.append(ax_sto)
+        ax.tick_params(labelsize=FONTSIZE_SMALL)
+        axes.append(ax)
 
-        # ── Col 1: fraction avoiding Drought Emergency ───────────────
-        ax_frac = fig.add_subplot(gs[row_idx, 1])
-        frac_grid, _ = compute_emergency_grid(df, sev_edges, mag_edges)
-
-        ax_frac.pcolormesh(
-            sev_edges, mag_edges,
-            np.ma.masked_invalid(frac_grid.T),
-            cmap=cmap_frac, norm=norm_frac, rasterized=True,
-        )
-        ax_frac.set_facecolor('#f0f0f0')
-
-        # Mark bins below satisficing threshold
-        for i, sc in enumerate(sev_centers):
-            for j, mc in enumerate(mag_centers):
-                if np.isnan(frac_grid[i, j]):
-                    continue
-                if frac_grid[i, j] < SATISFICING_THRESHOLD:
-                    ax_frac.scatter(sc, mc, s=50, marker='x', color='black',
-                                     linewidths=1.2, zorder=5)
-
-        ax_frac.set_xlim(sev_edges[0], sev_edges[-1])
-        ax_frac.set_ylim(mag_edges[0], mag_edges[-1])
-
-        letter = PANEL_LETTERS[row_idx * 2 + 1]
-        label_panel(ax_frac, letter, label=label, fontsize=FONTSIZE_LABEL)
-
-        ax_frac.set_yticklabels([])
-        if row_idx == 2:
-            ax_frac.set_xlabel('Drought Severity\n(peak SSI deviation)',
-                               fontsize=FONTSIZE_LABEL)
-        else:
-            ax_frac.set_xticklabels([])
-
-        ax_frac.tick_params(labelsize=FONTSIZE_SMALL)
-        axes_frac.append(ax_frac)
-
-    # ── colorbars at top, spanning full subplot width ───────────────────
+    # -- colorbar at top, spanning full subplot width -----------------------
     fig.canvas.draw()
 
     cbar_h = 0.012
-    cbar_top = 0.92          # close above the subplot grid (top=0.90)
+    cbar_top = 0.92
 
-    # Left column colorbar — full width of left subplot
-    bb_left = axes_sto[0].get_position()
-    cbar_ax1 = fig.add_axes([bb_left.x0, cbar_top,
-                              bb_left.width, cbar_h])
-    cb1 = fig.colorbar(
-        plt.cm.ScalarMappable(cmap=cmap_sto, norm=norm_sto),
-        cax=cbar_ax1, orientation='horizontal',
-    )
-    cbar_ax1.xaxis.set_ticks_position('top')
-    cbar_ax1.xaxis.set_label_position('top')
-    cb1.set_label('Worst-Case Minimum\nNYC Combined Reservoir Storage (%)',
-                  fontsize=FONTSIZE_LABEL)
-    cb1.ax.tick_params(labelsize=FONTSIZE_SMALL)
-
-    # Right column colorbar — full width of right subplot
-    bb_right = axes_frac[0].get_position()
-    cbar_ax2 = fig.add_axes([bb_right.x0, cbar_top,
-                              bb_right.width, cbar_h])
-    cb2 = fig.colorbar(
+    bb = axes[0].get_position()
+    cbar_ax = fig.add_axes([bb.x0, cbar_top, bb.width, cbar_h])
+    cb = fig.colorbar(
         plt.cm.ScalarMappable(cmap=cmap_frac, norm=norm_frac),
-        cax=cbar_ax2, orientation='horizontal',
+        cax=cbar_ax, orientation='horizontal',
     )
-    cbar_ax2.xaxis.set_ticks_position('top')
-    cbar_ax2.xaxis.set_label_position('top')
-    cb2.set_label('Fraction of Drought Events\nAvoiding FFMP Drought Emergency',
-                  fontsize=FONTSIZE_LABEL)
-    cb2.ax.tick_params(labelsize=FONTSIZE_SMALL)
+    cbar_ax.xaxis.set_ticks_position('top')
+    cbar_ax.xaxis.set_label_position('top')
+    cb.set_label('Fraction of Drought Events\nAvoiding FFMP Drought Emergency',
+                 fontsize=FONTSIZE_LABEL)
+    cb.ax.tick_params(labelsize=FONTSIZE_SMALL)
 
-    # ── legend at bottom ──────────────────────────────────────────────
-    h_sto = Line2D([0], [0], marker='v', color='black', linestyle='none',
+    # -- legend at bottom ---------------------------------------------------
+    boundary_effect = [pe.withStroke(linewidth=3.5, foreground='#333333')]
+    h_line = Line2D([0], [0], color='white', linewidth=2,
+                    path_effects=boundary_effect,
+                    label=f'{BOUNDARY_THRESHOLD:.0%} avoidance boundary')
+    h_tri = Line2D([0], [0], marker='v', color='black', linestyle='none',
                    markersize=7,
-                   label=f'Worst-case < {WORST_STORAGE_THRESH:.0f}% storage')
-    h_frac = Line2D([0], [0], marker='x', color='black', linestyle='none',
-                    markeredgewidth=1.2, markersize=7,
-                    label=f'< {SATISFICING_THRESHOLD:.0%} avoid Emergency')
+                   label=f'Worst-case storage < {WORST_STORAGE_THRESH:.0f}%')
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,
                      label='No drought events in this range')
     fig.legend(
-        handles=[h_sto, h_frac, h_nodata], loc='lower center', ncol=3,
+        handles=[h_line, h_tri, h_nodata], loc='lower center', ncol=3,
         fontsize=FONTSIZE_SMALL, frameon=True, framealpha=0.9,
         edgecolor='none', shadow=False,
-        bbox_to_anchor=(0.52, -0.01),
+        bbox_to_anchor=(0.53, -0.01),
     )
 
-    # ── save ─────────────────────────────────────────────────────────
-    fname = f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}.png"
+    # -- save ---------------------------------------------------------------
+    fname = f"{FIG_OUTPUT_DIR}/F5alt_satisficing_heatmap_ssi{ssi_window}.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
 
-# ── main ─────────────────────────────────────────────────────────────
+# -- main -------------------------------------------------------------------
 
 def main():
-    ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else SSI_WINDOW_DEFAULT
-    print(f"F5: Drought Satisficing Heatmaps (SSI-{ssi_window})")
+    """Usage: python F5alt_plot_drought_satisficing_heatmap.py [ssi_window] [n_bins] [min_count] [--log-mag]"""
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    flags = [a for a in sys.argv[1:] if a.startswith('--')]
+
+    ssi_window = int(args[0]) if len(args) > 0 else SSI_WINDOW_DEFAULT
+    n_bins     = int(args[1]) if len(args) > 1 else 16
+    min_count  = int(args[2]) if len(args) > 2 else 1
+    log_mag    = True
+
+    print(f"F5alt: Combined Drought Satisficing Heatmap (SSI-{ssi_window}, "
+          f"n_bins={n_bins}, min_count={min_count}, log_mag={log_mag})")
 
     all_data = {}
     for did in DATASETS:
@@ -220,7 +296,9 @@ def main():
         all_data[did] = df
         print(f"  {DATASET_LABELS.get(did, did)}: {len(df)} events")
 
-    plot_satisficing_heatmaps(all_data, ssi_window)
+    plot_combined_heatmap(all_data, ssi_window, 
+                          n_bins=n_bins, log_mag=log_mag, 
+                          min_count=min_count)
     print("Done.")
 
 

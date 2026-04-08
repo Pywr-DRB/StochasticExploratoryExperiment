@@ -47,6 +47,63 @@ def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
     return sev_edges, mag_edges, sev_centers, mag_centers
 
 
+def assign_grid_bins(df, sev_edges, mag_edges):
+    """Assign severity/magnitude grid-cell indices to each event row.
+
+    Adds columns ``sev_bin`` and ``mag_bin`` (0-based indices into the grid)
+    to the DataFrame. Events outside the grid edges get index -1 or n_bins
+    (clipped to valid range or dropped by callers).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must have ``severity`` and ``magnitude`` columns.
+    sev_edges, mag_edges : np.ndarray
+        Bin edges from :func:`make_shared_edges`.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of *df* with ``sev_bin`` and ``mag_bin`` columns added.
+    """
+    out = df.copy()
+    ns = len(sev_edges) - 1
+    nm = len(mag_edges) - 1
+    out['sev_bin'] = np.clip(np.digitize(out['severity'].values, sev_edges) - 1, 0, ns - 1)
+    out['mag_bin'] = np.clip(np.digitize(out['magnitude'].values, mag_edges) - 1, 0, nm - 1)
+    return out
+
+
+def select_from_grid_cell(df_binned, sev_bin, mag_bin,
+                          rank_col='event_min_storage_pct',
+                          ascending=True, n=1):
+    """Select events from a specific grid cell, ranked by a metric.
+
+    Parameters
+    ----------
+    df_binned : pd.DataFrame
+        Output of :func:`assign_grid_bins`.
+    sev_bin, mag_bin : int
+        Grid-cell indices.
+    rank_col : str
+        Column to rank by (default: worst storage → ascending=True).
+    ascending : bool
+        If True, the smallest values rank first (worst-case selection).
+    n : int
+        Number of events to return from this cell.
+
+    Returns
+    -------
+    pd.DataFrame
+        Up to *n* rows from the requested cell, sorted by *rank_col*.
+    """
+    cell = df_binned[(df_binned['sev_bin'] == sev_bin) &
+                     (df_binned['mag_bin'] == mag_bin)]
+    if len(cell) == 0:
+        return cell
+    return cell.sort_values(rank_col, ascending=ascending).head(n)
+
+
 def compute_min_storage_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
     """2-D grid of worst-case (absolute minimum) storage per bin.
 
