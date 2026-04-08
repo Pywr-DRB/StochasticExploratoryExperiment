@@ -1,28 +1,19 @@
 """
-F5alt: Combined Drought Satisficing Heatmap
-
-Three-panel figure (3 rows x 1 column).
-  Rows = climate scenarios (Baseline, Mixed Future, Wet Future)
-
-Each cell background colour = fraction of events avoiding FFMP Drought Emergency.
-Each cell text = worst-case minimum NYC combined reservoir storage (integer %).
-
 Usage:
-    python F5alt_plot_drought_satisficing_heatmap.py [ssi_window]
+    python Fig9_plot_drought_satisficing_heatmap.py [ssi_window]
 """
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
 import matplotlib.patheffects as pe
-from collections import defaultdict
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -34,15 +25,15 @@ from methods.plotting.styles import (
     apply_publication_style, label_panel,
 )
 from methods.plotting.heatmap import (
-    MAG_MIN, make_shared_edges, compute_min_storage_grid, compute_emergency_grid,
-    SATISFICING_THRESHOLD,
+    MAG_MIN, make_shared_edges_logmag, compute_min_storage_grid,
+    compute_emergency_grid, SATISFICING_THRESHOLD,
+    GRID_N_BINS, GRID_TARGET_SEV_BIN, GRID_TARGET_MAG_BIN,
 )
 
 WORST_STORAGE_THRESH = 15.0  # local threshold for triangle markers
-BOUNDARY_THRESHOLD = 0.80   # fraction threshold for boundary line
 
 # -- configuration -----------------------------------------------------------
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F5_drought_satisficing"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9_drought_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SSI_WINDOW_DEFAULT = 3
@@ -50,85 +41,7 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 PANEL_LETTERS = list('abc')
 
 
-def _compute_boundary_segments(frac_grid, sev_edges, mag_edges,
-                                threshold=BOUNDARY_THRESHOLD):
-    """Grid-aligned boundary segments between cells above/below threshold.
-
-    Returns a list of ((x1,y1),(x2,y2)) segments that lie on grid edges
-    separating a cell >= threshold from a cell < threshold.
-    """
-    ns, nm = frac_grid.shape
-    segments = []
-
-    for i in range(ns):
-        for j in range(nm):
-            if np.isnan(frac_grid[i, j]):
-                continue
-            below = frac_grid[i, j] < threshold
-
-            # Right neighbour
-            if i + 1 < ns and not np.isnan(frac_grid[i + 1, j]):
-                if (frac_grid[i + 1, j] < threshold) != below:
-                    x = sev_edges[i + 1]
-                    segments.append(((x, mag_edges[j]), (x, mag_edges[j + 1])))
-
-            # Top neighbour
-            if j + 1 < nm and not np.isnan(frac_grid[i, j + 1]):
-                if (frac_grid[i, j + 1] < threshold) != below:
-                    y = mag_edges[j + 1]
-                    segments.append(((sev_edges[i], y), (sev_edges[i + 1], y)))
-
-    return segments
-
-
-def _order_segments(segments):
-    """Connect boundary segments into continuous polyline paths."""
-    if not segments:
-        return []
-
-    def rnd(pt):
-        return (round(pt[0], 8), round(pt[1], 8))
-
-    adj = defaultdict(list)
-    for seg in segments:
-        a, b = rnd(seg[0]), rnd(seg[1])
-        adj[a].append(b)
-        adj[b].append(a)
-
-    visited = set()
-    paths = []
-
-    # Start from degree-1 nodes (open endpoints) first, then remaining
-    starts = [p for p in adj if len(adj[p]) == 1]
-    starts += [p for p in adj if len(adj[p]) != 1]
-
-    for start in starts:
-        if all((min(start, n), max(start, n)) in visited
-               for n in adj[start]):
-            continue
-
-        path = [start]
-        current = start
-        while True:
-            nxt = None
-            for n in adj[current]:
-                edge = (min(current, n), max(current, n))
-                if edge not in visited:
-                    nxt = n
-                    break
-            if nxt is None:
-                break
-            visited.add((min(current, nxt), max(current, nxt)))
-            path.append(nxt)
-            current = nxt
-
-        if len(path) > 1:
-            paths.append(path)
-
-    return paths
-
-
-def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_count=5):
+def plot_combined_heatmap(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=5):
     """Create the 3x1 combined heatmap figure.
 
     Parameters
@@ -138,28 +51,15 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
     ssi_window : int
         SSI window used (for filename).
     n_bins : int
-        Number of bins per axis (default 20).  Fewer bins → larger cells →
-        more events per cell and less grey (NaN) area.
-    log_mag : bool
-        If True, use log-spaced bins on the magnitude axis and plot on a
-        log scale.  Bin edges and centers are recomputed as geometric
-        sequences after the shared severity range is determined.
+        Number of bins per axis.
     min_count : int
         Minimum number of events required to colour a bin (default 5).
         Bins below this threshold are shown as grey (NaN).
     """
     apply_publication_style()
 
-    sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges(
+    sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges_logmag(
         all_data, DATASETS, n_bins=n_bins)
-
-    if log_mag:
-        # Replace linear magnitude bins with log-spaced ones.
-        # mag_edges[0] from make_shared_edges is all_mag.min(); clip to > 0.
-        mag_min = mag_edges[0]
-        mag_max = mag_edges[-1]
-        mag_edges = np.logspace(np.log10(mag_min), np.log10(mag_max), n_bins + 1)
-        mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])
 
     # -- colour map & norm (fraction avoiding emergency) --------------------
     cmap_frac = plt.cm.plasma_r
@@ -193,16 +93,6 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
         )
         ax.set_facecolor('#f0f0f0')
 
-        # 80% avoidance boundary line
-        boundary_segs = _compute_boundary_segments(
-            frac_grid, sev_edges, mag_edges)
-        boundary_effect = [pe.withStroke(linewidth=3.5, foreground='#333333')]
-        for path in _order_segments(boundary_segs):
-            xs, ys = zip(*path)
-            ax.plot(xs, ys, color='white', linewidth=2,
-                    solid_capstyle='round', solid_joinstyle='round',
-                    zorder=4, path_effects=boundary_effect)
-
         # Triangle markers where worst-case storage < threshold
         for i, sc in enumerate(sev_centers):
             for j, mc in enumerate(mag_centers):
@@ -212,10 +102,21 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
                     ax.scatter(sc, mc, s=55, marker='v', color='black',
                                linewidths=0.8, zorder=5)
 
+        # Highlight the focal grid cell (shared with Fig10)
+        cell_x = sev_edges[GRID_TARGET_SEV_BIN]
+        cell_y = mag_edges[GRID_TARGET_MAG_BIN]
+        cell_w = sev_edges[GRID_TARGET_SEV_BIN + 1] - cell_x
+        cell_h = mag_edges[GRID_TARGET_MAG_BIN + 1] - cell_y
+        highlight = Rectangle(
+            (cell_x, cell_y), cell_w, cell_h,
+            linewidth=2.5, edgecolor='white', facecolor='none',
+            zorder=6,
+        )
+        ax.add_patch(highlight)
+
         ax.set_xlim(sev_edges[0], sev_edges[-1])
         ax.set_ylim(mag_edges[0], mag_edges[-1])
-        if log_mag:
-            ax.set_yscale('log')
+        ax.set_yscale('log')
 
         # Panel label
         letter = PANEL_LETTERS[row_idx]
@@ -252,24 +153,22 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL)
 
     # -- legend at bottom ---------------------------------------------------
-    boundary_effect = [pe.withStroke(linewidth=3.5, foreground='#333333')]
-    h_line = Line2D([0], [0], color='white', linewidth=2,
-                    path_effects=boundary_effect,
-                    label=f'{BOUNDARY_THRESHOLD:.0%} avoidance boundary')
     h_tri = Line2D([0], [0], marker='v', color='black', linestyle='none',
                    markersize=7,
                    label=f'Worst-case storage < {WORST_STORAGE_THRESH:.0f}%')
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,
                      label='No drought events in this range')
+    h_cell = Patch(facecolor='none', edgecolor='white', linewidth=2.5,
+                   label='Focal cell (Fig. 10)')
     fig.legend(
-        handles=[h_line, h_tri, h_nodata], loc='lower center', ncol=3,
+        handles=[h_tri, h_nodata, h_cell], loc='lower center', ncol=3,
         fontsize=FONTSIZE_SMALL, frameon=True, framealpha=0.9,
         edgecolor='none', shadow=False,
         bbox_to_anchor=(0.53, -0.01),
     )
 
     # -- save ---------------------------------------------------------------
-    fname = f"{FIG_OUTPUT_DIR}/F5alt_satisficing_heatmap_ssi{ssi_window}.png"
+    fname = f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
@@ -278,17 +177,15 @@ def plot_combined_heatmap(all_data, ssi_window, n_bins=20, log_mag=False, min_co
 # -- main -------------------------------------------------------------------
 
 def main():
-    """Usage: python F5alt_plot_drought_satisficing_heatmap.py [ssi_window] [n_bins] [min_count] [--log-mag]"""
+    """Usage: python Fig9_plot_drought_satisficing_heatmap.py [ssi_window] [n_bins] [min_count]"""
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    flags = [a for a in sys.argv[1:] if a.startswith('--')]
 
     ssi_window = int(args[0]) if len(args) > 0 else SSI_WINDOW_DEFAULT
-    n_bins     = int(args[1]) if len(args) > 1 else 16
+    n_bins     = int(args[1]) if len(args) > 1 else GRID_N_BINS
     min_count  = int(args[2]) if len(args) > 2 else 1
-    log_mag    = True
 
-    print(f"F5alt: Combined Drought Satisficing Heatmap (SSI-{ssi_window}, "
-          f"n_bins={n_bins}, min_count={min_count}, log_mag={log_mag})")
+    print(f"Fig9: Combined Drought Satisficing Heatmap (SSI-{ssi_window}, "
+          f"n_bins={n_bins}, min_count={min_count})")
 
     all_data = {}
     for did in DATASETS:
@@ -296,8 +193,8 @@ def main():
         all_data[did] = df
         print(f"  {DATASET_LABELS.get(did, did)}: {len(df)} events")
 
-    plot_combined_heatmap(all_data, ssi_window, 
-                          n_bins=n_bins, log_mag=log_mag, 
+    plot_combined_heatmap(all_data, ssi_window,
+                          n_bins=n_bins,
                           min_count=min_count)
     print("Done.")
 

@@ -193,6 +193,53 @@ def _map_ffmp_to_reference_dates(ffmp_doy_lookup, reference_start, reference_end
     return result
 
 
+# ── Envelope helpers ─────────────────────────────────────────────────
+
+def _smooth(series, window):
+    """Apply centered rolling mean if window > 1."""
+    if window > 1:
+        return series.rolling(window, center=True, min_periods=1).mean()
+    return series
+
+
+def _compute_dataset_envelopes(events, aligned_timeseries, smoothing_window,
+                                reference_start, reference_end):
+    """Compute per-dataset min/max/median envelopes across all events.
+
+    Returns
+    -------
+    dict : {dataset_id: {var_key: DataFrame with columns 'min','max','median'}}
+    """
+    from collections import defaultdict
+
+    daily_index = pd.date_range(reference_start, reference_end, freq='D')
+    var_keys = ['nyc_inflow', 'nyc_storage_pct', 'nyc_release', 'montague_flow']
+
+    # Collect smoothed series per dataset per variable
+    dataset_series = defaultdict(lambda: defaultdict(list))
+    for ev, ts_dict in zip(events, aligned_timeseries):
+        did = ev['dataset_id']
+        for key in var_keys:
+            s = _smooth(ts_dict[key], smoothing_window)
+            # Reindex to common daily grid (NaN where event has no data)
+            s = s.reindex(daily_index)
+            dataset_series[did][key].append(s)
+
+    # Compute envelopes
+    envelopes = {}
+    for did, var_dict in dataset_series.items():
+        envelopes[did] = {}
+        for key, series_list in var_dict.items():
+            combined = pd.concat(series_list, axis=1)
+            envelopes[did][key] = pd.DataFrame({
+                'min': combined.min(axis=1),
+                'max': combined.max(axis=1),
+                'median': combined.median(axis=1),
+            }, index=daily_index)
+
+    return envelopes
+
+
 # ── Main plotting function ──────────────────────────────────────────────
 
 def plot_drought_dynamics_overlay(
@@ -201,26 +248,25 @@ def plot_drought_dynamics_overlay(
     reference_start,
     reference_end,
     smoothing_window=7,
-    figsize=(14, 14),
+    figsize=(14, 12),
     fname=None,
     alpha=0.7,
     ffmp_boundaries=None,
-    all_event_data=None,
+    envelope_mode=False,
+    highlight_indices=None,
+    show_median=True,
 ):
     """
-    Create a multi-panel figure overlaying smoothed drought dynamics.
+    Create a 5-panel figure overlaying smoothed drought dynamics.
 
     Panel 0: Drought duration bars (horizontal lines showing each event's period).
     Panels 1-4: NYC inflow, NYC storage (with FFMP zones), NYC releases,
     Montague flow (log-scale).
-    Panel 5 (optional): Severity vs magnitude scatter of all events, with
-    selected events labeled numerically.
 
     Parameters
     ----------
     events : list of dict
-        Each dict has: dataset_id, realization_id, start, end, and optionally
-        severity, magnitude.
+        Each dict has: dataset_id, realization_id, start, end.
     aligned_timeseries : list of dict
         Each dict has keys: nyc_inflow, nyc_storage_pct, nyc_release, montague_flow.
         All with DatetimeIndex shifted to the reference year.
@@ -232,13 +278,17 @@ def plot_drought_dynamics_overlay(
     fname : str or None
         If provided, save figure to this path.
     alpha : float
-        Line transparency.
+        Line transparency (individual mode) or envelope fill alpha (envelope mode).
     ffmp_boundaries : pd.DataFrame or None
         From load_ffmp_boundaries(). If provided, FFMP zone boundaries are
         drawn on the NYC storage panel.
-    all_event_data : dict or None
-        ``{dataset_id: DataFrame}`` of all event metrics (from load_event_metrics).
-        If provided, a severity vs magnitude scatter panel is appended at the bottom.
+    envelope_mode : bool
+        If True, show per-dataset min/max envelopes and overlay only the
+        highlighted event(s) as solid lines.  If False (default), plot all
+        events as individual lines.
+    highlight_indices : list of int or None
+        Event indices to draw as solid lines in envelope mode.  Ignored when
+        envelope_mode is False.
 
     Returns
     -------
@@ -247,8 +297,8 @@ def plot_drought_dynamics_overlay(
     apply_publication_style()
 
     n_events = len(events)
-    show_scatter = (all_event_data is not None and
-                    all(('severity' in ev and 'magnitude' in ev) for ev in events))
+    if highlight_indices is None:
+        highlight_indices = []
 
     # Compute shifted drought periods for the duration bar panel
     shifted_drought_periods = []
@@ -260,39 +310,111 @@ def plot_drought_dynamics_overlay(
         shifted_drought_periods.append((shifted_start, shifted_end))
 
     # ── Figure layout ─────────────────────────────────────────────────
-    n_rows = 6 if show_scatter else 5
-    height_ratios = [0.4, 1, 1, 1, 1]
-    if show_scatter:
-        height_ratios.append(0.8)
-
     fig = plt.figure(figsize=figsize)
     gs = gridspec.GridSpec(
-        n_rows, 1,
-        height_ratios=height_ratios,
+        5, 1,
+        height_ratios=[0.4, 1, 1, 1, 1],
         hspace=0.15,
         left=0.09, right=0.95, top=0.96, bottom=0.05,
     )
-    axes = [fig.add_subplot(gs[i]) for i in range(n_rows)]
+    axes = [fig.add_subplot(gs[i]) for i in range(5)]
 
     # ── Panel 0: Drought duration bars ────────────────────────────────
     ax_bars = axes[0]
-    for i, (ev, (d_start, d_end)) in enumerate(zip(events, shifted_drought_periods)):
-        dataset_id = ev['dataset_id']
-        color = DATASET_COLORS.get(dataset_id, '#808080')
-        event_label = f'({i + 1})'
-        y_pos = n_events - i  # stack top-to-bottom
+    if envelope_mode:
+        # In envelope mode, show individual event bars stacked by dataset,
+        # sorted by start month (water-year order: Jun=0 … May=11).
+        # Highlight the worst-case event (solid) and the median-duration
+        # event (dashed).
+        from collections import defaultdict
 
-        ax_bars.plot(
-            [d_start, d_end], [y_pos, y_pos],
-            color=color, linewidth=4, solid_capstyle='butt', zorder=3,
-        )
-        # Label at the left end of the bar
-        ax_bars.text(
-            d_start, y_pos, f' {event_label}',
-            va='center', ha='right', fontsize=8, color=color, fontweight='bold',
-        )
+        # Group events by dataset, sorted by start month (June-first order)
+        dataset_events = defaultdict(list)
+        for idx, (ev, (ds, de)) in enumerate(
+            zip(events, shifted_drought_periods)
+        ):
+            dur = (de - ds).days
+            dataset_events[ev['dataset_id']].append((idx, ds, de, dur))
 
-    ax_bars.set_ylim(0.3, n_events + 0.7)
+        def _water_year_month(item):
+            """Sort key: month offset from June (Jun=0, Jul=1, … May=11)."""
+            m = item[1].month  # shifted start month
+            return (m - 6) % 12
+
+        for did in dataset_events:
+            dataset_events[did].sort(key=_water_year_month)
+
+        # Stack datasets vertically; within each dataset stack events
+        unique_datasets = list(dataset_events.keys())
+        y = 0.0
+        y_spacing = 0.35  # spacing between bars within a dataset
+        dataset_gap = 0.6  # gap between datasets
+
+        for ds_idx, did in enumerate(unique_datasets):
+            ev_list = dataset_events[did]
+            color = DATASET_COLORS.get(did, '#808080')
+            n_in_cell = len(ev_list)
+
+            # Find median-duration event index (middle of sorted list)
+            median_pos = n_in_cell // 2
+            median_event_idx = ev_list[median_pos][0]
+
+            if ds_idx > 0:
+                y += dataset_gap
+
+            for rank, (idx, ds, de, dur) in enumerate(ev_list):
+                y += y_spacing
+                is_highlight = idx in highlight_indices
+                is_median = (idx == median_event_idx)
+
+                if is_highlight:
+                    ax_bars.plot(
+                        [ds, de], [y, y],
+                        color=color, linewidth=4, solid_capstyle='butt',
+                        alpha=1.0, zorder=4,
+                    )
+                elif is_median:
+                    ax_bars.plot(
+                        [ds, de], [y, y],
+                        color=color, linewidth=2.5, solid_capstyle='butt',
+                        alpha=0.8, linestyle='--', zorder=3,
+                    )
+                else:
+                    ax_bars.plot(
+                        [ds, de], [y, y],
+                        color=color, linewidth=2, solid_capstyle='butt',
+                        alpha=0.25, zorder=2,
+                    )
+
+            # Dataset label
+            y_mid = y - (n_in_cell - 1) * y_spacing / 2
+            label = DATASET_LABELS.get(did, did)
+            ax_bars.text(
+                reference_start, y_mid,
+                f' {label} (n={n_in_cell}) ',
+                va='center', ha='right', fontsize=7, color=color,
+                clip_on=False,
+            )
+
+        ax_bars.set_ylim(0, y + y_spacing)
+    else:
+        for i, (ev, (d_start, d_end)) in enumerate(zip(events, shifted_drought_periods)):
+            dataset_id = ev['dataset_id']
+            color = DATASET_COLORS.get(dataset_id, '#808080')
+            event_label = f'({i + 1})'
+            y_pos = n_events - i
+
+            ax_bars.plot(
+                [d_start, d_end], [y_pos, y_pos],
+                color=color, linewidth=4, solid_capstyle='butt', zorder=3,
+            )
+            ax_bars.text(
+                d_start, y_pos, f' {event_label}',
+                va='center', ha='right', fontsize=8, color=color, fontweight='bold',
+            )
+
+        ax_bars.set_ylim(0.3, n_events + 0.7)
+
     ax_bars.set_xlim(reference_start, reference_end)
     ax_bars.set_yticks([])
     ax_bars.set_ylabel('Drought\nPeriods', fontsize=10)
@@ -319,45 +441,89 @@ def plot_drought_dynamics_overlay(
     panel_labels = ['(a)', '(b)', '(c)', '(d)']
     ts_axes = axes[1:]
 
-    # Track which datasets have been added to legend
-    legend_datasets = set()
+    if envelope_mode:
+        # Compute envelopes
+        envelopes = _compute_dataset_envelopes(
+            events, aligned_timeseries, smoothing_window,
+            reference_start, reference_end,
+        )
 
-    for ev_idx, (event, ts_dict) in enumerate(zip(events, aligned_timeseries)):
-        dataset_id = event['dataset_id']
-        color = DATASET_COLORS.get(dataset_id, '#808080')
-        label_base = DATASET_LABELS.get(dataset_id, dataset_id)
-        event_num = f'({ev_idx + 1})'
+        # Draw envelopes per dataset
+        legend_datasets = set()
+        for did, var_envelopes in envelopes.items():
+            color = DATASET_COLORS.get(did, '#808080')
+            label_base = DATASET_LABELS.get(did, did)
+            show_label = did not in legend_datasets
+            legend_datasets.add(did)
 
-        show_label = dataset_id not in legend_datasets
-        legend_datasets.add(dataset_id)
-
-        for i, (key, _ylabel) in enumerate(panel_config):
-            ax = ts_axes[i]
-            series = ts_dict[key]
-
-            if smoothing_window > 1:
-                series = series.rolling(
-                    smoothing_window, center=True, min_periods=1
-                ).mean()
-
-            ax.plot(
-                series.index, series.values,
-                color=color, alpha=alpha, linewidth=1.5,
-                label=label_base if (show_label and i == 0) else None,
-                zorder=3,
-            )
-
-            # Add event number label at the end of each line (first panel only)
-            if i == 0 and len(series) > 0:
-                last_valid = series.last_valid_index()
-                if last_valid is not None:
-                    ax.annotate(
-                        event_num,
-                        xy=(last_valid, series[last_valid]),
-                        fontsize=7, color=color, fontweight='bold',
-                        va='center', ha='left',
-                        xytext=(3, 0), textcoords='offset points',
+            for i, (key, _ylabel) in enumerate(panel_config):
+                ax = ts_axes[i]
+                env = var_envelopes[key]
+                ax.fill_between(
+                    env.index, env['min'], env['max'],
+                    color=color, alpha=0.2, zorder=1,
+                    label=(f'{label_base} range' if (show_label and i == 0)
+                           else None),
+                )
+                if show_median:
+                    ax.plot(
+                        env.index, env['median'],
+                        color=color, alpha=0.6, linewidth=1.2,
+                        linestyle='--', zorder=2,
+                        label=(f'{label_base} median'
+                               if (show_label and i == 0) else None),
                     )
+
+        # Draw highlighted event lines on top
+        for hi in highlight_indices:
+            ev = events[hi]
+            ts_dict = aligned_timeseries[hi]
+            color = DATASET_COLORS.get(ev['dataset_id'], '#808080')
+            label_base = DATASET_LABELS.get(ev['dataset_id'], ev['dataset_id'])
+
+            for i, (key, _ylabel) in enumerate(panel_config):
+                ax = ts_axes[i]
+                series = _smooth(ts_dict[key], smoothing_window)
+                ax.plot(
+                    series.index, series.values,
+                    color=color, alpha=1.0, linewidth=2.0, zorder=4,
+                    label=(f'{label_base} (worst)' if i == 0 else None),
+                )
+    else:
+        # Individual line mode (original behavior)
+        legend_datasets = set()
+
+        for ev_idx, (event, ts_dict) in enumerate(zip(events, aligned_timeseries)):
+            dataset_id = event['dataset_id']
+            color = DATASET_COLORS.get(dataset_id, '#808080')
+            label_base = DATASET_LABELS.get(dataset_id, dataset_id)
+            event_num = f'({ev_idx + 1})'
+
+            show_label = dataset_id not in legend_datasets
+            legend_datasets.add(dataset_id)
+
+            for i, (key, _ylabel) in enumerate(panel_config):
+                ax = ts_axes[i]
+                series = _smooth(ts_dict[key], smoothing_window)
+
+                ax.plot(
+                    series.index, series.values,
+                    color=color, alpha=alpha, linewidth=1.5,
+                    label=label_base if (show_label and i == 0) else None,
+                    zorder=3,
+                )
+
+                # Add event number label at the end of each line (first panel only)
+                if i == 0 and len(series) > 0:
+                    last_valid = series.last_valid_index()
+                    if last_valid is not None:
+                        ax.annotate(
+                            event_num,
+                            xy=(last_valid, series[last_valid]),
+                            fontsize=7, color=color, fontweight='bold',
+                            va='center', ha='left',
+                            xytext=(3, 0), textcoords='offset points',
+                        )
 
     # ── Format timeseries panels ──────────────────────────────────────
     for i, (key, ylabel) in enumerate(panel_config):
@@ -401,41 +567,6 @@ def plot_drought_dynamics_overlay(
 
     # Legend on first timeseries panel (dataset colors)
     ts_axes[0].legend(loc='upper right', fontsize=9, framealpha=0.9)
-
-    # ── Optional scatter panel: severity vs magnitude ─────────────────
-    if show_scatter:
-        ax_scat = axes[-1]
-
-        # Background: all events per dataset
-        for dataset_id, df in all_event_data.items():
-            color = DATASET_COLORS.get(dataset_id, '#808080')
-            ax_scat.scatter(
-                df['severity'], df['magnitude'],
-                c=color, s=12, alpha=0.25, edgecolors='none', zorder=2,
-            )
-
-        # Highlight selected events with numbered labels
-        for ev_idx, ev in enumerate(events):
-            color = DATASET_COLORS.get(ev['dataset_id'], '#808080')
-            sev = ev['severity']
-            mag = ev['magnitude']
-            ax_scat.scatter(
-                sev, mag, c=color, s=80, edgecolors='black',
-                linewidths=1.0, zorder=4,
-            )
-            ax_scat.annotate(
-                f'({ev_idx + 1})',
-                xy=(sev, mag), fontsize=8, fontweight='bold',
-                color='black', va='bottom', ha='center',
-                xytext=(0, 5), textcoords='offset points', zorder=5,
-            )
-
-        ax_scat.set_xlabel('Drought Severity (peak SSI deviation)', fontsize=11)
-        ax_scat.set_ylabel('Drought Magnitude\n(cumul. SSI deficit)', fontsize=11)
-        ax_scat.grid(True, alpha=0.2, linestyle='--')
-        ax_scat.set_axisbelow(True)
-        ax_scat.text(0.01, 0.92, '(e)', transform=ax_scat.transAxes,
-                     fontsize=12, va='top')
 
     if fname:
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')

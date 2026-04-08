@@ -19,6 +19,13 @@ MAG_MAX = 100.0
 WORST_STORAGE_THRESH = 10.0
 SATISFICING_THRESHOLD = 0.90
 
+# ── Shared grid configuration for Fig9 / Fig10 ──────────────────────
+# Central location so heatmap and dynamics figures use identical bins.
+GRID_N_BINS = 16
+GRID_LOG_MAG = True
+GRID_TARGET_SEV_BIN = 2   # 0-indexed severity bin for focal cell
+GRID_TARGET_MAG_BIN = 5   # 0-indexed magnitude bin for focal cell
+
 
 def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
                       sev_min=SEV_MIN, sev_max=SEV_MAX,
@@ -44,6 +51,22 @@ def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
     mag_edges = np.linspace(mag_min, mag_max, n_bins + 1)
     sev_centers = 0.5 * (sev_edges[:-1] + sev_edges[1:])
     mag_centers = 0.5 * (mag_edges[:-1] + mag_edges[1:])
+    return sev_edges, mag_edges, sev_centers, mag_centers
+
+
+def make_shared_edges_logmag(all_data, datasets, n_bins=GRID_N_BINS,
+                             sev_min=SEV_MIN, sev_max=SEV_MAX,
+                             mag_min=MAG_MIN, mag_max=MAG_MAX):
+    """Like :func:`make_shared_edges` but with log-spaced magnitude bins.
+
+    Returns
+    -------
+    sev_edges, mag_edges, sev_centers, mag_centers : np.ndarray
+    """
+    sev_edges = np.linspace(sev_min, sev_max, n_bins + 1)
+    sev_centers = 0.5 * (sev_edges[:-1] + sev_edges[1:])
+    mag_edges = np.logspace(np.log10(mag_min), np.log10(mag_max), n_bins + 1)
+    mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])
     return sev_edges, mag_edges, sev_centers, mag_centers
 
 
