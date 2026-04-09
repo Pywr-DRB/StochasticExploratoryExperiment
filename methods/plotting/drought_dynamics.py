@@ -647,7 +647,7 @@ def plot_drought_dynamics_overlay(
 
         if key == 'montague_flow':
             ax.set_yscale('log')
-            ax.set_ylim(bottom=1000)
+            ax.set_ylim(bottom=900)
 
         if i < len(ts_axes) - 1:
             ax.set_xticklabels([])

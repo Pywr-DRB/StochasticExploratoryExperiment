@@ -160,6 +160,10 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     kirsch_gen_baseline = KirschGenerator(debug=False, generate_using_log_flow=True)
     kirsch_gen_baseline.preprocessing(Q_baseline)
     kirsch_gen_baseline.fit()
+    
+    kirsch_gen = KirschGenerator(debug=False, generate_using_log_flow=True)
+    kirsch_gen.preprocessing(Q)
+    kirsch_gen.fit()
 
     nowak_disagg = NowakDisaggregator(debug=False)
     nowak_disagg.preprocessing(Q)
@@ -175,19 +179,24 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
 
         # Apply percentage changes to monthly means
-        prior_mean_month = kirsch_gen_baseline.mean_month
-        new_mean_month = prior_mean_month.copy() * pd.NA
+        baseline_monthly_mean = kirsch_gen_baseline.mean_month
+        new_mean_month = baseline_monthly_mean.copy() * pd.NA
 
         for i, site in enumerate(new_mean_month):
             # Convert from log scale, apply percentage change, convert back
             # The kirsch_gen stores means in log scale
-            new_mean_month.loc[:, site] = np.exp(prior_mean_month.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
+            new_mean_month.loc[:, site] = np.exp(baseline_monthly_mean.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
 
         # Convert back to log scale
         new_mean_month = np.log(new_mean_month.astype(float))
 
         # Pass back to generator, overwriting the prior means
-        kirsch_gen_baseline.mean_month = new_mean_month
+        kirsch_gen.mean_month = new_mean_month
+    else:
+        # Use baseline (1980-2019) monthly means for baseline ensemble (no climate adjustment)
+        if rank == 0:
+            print(f'Set {set_id + 1}: No climate adjustments for {dataset_id} (using baseline monthly means)')
+            kirsch_gen.mean_month = kirsch_gen_baseline.mean_month
 
     # DISTRIBUTE REALIZATION GENERATION ACROSS RANKS
     # Each rank generates a subset of realizations
@@ -209,7 +218,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     generation_seed = set_id * 10000 + rank
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
-        monthly_ensemble_obj = kirsch_gen_baseline.generate(n_realizations=local_n_realizations,
+        monthly_ensemble_obj = kirsch_gen.generate(n_realizations=local_n_realizations,
                                                     n_years=N_YEARS_GENERATE,
                                                     seed=generation_seed)
 

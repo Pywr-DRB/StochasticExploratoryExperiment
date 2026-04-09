@@ -3,7 +3,7 @@
 #SBATCH --output=./logs/perf_metrics.out
 #SBATCH --error=./logs/perf_metrics.err
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=20
+#SBATCH --ntasks-per-node=40
 #SBATCH --exclusive
 
 # Load modules and environment

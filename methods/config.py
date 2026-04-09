@@ -9,7 +9,7 @@ from methods.water_year import count_water_years
 # =============================================================================
 # CONFIGURATION NAME — determines output directory
 # =============================================================================
-CONFIG_NAME = "perf_foresight_baseline"
+CONFIG_NAME = "perf_foresight_fullkirsch"
 
 # =============================================================================
 # ENSEMBLE CONFIGURATION

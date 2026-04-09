@@ -30,7 +30,7 @@ from methods.plotting.heatmap import (
     GRID_N_BINS, GRID_TARGET_SEV_BIN, GRID_TARGET_MAG_BIN,
 )
 
-WORST_STORAGE_THRESH = 15.0  # local threshold for triangle markers
+WORST_STORAGE_THRESH = 10.0  # local threshold for triangle markers
 
 # -- configuration -----------------------------------------------------------
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9_drought_satisficing"

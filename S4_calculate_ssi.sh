@@ -3,7 +3,7 @@
 #SBATCH --output=./logs/ssi.out
 #SBATCH --error=./logs/ssi.err
 #SBATCH --nodes=5
-#SBATCH --ntasks-per-node=20
+#SBATCH --ntasks-per-node=40
 #SBATCH --exclusive
 
 # Load modules and environment

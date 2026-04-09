@@ -60,14 +60,14 @@ MIN_COUNT = 1
 
 # Envelope mode: True = show range across all events + worst-case highlight
 #                False = individual lines for N_EVENTS_PER_DATASET events
-ENVELOPE_MODE = True
+ENVELOPE_MODE = False
 
 # Number of events per dataset (only used when ENVELOPE_MODE = False)
 N_EVENTS_PER_DATASET = 1
 
 # Datasets to include (subset of DATASET_CONFIGS keys)
-DATASETS = ['stationary_ensemble']
-# DATASETS = list(DATASET_CONFIGS.keys())  # all datasets
+# DATASETS = ['stationary_ensemble']
+DATASETS = list(DATASET_CONFIGS.keys())  # all datasets
 RESULTS_SETS = ['inflow', 'res_storage', 'contribution', 'major_flow']
 
 FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'Fig10_drought_dynamics')
