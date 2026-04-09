@@ -146,7 +146,7 @@ def save_config_json():
 
 def ensure_ensemble_set_dirs(dataset_id=None):
     """Create all necessary ensemble set and output directories"""
-    # Shared input directories
+    # Config-specific input directories
     os.makedirs(ENSEMBLE_BASE_DIR, exist_ok=True)
 
     # Config-specific output directories

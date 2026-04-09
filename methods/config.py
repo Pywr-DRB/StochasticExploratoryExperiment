@@ -153,11 +153,11 @@ FLOW_PREDICTION_MODE = 'perfect_foresight'
 # Root directory (repo root, 1 level above this config file)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Shared inputs (independent of config)
-ENSEMBLE_BASE_DIR = os.path.abspath(f"{ROOT_DIR}/pywrdrb/inputs/")
-
 # Config-specific output root
 CONFIG_DIR = os.path.abspath(f"{ROOT_DIR}/outputs/{CONFIG_NAME}")
+
+# Config-specific inputs
+ENSEMBLE_BASE_DIR = os.path.abspath(f"{CONFIG_DIR}/pywrdrb_inputs/")
 
 # Data directories (under CONFIG_DIR/data/)
 OUTPUT_DIR              = os.path.abspath(f"{CONFIG_DIR}/data/simulations/")

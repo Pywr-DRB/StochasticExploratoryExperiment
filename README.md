@@ -135,9 +135,9 @@ methods/              Core library (generation, simulation, post-processing, ana
   metrics/            Shortfall and satisficing calculations
   plotting/           Publication figure utilities
 data/                 Input data (climate change scenarios)
-pywrdrb/inputs/       Shared ensemble input data (across all configs)
 outputs/              Config-specific output root
   <config_name>/
+    pywrdrb_inputs/   Ensemble input data (config-specific)
     data/
       simulations/    HDF5 simulation results
       models/         ModelBuilder JSON files
