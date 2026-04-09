@@ -160,6 +160,53 @@ def compute_min_storage_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
     return min_grid, count_grid
 
 
+def compute_exceedance_rate_grid(df, sev_edges, mag_edges, n_years,
+                                 min_count=MIN_COUNT):
+    """2-D grid of empirical exceedance rate (events/year) per bin.
+
+    For each bin, rate = count / (n_realizations * n_years).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Event metrics with ``severity``, ``magnitude``, ``realization_id``.
+    sev_edges, mag_edges : np.ndarray
+    n_years : int
+        Simulation years per realization.
+    min_count : int
+        Bins with fewer events are NaN.
+
+    Returns
+    -------
+    rate_grid : np.ndarray (ns x nm), NaN where count < min_count
+    count_grid : np.ndarray (ns x nm)
+    """
+    sev = df['severity'].values
+    mag = df['magnitude'].values
+    n_realizations = df['realization_id'].nunique()
+    total_years = n_realizations * n_years
+
+    sev_idx = np.digitize(sev, sev_edges) - 1
+    mag_idx = np.digitize(mag, mag_edges) - 1
+
+    ns = len(sev_edges) - 1
+    nm = len(mag_edges) - 1
+
+    rate_grid = np.full((ns, nm), np.nan)
+    count_grid = np.zeros((ns, nm), dtype=int)
+
+    for i in range(ns):
+        for j in range(nm):
+            mask = (sev_idx == i) & (mag_idx == j)
+            cnt = mask.sum()
+            count_grid[i, j] = cnt
+            if cnt < min_count:
+                continue
+            rate_grid[i, j] = cnt / total_years
+
+    return rate_grid, count_grid
+
+
 def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
     """2-D grid of fraction of events avoiding Drought Emergency per bin.
 
