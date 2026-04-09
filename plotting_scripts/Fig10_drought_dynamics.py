@@ -46,10 +46,9 @@ from methods.plotting.heatmap import (
     GRID_N_BINS, GRID_TARGET_SEV_BIN, GRID_TARGET_MAG_BIN,
 )
 from methods.plotting.drought_dynamics import (
-    get_plot_window,
     extract_drought_timeseries,
-    align_to_reference,
-    compute_reference_window,
+    align_to_water_year,
+    compute_reference_window_from_shifted,
     plot_drought_dynamics_overlay,
 )
 
@@ -160,6 +159,7 @@ def main():
             'severity': row['severity'],
             'magnitude': row['magnitude'],
             'event_min_storage_pct': row['event_min_storage_pct'],
+            'min_storage_date': pd.Timestamp(row['min_storage_date']),
         })
 
     # Find the worst-case event index per dataset (lowest min storage)
@@ -173,13 +173,10 @@ def main():
                 highlight_indices.append(worst_idx)
         print(f"\nHighlighted (worst per dataset): {highlight_indices}")
 
-    # 5. Compute reference window
-    reference_start, reference_end = compute_reference_window(events)
-    print(f"Reference window: {reference_start.date()} to {reference_end.date()}")
-
-    # 6. Load data and extract timeseries
+    # 5. Load data, extract timeseries, and align by water year of min storage
     #    Batch-load all realizations per dataset in one HDF5 open to avoid
     #    repeated file I/O (major speedup in envelope mode with many events).
+    REFERENCE_WY_START = pd.Timestamp('2000-06-01')
     aligned_timeseries = [None] * len(events)
 
     ds_groups = {}
@@ -197,18 +194,28 @@ def main():
 
         for idx in indices:
             ev = events[idx]
-            plot_start, _plot_end = get_plot_window(ev['start'], ev['end'])
-            # Extract only the actual drought period, not the full annual window
+            # Extract only the actual drought period
             ts = extract_drought_timeseries(
                 data, dataset_id, ev['realization_id'],
                 ev['start'], ev['end'],
             )
-            # Align using the plot window anchor so dates map correctly
-            aligned = align_to_reference(ts, plot_start, reference_start)
+            # Align by water year of min storage so months are preserved
+            aligned, shifted_start, shifted_end = align_to_water_year(
+                ts, ev['start'], ev['end'], ev['min_storage_date'],
+                reference_wy_start=REFERENCE_WY_START,
+            )
             aligned_timeseries[idx] = aligned
+            # Store shifted dates for duration bars
+            events[idx]['shifted_start'] = shifted_start
+            events[idx]['shifted_end'] = shifted_end
 
         del data
         gc.collect()
+
+    # 6. Compute reference window from shifted events (padded to month boundaries)
+    reference_start, reference_end = compute_reference_window_from_shifted(events)
+    print(f"\nReference window: {reference_start.date()} to {reference_end.date()}")
+    print(f"  (events aligned so min-storage water year -> Jun 2000 - May 2001)")
 
     # 7. Load FFMP boundaries
     print("\nLoading FFMP boundaries...")

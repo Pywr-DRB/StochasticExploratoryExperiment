@@ -106,6 +106,53 @@ def align_to_reference(timeseries_dict, event_plot_start, reference_start):
     return shifted
 
 
+def align_to_water_year(timeseries_dict, event_start, event_end,
+                        min_storage_date, reference_wy_start=None):
+    """
+    Shift timeseries so that the water year containing the minimum-storage
+    date maps to a reference water year.  Months are preserved exactly.
+
+    The shift is always a whole number of years so that calendar months
+    remain unchanged — only the year changes.
+
+    Parameters
+    ----------
+    timeseries_dict : dict of pd.Series
+    event_start, event_end : pd.Timestamp
+        Actual drought start/end dates.
+    min_storage_date : pd.Timestamp
+        Date of minimum storage during the event (determines which water
+        year the drought is anchored to).
+    reference_wy_start : pd.Timestamp, optional
+        June 1 of the reference water year.  Defaults to 2000-06-01.
+
+    Returns
+    -------
+    shifted : dict of pd.Series with shifted DatetimeIndex
+    shifted_start : pd.Timestamp
+    shifted_end : pd.Timestamp
+    """
+    if reference_wy_start is None:
+        reference_wy_start = pd.Timestamp('2000-06-01')
+
+    # Determine the water year of min_storage_date (Jun–May)
+    min_d = pd.Timestamp(min_storage_date)
+    if min_d.month >= 6:
+        event_wy_start = pd.Timestamp(year=min_d.year, month=6, day=1)
+    else:
+        event_wy_start = pd.Timestamp(year=min_d.year - 1, month=6, day=1)
+
+    # Shift by whole years only so months are preserved exactly
+    delta = reference_wy_start - event_wy_start
+
+    shifted = {}
+    for key, series in timeseries_dict.items():
+        s = series.copy()
+        s.index = s.index + delta
+        shifted[key] = s
+    return shifted, pd.Timestamp(event_start) + delta, pd.Timestamp(event_end) + delta
+
+
 def compute_reference_window(events, reference_start=None):
     """
     Compute the reference start/end from all events' plot windows.
@@ -135,6 +182,37 @@ def compute_reference_window(events, reference_start=None):
 
     reference_end = reference_start + pd.Timedelta(days=max_days)
     return reference_start, reference_end
+
+
+def compute_reference_window_from_shifted(events, pad_months=1):
+    """
+    Compute reference x-axis range from events that already have
+    'shifted_start' and 'shifted_end' keys, padded to month boundaries.
+
+    Parameters
+    ----------
+    events : list of dict
+        Each must have 'shifted_start' and 'shifted_end' keys.
+    pad_months : int
+        Months of padding before/after the earliest/latest shifted dates.
+
+    Returns
+    -------
+    reference_start, reference_end : pd.Timestamp
+    """
+    earliest = min(ev['shifted_start'] for ev in events)
+    latest = max(ev['shifted_end'] for ev in events)
+
+    # Pad to 1st of month, minus pad_months
+    ref_start = pd.Timestamp(year=earliest.year, month=earliest.month, day=1)
+    ref_start -= pd.DateOffset(months=pad_months)
+
+    # Pad to end of month, plus pad_months
+    ref_end = pd.Timestamp(year=latest.year, month=latest.month, day=28)
+    ref_end += pd.DateOffset(months=pad_months + 1)
+    ref_end = pd.Timestamp(year=ref_end.year, month=ref_end.month, day=1) - pd.Timedelta(days=1)
+
+    return ref_start, ref_end
 
 
 def _build_ffmp_doy_lookup(ffmp_boundaries):
@@ -300,14 +378,23 @@ def plot_drought_dynamics_overlay(
     if highlight_indices is None:
         highlight_indices = []
 
-    # Compute shifted drought periods for the duration bar panel
+    # Get shifted drought periods for the duration bar panel.
+    # Use pre-computed shifted_start/shifted_end if available (midpoint alignment),
+    # otherwise fall back to plot-window-based alignment.
     shifted_drought_periods = []
     for ev in events:
-        ps, _pe = get_plot_window(ev['start'], ev['end'])
-        delta = reference_start - ps
-        shifted_start = pd.Timestamp(ev['start']) + delta
-        shifted_end = pd.Timestamp(ev['end']) + delta
-        shifted_drought_periods.append((shifted_start, shifted_end))
+        if 'shifted_start' in ev and 'shifted_end' in ev:
+            shifted_drought_periods.append(
+                (pd.Timestamp(ev['shifted_start']),
+                 pd.Timestamp(ev['shifted_end']))
+            )
+        else:
+            ps, _pe = get_plot_window(ev['start'], ev['end'])
+            delta = reference_start - ps
+            shifted_drought_periods.append(
+                (pd.Timestamp(ev['start']) + delta,
+                 pd.Timestamp(ev['end']) + delta)
+            )
 
     # ── Figure layout ─────────────────────────────────────────────────
     fig = plt.figure(figsize=figsize)
@@ -560,7 +647,7 @@ def plot_drought_dynamics_overlay(
 
         if key == 'montague_flow':
             ax.set_yscale('log')
-            ax.set_ylim(bottom=100)
+            ax.set_ylim(bottom=1000)
 
         if i < len(ts_axes) - 1:
             ax.set_xticklabels([])
