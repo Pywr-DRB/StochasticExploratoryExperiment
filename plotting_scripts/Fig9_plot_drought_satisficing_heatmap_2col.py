@@ -41,7 +41,7 @@ from methods.plotting.heatmap import (
 
 # -- focal-region thresholds --------------------------------------------------
 FOCAL_FRAC_THRESH = 0.95       # fraction avoiding emergency must be < this (ALL datasets)
-FOCAL_RATE_THRESH = 10e-4      # exceedance rate must exceed this (ALL datasets)
+FOCAL_RATE_THRESH = 10e-5      # exceedance rate must exceed this (ALL datasets)
 # "highly consequential" = worst-case storage < WORST_STORAGE_THRESH in >= 1 dataset
 
 # -- configuration -----------------------------------------------------------

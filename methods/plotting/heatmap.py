@@ -16,7 +16,7 @@ SEV_MIN = 1.0
 SEV_MAX = 4.5
 MAG_MIN = 1.0
 MAG_MAX = 100.0
-WORST_STORAGE_THRESH = 10.0
+WORST_STORAGE_THRESH = 15.0
 SATISFICING_THRESHOLD = 0.90
 
 # ── Shared grid configuration for Fig9 / Fig10 ──────────────────────
