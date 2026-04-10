@@ -26,6 +26,10 @@ GRID_LOG_MAG = True
 GRID_TARGET_SEV_BIN = 7   # 0-indexed severity bin for focal cell
 GRID_TARGET_MAG_BIN = 10   # 0-indexed magnitude bin for focal cell
 
+# ── Focal-region thresholds (shared by Fig9 & Fig10) ──────────────────
+FOCAL_FRAC_THRESH = 0.95       # fraction avoiding emergency must be < this (ALL datasets)
+FOCAL_RATE_THRESH = 10e-5      # exceedance rate must exceed this (ALL datasets)
+
 
 def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
                       sev_min=SEV_MIN, sev_max=SEV_MAX,
@@ -239,3 +243,78 @@ def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
             frac_grid[i, j] = n_above / cnt
 
     return frac_grid, count_grid
+
+
+def identify_focal_region(rate_grids, frac_grids, min_grids, datasets,
+                          frac_thresh=FOCAL_FRAC_THRESH,
+                          rate_thresh=FOCAL_RATE_THRESH,
+                          storage_thresh=WORST_STORAGE_THRESH):
+    """Identify grid cells meeting multi-metric focal-region criteria.
+
+    Criteria
+    --------
+    1. Fraction avoiding emergency < *frac_thresh* in ALL datasets
+    2. Exceedance rate >= *rate_thresh* in ALL datasets
+    3. Worst-case storage < *storage_thresh* in at least 1 dataset
+
+    Returns
+    -------
+    focal_cells : set of (i, j) tuples
+    """
+    ns, nm = rate_grids[datasets[0]].shape
+    focal_cells = set()
+
+    for i in range(ns):
+        for j in range(nm):
+            if not all(
+                not np.isnan(rate_grids[d][i, j]) and
+                rate_grids[d][i, j] >= rate_thresh
+                for d in datasets
+            ):
+                continue
+            if not all(
+                not np.isnan(frac_grids[d][i, j]) and
+                frac_grids[d][i, j] < frac_thresh
+                for d in datasets
+            ):
+                continue
+            if not any(
+                not np.isnan(min_grids[d][i, j]) and
+                min_grids[d][i, j] < storage_thresh
+                for d in datasets
+            ):
+                continue
+            focal_cells.add((i, j))
+
+    return focal_cells
+
+
+def select_events_from_focal_region(df_binned, focal_cells,
+                                    rank_col='event_min_storage_pct',
+                                    ascending=True, n=None):
+    """Select all events whose (sev_bin, mag_bin) falls in the focal region.
+
+    Parameters
+    ----------
+    df_binned : pd.DataFrame
+        Output of :func:`assign_grid_bins`.
+    focal_cells : set of (i, j)
+        From :func:`identify_focal_region`.
+    rank_col : str
+        Column to sort by.
+    ascending : bool
+    n : int or None
+        If given, return only the top-*n* events.
+
+    Returns
+    -------
+    pd.DataFrame sorted by *rank_col*.
+    """
+    import pandas as pd
+    mask = pd.Series(False, index=df_binned.index)
+    for i, j in focal_cells:
+        mask |= (df_binned['sev_bin'] == i) & (df_binned['mag_bin'] == j)
+    selected = df_binned[mask].sort_values(rank_col, ascending=ascending)
+    if n is not None:
+        selected = selected.head(n)
+    return selected

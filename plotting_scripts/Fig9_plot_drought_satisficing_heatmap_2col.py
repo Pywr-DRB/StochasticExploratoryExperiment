@@ -35,14 +35,10 @@ from methods.plotting.styles import (
 )
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
-    compute_exceedance_rate_grid, GRID_N_BINS,
+    compute_exceedance_rate_grid, identify_focal_region, GRID_N_BINS,
     WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
+    FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH,
 )
-
-# -- focal-region thresholds --------------------------------------------------
-FOCAL_FRAC_THRESH = 0.95       # fraction avoiding emergency must be < this (ALL datasets)
-FOCAL_RATE_THRESH = 10e-5      # exceedance rate must exceed this (ALL datasets)
-# "highly consequential" = worst-case storage < WORST_STORAGE_THRESH in >= 1 dataset
 
 # -- configuration -----------------------------------------------------------
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9_drought_satisficing"
@@ -51,51 +47,6 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 SSI_WINDOW_DEFAULT = 3
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 PANEL_LETTERS = list('abcdef')
-
-
-def _identify_focal_region(rate_grids, frac_grids, min_grids, datasets):
-    """Identify grid cells meeting the multi-metric focal-region criteria.
-
-    Criteria
-    --------
-    1. Fraction avoiding emergency < FOCAL_FRAC_THRESH in ALL datasets
-    2. Exceedance rate > FOCAL_RATE_THRESH in ALL datasets
-    3. Worst-case storage < WORST_STORAGE_THRESH in at least 1 dataset
-
-    Returns
-    -------
-    focal_cells : set of (i, j) tuples
-        Grid indices of qualifying cells.
-    """
-    ns, nm = rate_grids[datasets[0]].shape
-    focal_cells = set()
-
-    for i in range(ns):
-        for j in range(nm):
-            # Criterion 2: rate > threshold in ALL datasets
-            if not all(
-                not np.isnan(rate_grids[d][i, j]) and
-                rate_grids[d][i, j] >= FOCAL_RATE_THRESH
-                for d in datasets
-            ):
-                continue
-            # Criterion 1: frac < threshold in ALL datasets
-            if not all(
-                not np.isnan(frac_grids[d][i, j]) and
-                frac_grids[d][i, j] < FOCAL_FRAC_THRESH
-                for d in datasets
-            ):
-                continue
-            # Criterion 3: min storage < threshold in >= 1 dataset
-            if not any(
-                not np.isnan(min_grids[d][i, j]) and
-                min_grids[d][i, j] < WORST_STORAGE_THRESH
-                for d in datasets
-            ):
-                continue
-            focal_cells.add((i, j))
-
-    return focal_cells
 
 
 def _add_focal_region(ax, sev_edges, mag_edges, focal_cells):
@@ -129,7 +80,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
         min_grids[did] = mg
 
     # -- identify focal region ----------------------------------------------
-    focal_cells = _identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
+    focal_cells = identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
     print(f"  Focal region: {len(focal_cells)} cells — {sorted(focal_cells)}")
 
     # -- colour maps & norms ------------------------------------------------
@@ -209,8 +160,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
                 if np.isnan(min_grid[i, j]):
                     continue
                 if min_grid[i, j] < WORST_STORAGE_THRESH:
-                    ax_frac.scatter(sc, mc, s=40, marker='v', color='black',
-                                     linewidths=0.6, zorder=5)
+                    ax_frac.scatter(sc, mc, s=50, marker='x', color='black',
+                                     linewidths=1.2, zorder=5)
 
         ax_frac.set_xlim(sev_edges[0], sev_edges[-1])
         ax_frac.set_yscale('log')
@@ -260,7 +211,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
     cb2.ax.tick_params(labelsize=FONTSIZE_SMALL)
 
     # -- legend at bottom ---------------------------------------------------
-    h_tri = Line2D([0], [0], marker='v', color='black', linestyle='none',
+    h_tri = Line2D([0], [0], marker='x', color='black', linestyle='none', markeredgewidth=1.2,
                    markersize=7,
                    label=f'Worst-case storage < {WORST_STORAGE_THRESH:.0f}%')
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,

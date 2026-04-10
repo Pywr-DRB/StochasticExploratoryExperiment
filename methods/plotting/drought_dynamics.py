@@ -215,6 +215,63 @@ def compute_reference_window_from_shifted(events, pad_months=1):
     return ref_start, ref_end
 
 
+def compute_fixed_extraction_window(min_storage_date, pad_before_wy=1, pad_after_wy=1):
+    """Compute a fixed timeseries extraction window centered on the water year
+    of minimum storage.
+
+    The window spans from *pad_before_wy* water years before the min-storage
+    water year through *pad_after_wy* water years after it.
+
+    Parameters
+    ----------
+    min_storage_date : pd.Timestamp
+    pad_before_wy, pad_after_wy : int
+
+    Returns
+    -------
+    window_start, window_end : pd.Timestamp
+    """
+    min_d = pd.Timestamp(min_storage_date)
+    # Water year containing min_storage_date (Jun–May)
+    if min_d.month >= 6:
+        wy_start_year = min_d.year
+    else:
+        wy_start_year = min_d.year - 1
+
+    window_start = pd.Timestamp(year=wy_start_year - pad_before_wy, month=6, day=1)
+    window_end = pd.Timestamp(year=wy_start_year + 1 + pad_after_wy, month=5, day=31)
+    return window_start, window_end
+
+
+def compute_fixed_reference_window(reference_wy_start=None,
+                                   pad_before_wy=1, pad_after_wy=1):
+    """Compute the fixed reference window for aligned timeseries.
+
+    Since all events are aligned so the min-storage water year maps to the
+    reference water year, and all use the same padding, the window is
+    deterministic.
+
+    Parameters
+    ----------
+    reference_wy_start : pd.Timestamp, optional
+        June 1 of the reference water year. Defaults to 2000-06-01.
+    pad_before_wy, pad_after_wy : int
+
+    Returns
+    -------
+    reference_start, reference_end : pd.Timestamp
+    """
+    if reference_wy_start is None:
+        reference_wy_start = pd.Timestamp('2000-06-01')
+
+    ref_start = reference_wy_start - pd.DateOffset(years=pad_before_wy)
+    ref_end = pd.Timestamp(
+        year=reference_wy_start.year + 1 + pad_after_wy,
+        month=5, day=31,
+    )
+    return ref_start, ref_end
+
+
 def _build_ffmp_doy_lookup(ffmp_boundaries):
     """
     Build a day-of-year lookup for FFMP zone boundaries (%).
