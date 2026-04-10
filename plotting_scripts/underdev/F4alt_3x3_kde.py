@@ -18,8 +18,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -29,7 +30,7 @@ from methods.plotting.styles import (
     DPI_HIGH,
     DATASET_COLORS, DATASET_LABELS,
     FONTSIZE_LABEL, FONTSIZE_MEDIUM, FONTSIZE_SMALL,
-    apply_publication_style,
+    apply_publication_style, label_panel,
 )
 import methods.plotting.water_balance_by_drought_zone as F4_module
 from methods.plotting.water_balance_by_drought_zone import (
@@ -42,14 +43,6 @@ from methods.plotting.water_balance_by_drought_zone import (
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-xlims = {3: (0, 500), 6: (0, 600), 9: (0, 100)}
-
-# Per-zone y-limits: (other, watch_warning, emergency)
-ylims = {
-    'other':         (0, 0.12),
-    'watch_warning': (0, 0.06),
-    'emergency':     (0, 0.06),
-}
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 WINDOW_MONTHS = [3, 6, 9]
@@ -58,9 +51,9 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 # Column zone groupings
 COL_ZONES  = ['other', 'watch_warning', 'emergency']
 COL_LABELS = {
-    'other':         'Normal or Flood',
-    'watch_warning': 'Drought Watch\nor Warning',
-    'emergency':     'Drought\nEmergency',
+    'other':         'Min NYC storage in Normal or Flood zone',
+    'watch_warning': 'Min NYC storage in Watch or Warning zone',
+    'emergency':     'Min NYC storage in Emergency zone',
 }
 
 # Original zone categories passed to categorize_by_zone
@@ -71,7 +64,6 @@ ZONE_CATEGORIES = {
     'other':        [0, 1, 2, 3],
 }
 
-N_KDE_POINTS = 500
 
 # ============================================================================
 # DATA LOADING
@@ -124,84 +116,103 @@ def _get_col_ratios(categorized, col_zone):
                 parts.append(r)
         if not parts:
             return None
-        import pandas as pd
         return pd.concat(parts, ignore_index=True)
     else:
         return _get_ratios(categorized, col_zone)
 
 
-def _kde(data, x_grid):
-    if data is None or len(data) < 2:
-        return np.zeros_like(x_grid)
-    return gaussian_kde(data.values)(x_grid)
-
+XLIM_QUANTILE = 0.99
 
 # ============================================================================
 # FIGURE
 # ============================================================================
 
+PANEL_LETTERS = ['a', 'b', 'c']
+
 def create_figure(all_categorized, n_months_prior, recon_ratio):
     """
-    3-row × 1-col KDE grid.  Each row = zone group, all datasets overlaid.
+    1-row × 3-col KDE grid.  Each col = zone group, all datasets overlaid.
+    Shared y-axis across subplots, single legend below the figure.
     """
-    xmax = xlims.get(n_months_prior, 100)[1]
-    x_grid = np.linspace(0, xmax, N_KDE_POINTS)
-
-    # Precompute KDEs for all (scenario, zone) combinations
-    kdes = {}
-    for sc in SCENARIOS:
-        for col in COL_ZONES:
-            r = _get_col_ratios(all_categorized[sc], col)
-            kdes[(sc, col)] = _kde(r, x_grid)
-
     apply_publication_style()
-    fig, axes = plt.subplots(
-        3, 1,
-        figsize=(5, 9),
-        sharex=True,
-        constrained_layout=True,
-    )
 
-    for row_i, col in enumerate(COL_ZONES):
-        ax = axes[row_i]
+    size = 4  # square side length in inches
+    fig = plt.figure(figsize=(size * 3 + 1, size + 1.0))
+    ax_a = fig.add_subplot(1, 3, 1)
+    ax_b = fig.add_subplot(1, 3, 2)
+    ax_c = fig.add_subplot(1, 3, 3, sharey=ax_b)
+    axes = [ax_a, ax_b, ax_c]
+    fig.subplots_adjust(bottom=0.22, wspace=0.25, left=0.07, right=0.97, top=0.92)
 
+    for col_i, col in enumerate(COL_ZONES):
+        ax = axes[col_i]
+
+        # Collect all ratios for this zone group to determine xlim
+        all_ratios = []
         for sc in SCENARIOS:
+            r = _get_col_ratios(all_categorized[sc], col)
+            if r is not None and len(r) >= 2:
+                all_ratios.append(r)
+
+        if not all_ratios:
+            label_panel(ax, PANEL_LETTERS[col_i], label=COL_LABELS[col])
+            continue
+
+        combined = pd.concat(all_ratios, ignore_index=True)
+        xmax = np.percentile(combined, XLIM_QUANTILE * 100)
+
+        # Plot each scenario's KDE using seaborn
+        for sc in SCENARIOS:
+            r = _get_col_ratios(all_categorized[sc], col)
+            if r is None or len(r) < 2:
+                continue
             color = DATASET_COLORS[sc]
-            y = kdes[(sc, col)]
-            ax.fill_between(x_grid, y, alpha=0.4, color=color)
-            ax.plot(x_grid, y, color=color, linewidth=1.5)
+            sns.kdeplot(
+                r, ax=ax, fill=True, alpha=0.35,
+                color=color, linewidth=1.5,
+                common_norm=False, clip=(0, xmax * 1.2),
+                label=DATASET_LABELS[sc],
+            )
 
-        # 1964 reconstruction tick on emergency row only
-        if col == 'emergency' and recon_ratio is not None and recon_ratio <= 100:
-            peak = max(kdes[(sc, col)].max() for sc in SCENARIOS)
-            ax.vlines(recon_ratio, 0, peak * 0.15, color='black', linewidth=3.0, zorder=5)
+        # N= annotation in upper right, one line per scenario
+        y_text = 0.88
+        for sc in SCENARIOS:
+            r = _get_col_ratios(all_categorized[sc], col)
+            n = len(r) if r is not None else 0
+            ax.text(0.97, y_text, f'N={n:,}', transform=ax.transAxes,
+                    fontsize=FONTSIZE_SMALL, color=DATASET_COLORS[sc],
+                    ha='right', va='top', fontweight='bold')
+            y_text -= 0.06
 
-        ax.set_yticks([])
-        
-        
-        xmax = xlims.get(n_months_prior, 100)[1]
-        
+        # 1964 reconstruction tick on emergency column only
+        if col == 'emergency' and recon_ratio is not None and recon_ratio <= xmax:
+            ymax = ax.get_ylim()[1]
+            ax.vlines(recon_ratio, 0, ymax * 0.15, color='black', linewidth=3.0, zorder=5)
+
         ax.set_xlim(0, xmax)
-        # ax.set_ylim(*ylims[col])
-        ax.set_title(COL_LABELS[col], fontsize=FONTSIZE_MEDIUM, pad=4)
+        ax.set_xlabel(
+            f'NYC contribution / inflow ({n_months_prior}-mo, %)',
+            fontsize=FONTSIZE_LABEL,
+        )
+        label_panel(ax, PANEL_LETTERS[col_i], label=COL_LABELS[col])
         for spine in ax.spines.values():
             spine.set_visible(True)
             spine.set_linewidth(0.8)
             spine.set_color('#444444')
 
-    axes[-1].set_xlabel(
-        f'NYC contribution / inflow ({n_months_prior}-mo, %)',
-        fontsize=FONTSIZE_LABEL,
-    )
+    # Y-axis labels on a and b (c shares with b)
+    axes[0].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
+    axes[1].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
 
-    # Legend
+    # Shared legend below the figure
     from matplotlib.lines import Line2D
     handles = [
-        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.0, label=DATASET_LABELS[sc])
+        Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.5, label=DATASET_LABELS[sc])
         for sc in SCENARIOS
     ]
-    axes[0].legend(handles=handles, fontsize=FONTSIZE_SMALL, frameon=False,
-                   loc='upper right')
+    fig.legend(handles=handles, loc='lower center', ncol=len(SCENARIOS),
+               fontsize=FONTSIZE_SMALL, frameon=False,
+               bbox_to_anchor=(0.5, -0.02))
 
     return fig
 
@@ -217,10 +228,11 @@ def main():
     print("F4 alt 3x3: NYC contribution/inflow KDE grid")
     print("=" * 70)
 
+    from methods.load import load_contribution_metrics
+    from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
+
     use_cached = True
     try:
-        from methods.load import load_contribution_metrics
-        from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
         metrics_cache = {sc: load_contribution_metrics(sc) for sc in SCENARIOS}
     except (ImportError, FileNotFoundError):
         use_cached = False
