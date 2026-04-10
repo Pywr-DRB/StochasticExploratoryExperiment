@@ -60,7 +60,7 @@ MIN_COUNT = 1
 
 # Envelope mode: True = show range across all events + worst-case highlight
 #                False = individual lines for N_EVENTS_PER_DATASET events
-ENVELOPE_MODE = False
+ENVELOPE_MODE = True
 
 # Number of events per dataset (only used when ENVELOPE_MODE = False)
 N_EVENTS_PER_DATASET = 1
