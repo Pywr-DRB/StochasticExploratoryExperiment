@@ -59,46 +59,26 @@ def _add_focal_cell(ax, sev_edges, mag_edges):
     ax.add_patch(rect)
 
 
-def _compute_slope_data(df, sev_edges, mag_edges, min_count=1):
-    """Compute median start and min storage per severity-magnitude bin.
+def _get_focal_cell_events(df, sev_edges, mag_edges):
+    """Return individual events that fall inside the focal grid cell.
 
     Returns
     -------
-    results : list of dict
-        Each entry has keys: sev_center, mag_center, sev_idx, mag_idx,
-        median_start, median_min, count
+    start_storages : np.ndarray
+        storage_at_start_pct for each event in the focal cell.
+    min_storages : np.ndarray
+        event_min_storage_pct for each event in the focal cell.
     """
     sev = df['severity'].values
     mag = df['magnitude'].values
-    start_sto = df['storage_at_start_pct'].values
-    min_sto = df['event_min_storage_pct'].values
 
     sev_idx = np.digitize(sev, sev_edges) - 1
     mag_idx = np.digitize(mag, mag_edges) - 1
 
-    ns = len(sev_edges) - 1
-    nm = len(mag_edges) - 1
+    mask = (sev_idx == GRID_TARGET_SEV_BIN) & (mag_idx == GRID_TARGET_MAG_BIN)
 
-    sev_centers = 0.5 * (sev_edges[:-1] + sev_edges[1:])
-    mag_centers = np.sqrt(mag_edges[:-1] * mag_edges[1:])  # geometric mean for log axis
-
-    results = []
-    for i in range(ns):
-        for j in range(nm):
-            mask = (sev_idx == i) & (mag_idx == j)
-            cnt = mask.sum()
-            if cnt < min_count:
-                continue
-            results.append({
-                'sev_idx': i,
-                'mag_idx': j,
-                'sev_center': sev_centers[i],
-                'mag_center': mag_centers[j],
-                'median_start': np.median(start_sto[mask]),
-                'median_min': np.median(min_sto[mask]),
-                'count': cnt,
-            })
-    return results
+    return (df.loc[mask, 'storage_at_start_pct'].values,
+            df.loc[mask, 'event_min_storage_pct'].values)
 
 
 def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
@@ -127,6 +107,15 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
     else:
         rate_vmin, rate_vmax = 1e-4, 1.0
     norm_rate = mcolors.LogNorm(vmin=rate_vmin, vmax=rate_vmax)
+
+    # Shared drawdown colormap norm across all datasets
+    cmap_dd = plt.cm.RdYlGn_r
+    all_dd = []
+    for did in DATASETS:
+        s, m = _get_focal_cell_events(all_data[did], sev_edges, mag_edges)
+        if len(s) > 0:
+            all_dd.extend(s - m)
+    norm_dd = mcolors.Normalize(vmin=0, vmax=max(all_dd) if all_dd else 1.0)
 
     # -- figure layout: 3 rows x 3 columns ---------------------------------
     fig = plt.figure(figsize=(16.0, 13.5))
@@ -218,36 +207,22 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
         ax_frac.set_yticklabels([])
         ax_frac.tick_params(labelsize=FONTSIZE_SMALL)
 
-        # ── Col 3: slope chart (start storage → min storage) ───────
+        # ── Col 3: slope chart (individual focal-cell events) ──────
         ax_slope = axes[row_idx, 2]
-        slope_data = _compute_slope_data(df, sev_edges, mag_edges,
-                                         min_count=min_count)
+        start_sto, min_sto = _get_focal_cell_events(df, sev_edges, mag_edges)
 
-        # Color lines by drawdown magnitude
-        if slope_data:
-            drawdowns = [d['median_start'] - d['median_min'] for d in slope_data]
-            max_dd = max(drawdowns) if max(drawdowns) > 0 else 1.0
-            cmap_dd = plt.cm.RdYlGn_r
-            norm_dd = mcolors.Normalize(vmin=0, vmax=max_dd)
+        # Color each line by its drawdown (shared norm across rows)
+        if len(start_sto) > 0:
+            drawdowns = start_sto - min_sto
 
-            for d in slope_data:
-                dd = d['median_start'] - d['median_min']
+            for s, m, dd in zip(start_sto, min_sto, drawdowns):
                 color = cmap_dd(norm_dd(dd))
-                alpha = 0.7
-                lw = 1.2
-
-                # Highlight focal cell bin
-                if (d['sev_idx'] == GRID_TARGET_SEV_BIN and
-                        d['mag_idx'] == GRID_TARGET_MAG_BIN):
-                    lw = 3.0
-                    alpha = 1.0
-
-                ax_slope.plot([0, 1], [d['median_start'], d['median_min']],
-                              color=color, alpha=alpha, linewidth=lw, zorder=3)
-                ax_slope.scatter([0], [d['median_start']], color=color,
-                                 s=20, alpha=alpha, zorder=4, edgecolors='none')
-                ax_slope.scatter([1], [d['median_min']], color=color,
-                                 s=20, alpha=alpha, zorder=4, edgecolors='none')
+                ax_slope.plot([0, 1], [s, m],
+                              color=color, alpha=0.6, linewidth=1.0, zorder=3)
+                ax_slope.scatter([0], [s], color=color,
+                                 s=18, alpha=0.7, zorder=4, edgecolors='none')
+                ax_slope.scatter([1], [m], color=color,
+                                 s=18, alpha=0.7, zorder=4, edgecolors='none')
 
         # Reference lines
         ax_slope.axhline(WORST_STORAGE_THRESH, color='#d32f2f', linewidth=1.0,
@@ -272,7 +247,7 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
                          fontsize=FONTSIZE_LABEL, pad=10)
     axes[0, 1].set_title('Fraction Avoiding\nDrought Emergency',
                          fontsize=FONTSIZE_LABEL, pad=10)
-    axes[0, 2].set_title('Storage Drawdown\n(median per bin)',
+    axes[0, 2].set_title('Storage Drawdown\n(focal cell events)',
                          fontsize=FONTSIZE_LABEL, pad=10)
 
     # -- colorbars at top ---------------------------------------------------
@@ -307,19 +282,18 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
                       fontsize=FONTSIZE_SMALL)
     cb_frac.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
 
-    # Right colorbar: drawdown
-    if slope_data:
-        bb_right = axes[0, 2].get_position()
-        cbar_ax_dd = fig.add_axes([bb_right.x0, cbar_top, bb_right.width, cbar_h])
-        cb_dd = fig.colorbar(
-            plt.cm.ScalarMappable(cmap=cmap_dd, norm=norm_dd),
-            cax=cbar_ax_dd, orientation='horizontal',
-        )
-        cbar_ax_dd.xaxis.set_ticks_position('top')
-        cbar_ax_dd.xaxis.set_label_position('top')
-        cb_dd.set_label('Drawdown (%-points)',
-                        fontsize=FONTSIZE_SMALL)
-        cb_dd.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
+    # Right colorbar: drawdown (shared norm computed earlier)
+    bb_right = axes[0, 2].get_position()
+    cbar_ax_dd = fig.add_axes([bb_right.x0, cbar_top, bb_right.width, cbar_h])
+    cb_dd = fig.colorbar(
+        plt.cm.ScalarMappable(cmap=cmap_dd, norm=norm_dd),
+        cax=cbar_ax_dd, orientation='horizontal',
+    )
+    cbar_ax_dd.xaxis.set_ticks_position('top')
+    cbar_ax_dd.xaxis.set_label_position('top')
+    cb_dd.set_label('Drawdown (%-points)',
+                    fontsize=FONTSIZE_SMALL)
+    cb_dd.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
 
     # -- legend at bottom ---------------------------------------------------
     h_tri = Line2D([0], [0], marker='v', color='black', linestyle='none',
