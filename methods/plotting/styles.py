@@ -21,10 +21,10 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
 # Chosen to avoid conflict with FFMP zone colors (green/yellow/orange/red)
 # and observed data (black/gray).
 DATASET_COLORS = {
-    'stationary_ensemble': '#0073e6',           # Deep blue (historic baseline)
-    'climate_adjusted_low': '#e6308a',          # Purple (wetter winter, drier summer)
+    'stationary_ensemble': '#4a4af5',           # Deep blue (historic baseline)
+    'climate_adjusted_low': '#ed9f1c',          # Purple (wetter winter, drier summer)
     'climate_adjusted_medium': '#CC79A7',       # Reddish purple (Medium scenario)
-    'climate_adjusted_high': '#89ce00',         # Green (wetter winter)
+    'climate_adjusted_high': '#009e73',         # Green (wetter winter)
 }
 
 # Alternative color scheme - also colorblind-friendly
