@@ -538,10 +538,14 @@ def _contribution_metrics_for_realization(args):
             else:
                 worst_1mo = np.nan
 
+            diversion_ratio = 100.0 * total_div / inflow_total if inflow_total > 0 else np.nan
+
             record.update({
                 f'contribution_total_{W}d': contrib_total,
                 f'contribution_ratio_{W}d': contrib_ratio,
                 f'inflow_total_{W}d': inflow_total,
+                f'diversion_total_{W}d': total_div,
+                f'diversion_ratio_{W}d': diversion_ratio,
                 f'demand_satisfaction_{W}d': demand_sat,
                 f'worst_1mo_demand_sat_{W}d': worst_1mo,
             })
@@ -582,6 +586,8 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
           - contribution_total_{W}d: NYC→Montague contributions sum (MG)
           - contribution_ratio_{W}d: (contribution/inflow) × 100 (%)
           - inflow_total_{W}d: NYC reservoir inflow sum (MG)
+          - diversion_total_{W}d: NYC diversion (delivery) sum (MG)
+          - diversion_ratio_{W}d: (diversion/inflow) × 100 (%)
           - demand_satisfaction_{W}d: volumetric diversion/demand ratio (≤1.0)
           - worst_1mo_demand_sat_{W}d: minimum 30-day rolling demand satisfaction (%)
     """

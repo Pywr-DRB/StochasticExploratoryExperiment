@@ -44,6 +44,7 @@ def get_metrics_for_window(df, window_days, metrics=None):
 
     if metrics is None:
         metrics = ['contribution_total', 'contribution_ratio', 'inflow_total',
+                   'diversion_total', 'diversion_ratio',
                    'demand_satisfaction', 'worst_1mo_demand_sat']
 
     window_cols = [f'{metric}_{window_days}d' for metric in metrics]
