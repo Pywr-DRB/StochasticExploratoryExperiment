@@ -81,7 +81,7 @@ def _identify_focal_region(rate_grids, frac_grids, min_grids, datasets):
                 for d in datasets
             ):
                 continue
-            # Criterion 1: frac < threshold in ALL dataset
+            # Criterion 1: frac < threshold in ALL datasets
             if not all(
                 not np.isnan(frac_grids[d][i, j]) and
                 frac_grids[d][i, j] < FOCAL_FRAC_THRESH
@@ -365,7 +365,9 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,
                      label='No drought events in this range')
     h_cell = Patch(facecolor='none', edgecolor='white', linewidth=2.0,
-                   label='Focal region')
+                   label=(f'Focal region (rate>{FOCAL_RATE_THRESH:.0e} all, '
+                          f'frac<{FOCAL_FRAC_THRESH:.0%} all, '
+                          f'min sto<{WORST_STORAGE_THRESH:.0f}% any)'))
     h_emerg = Line2D([0], [0], color='#d32f2f', linestyle='--', linewidth=1.0,
                      label=f'Emergency threshold ({WORST_STORAGE_THRESH:.0f}%)')
     fig.legend(
@@ -377,7 +379,8 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
 
     # -- save ---------------------------------------------------------------
     fname = (f"{FIG_OUTPUT_DIR}/Fig9alt_exceedance_satisficing_3col_ssi{ssi_window}"
-             f"_focal_sev{GRID_TARGET_SEV_BIN}_mag{GRID_TARGET_MAG_BIN}.png")
+             f"_rate{FOCAL_RATE_THRESH:.0e}_frac{FOCAL_FRAC_THRESH:.2f}"
+             f"_sto{WORST_STORAGE_THRESH:.0f}.png")
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
