@@ -110,7 +110,7 @@ def _recon_ratio(recon_data, n_months, numerator_key):
 
 SCENARIOS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 ROW_WINDOWS = [3, 9]  # months: row 1 = 3-mo, row 2 = 9-mo
-FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
+FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig7_kdes"
 
 COL_ZONES = ['other', 'watch_warning', 'emergency']
 COL_LABELS = {
