@@ -39,6 +39,13 @@ from methods.plotting.heatmap import (
 
 WORST_STORAGE_THRESH = 15.0
 
+# -- focal-region thresholds --------------------------------------------------
+# These define the multi-metric criteria for selecting "interesting" cells.
+# On the HPC (many realizations) the defaults work well; on small local runs
+# they are relaxed automatically — see _identify_focal_region().
+FOCAL_FRAC_THRESH = 0.90       # fraction avoiding emergency must be < this (any dataset)
+FOCAL_RATE_THRESH = 1e-1        # exceedance rate must exceed this in ALL datasets
+
 # -- configuration -----------------------------------------------------------
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9alt_exceedance_satisficing"
 os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
@@ -48,26 +55,70 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 PANEL_LETTERS = list('abcdefghi')
 
 
-def _add_focal_cell(ax, sev_edges, mag_edges):
-    """Draw a white rectangle around the focal grid cell."""
-    x = sev_edges[GRID_TARGET_SEV_BIN]
-    y = mag_edges[GRID_TARGET_MAG_BIN]
-    w = sev_edges[GRID_TARGET_SEV_BIN + 1] - x
-    h = mag_edges[GRID_TARGET_MAG_BIN + 1] - y
-    rect = Rectangle((x, y), w, h, linewidth=2.5,
-                      edgecolor='white', facecolor='none', zorder=6)
-    ax.add_patch(rect)
+def _identify_focal_region(rate_grids, frac_grids, min_grids, datasets):
+    """Identify grid cells meeting the multi-metric focal-region criteria.
+
+    Criteria
+    --------
+    1. Fraction avoiding emergency < FOCAL_FRAC_THRESH in at least 1 dataset
+    2. Exceedance rate > FOCAL_RATE_THRESH in ALL datasets
+    3. Worst-case storage < WORST_STORAGE_THRESH in at least 1 dataset
+
+    Returns
+    -------
+    focal_cells : set of (i, j) tuples
+        Grid indices of qualifying cells.
+    """
+    ns, nm = rate_grids[datasets[0]].shape
+    focal_cells = set()
+
+    for i in range(ns):
+        for j in range(nm):
+            # Criterion 2: rate > threshold in ALL datasets
+            if not all(
+                not np.isnan(rate_grids[d][i, j]) and
+                rate_grids[d][i, j] > FOCAL_RATE_THRESH
+                for d in datasets
+            ):
+                continue
+            # Criterion 1: frac < threshold in >= 1 dataset
+            if not any(
+                not np.isnan(frac_grids[d][i, j]) and
+                frac_grids[d][i, j] < FOCAL_FRAC_THRESH
+                for d in datasets
+            ):
+                continue
+            # Criterion 3: min storage < threshold in >= 1 dataset
+            if not any(
+                not np.isnan(min_grids[d][i, j]) and
+                min_grids[d][i, j] < WORST_STORAGE_THRESH
+                for d in datasets
+            ):
+                continue
+            focal_cells.add((i, j))
+
+    return focal_cells
 
 
-def _get_focal_cell_events(df, sev_edges, mag_edges):
-    """Return individual events that fall inside the focal grid cell.
+def _add_focal_region(ax, sev_edges, mag_edges, focal_cells):
+    """Draw white rectangles around all cells in the focal region."""
+    for i, j in focal_cells:
+        x = sev_edges[i]
+        y = mag_edges[j]
+        w = sev_edges[i + 1] - x
+        h = mag_edges[j + 1] - y
+        rect = Rectangle((x, y), w, h, linewidth=2.0,
+                          edgecolor='white', facecolor='none', zorder=6)
+        ax.add_patch(rect)
+
+
+def _get_focal_region_events(df, sev_edges, mag_edges, focal_cells):
+    """Return individual events that fall inside any focal-region cell.
 
     Returns
     -------
     start_storages : np.ndarray
-        storage_at_start_pct for each event in the focal cell.
     min_storages : np.ndarray
-        event_min_storage_pct for each event in the focal cell.
     """
     sev = df['severity'].values
     mag = df['magnitude'].values
@@ -75,7 +126,9 @@ def _get_focal_cell_events(df, sev_edges, mag_edges):
     sev_idx = np.digitize(sev, sev_edges) - 1
     mag_idx = np.digitize(mag, mag_edges) - 1
 
-    mask = (sev_idx == GRID_TARGET_SEV_BIN) & (mag_idx == GRID_TARGET_MAG_BIN)
+    mask = np.zeros(len(df), dtype=bool)
+    for i, j in focal_cells:
+        mask |= (sev_idx == i) & (mag_idx == j)
 
     return (df.loc[mask, 'storage_at_start_pct'].values,
             df.loc[mask, 'event_min_storage_pct'].values)
@@ -93,12 +146,18 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
     cmap_frac = plt.cm.plasma_r
     norm_frac = mcolors.Normalize(vmin=0.3, vmax=1.0)
 
-    # Compute rate grids first to determine shared norm
-    rate_grids = {}
+    # Compute all grids per dataset
+    rate_grids, frac_grids, min_grids = {}, {}, {}
     for did in DATASETS:
         rg, _ = compute_exceedance_rate_grid(
             all_data[did], sev_edges, mag_edges, N_YEARS, min_count=min_count)
         rate_grids[did] = rg
+        fg, _ = compute_emergency_grid(
+            all_data[did], sev_edges, mag_edges, min_count=min_count)
+        frac_grids[did] = fg
+        mg, _ = compute_min_storage_grid(
+            all_data[did], sev_edges, mag_edges, min_count=min_count)
+        min_grids[did] = mg
 
     all_rates = np.concatenate([rg[~np.isnan(rg)] for rg in rate_grids.values()])
     if len(all_rates) > 0:
@@ -108,11 +167,16 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
         rate_vmin, rate_vmax = 1e-4, 1.0
     norm_rate = mcolors.LogNorm(vmin=rate_vmin, vmax=rate_vmax)
 
-    # Shared drawdown colormap norm across all datasets
+    # Identify focal region via multi-metric criteria
+    focal_cells = _identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
+    print(f"  Focal region: {len(focal_cells)} cells — {sorted(focal_cells)}")
+
+    # Shared drawdown colormap norm across all datasets / focal region
     cmap_dd = plt.cm.RdYlGn_r
     all_dd = []
     for did in DATASETS:
-        s, m = _get_focal_cell_events(all_data[did], sev_edges, mag_edges)
+        s, m = _get_focal_region_events(all_data[did], sev_edges, mag_edges,
+                                        focal_cells)
         if len(s) > 0:
             all_dd.extend(s - m)
     norm_dd = mcolors.Normalize(vmin=0, vmax=max(all_dd) if all_dd else 1.0)
@@ -150,7 +214,7 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
             cmap=cmap_rate, norm=norm_rate, rasterized=True,
         )
         ax_rate.set_facecolor('#f0f0f0')
-        _add_focal_cell(ax_rate, sev_edges, mag_edges)
+        _add_focal_region(ax_rate, sev_edges, mag_edges, focal_cells)
 
         label_panel(ax_rate, PANEL_LETTERS[panel_idx], label=ds_label,
                     fontsize=FONTSIZE_LABEL)
@@ -170,8 +234,7 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
 
         # ── Col 2: fraction avoiding emergency ─────────────────────
         ax_frac = axes[row_idx, 1]
-        frac_grid, _ = compute_emergency_grid(
-            df, sev_edges, mag_edges, min_count=min_count)
+        frac_grid = frac_grids[did]
 
         ax_frac.pcolormesh(
             sev_edges, mag_edges,
@@ -179,11 +242,10 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
             cmap=cmap_frac, norm=norm_frac, rasterized=True,
         )
         ax_frac.set_facecolor('#f0f0f0')
-        _add_focal_cell(ax_frac, sev_edges, mag_edges)
+        _add_focal_region(ax_frac, sev_edges, mag_edges, focal_cells)
 
         # Triangle markers for worst-case storage
-        min_grid, _ = compute_min_storage_grid(
-            df, sev_edges, mag_edges, min_count=min_count)
+        min_grid = min_grids[did]
         for i, sc in enumerate(sev_centers):
             for j, mc in enumerate(mag_centers):
                 if np.isnan(min_grid[i, j]):
@@ -207,9 +269,10 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
         ax_frac.set_yticklabels([])
         ax_frac.tick_params(labelsize=FONTSIZE_SMALL)
 
-        # ── Col 3: slope chart (individual focal-cell events) ──────
+        # ── Col 3: slope chart (individual focal-region events) ─────
         ax_slope = axes[row_idx, 2]
-        start_sto, min_sto = _get_focal_cell_events(df, sev_edges, mag_edges)
+        start_sto, min_sto = _get_focal_region_events(
+            df, sev_edges, mag_edges, focal_cells)
 
         # Color each line by its drawdown (shared norm across rows)
         if len(start_sto) > 0:
@@ -247,7 +310,7 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
                          fontsize=FONTSIZE_LABEL, pad=10)
     axes[0, 1].set_title('Fraction Avoiding\nDrought Emergency',
                          fontsize=FONTSIZE_LABEL, pad=10)
-    axes[0, 2].set_title('Storage Drawdown\n(focal cell events)',
+    axes[0, 2].set_title('Storage Drawdown\n(focal region events)',
                          fontsize=FONTSIZE_LABEL, pad=10)
 
     # -- colorbars at top ---------------------------------------------------
@@ -301,8 +364,8 @@ def plot_combined_figure(all_data, ssi_window, n_bins=GRID_N_BINS, min_count=1):
                    label=f'Worst-case storage < {WORST_STORAGE_THRESH:.0f}%')
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,
                      label='No drought events in this range')
-    h_cell = Patch(facecolor='none', edgecolor='white', linewidth=2.5,
-                   label='Focal cell (Fig. 10)')
+    h_cell = Patch(facecolor='none', edgecolor='white', linewidth=2.0,
+                   label='Focal region')
     h_emerg = Line2D([0], [0], color='#d32f2f', linestyle='--', linewidth=1.0,
                      label=f'Emergency threshold ({WORST_STORAGE_THRESH:.0f}%)')
     fig.legend(
