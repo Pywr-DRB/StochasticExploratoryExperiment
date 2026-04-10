@@ -132,9 +132,11 @@ def main():
     all_selected = []
     for dataset_id in DATASETS:
         df_binned = assign_grid_bins(all_data[dataset_id], sev_edges, mag_edges)
+        n_select = None if ENVELOPE_MODE else N_EVENTS_PER_DATASET
         selected = select_events_from_focal_region(
             df_binned, focal_cells,
             rank_col='event_min_storage_pct', ascending=True,
+            n=n_select,
         )
         if len(selected) > 0:
             selected = selected.copy()
