@@ -51,9 +51,9 @@ FIG_OUTPUT_DIR = f"{FIG_DIR}/F4alt_kde"
 # Column zone groupings
 COL_ZONES  = ['other', 'watch_warning', 'emergency']
 COL_LABELS = {
-    'other':         'Min NYC storage in Normal or Flood zone',
-    'watch_warning': 'Min NYC storage in Watch or Warning zone',
-    'emergency':     'Min NYC storage in Emergency zone',
+    'other':         'Min NYC storage in\nNormal or Flood zone',
+    'watch_warning': 'Min NYC storage in\nWatch or Warning zone',
+    'emergency':     'Min NYC storage in\nEmergency zone',
 }
 
 # Original zone categories passed to categorize_by_zone
@@ -142,7 +142,25 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
     ax_b = fig.add_subplot(1, 3, 2)
     ax_c = fig.add_subplot(1, 3, 3, sharey=ax_b)
     axes = [ax_a, ax_b, ax_c]
-    fig.subplots_adjust(bottom=0.22, wspace=0.25, left=0.07, right=0.97, top=0.92)
+    fig.subplots_adjust(bottom=0.22, left=0.07, right=0.97, top=0.92)
+    # Custom horizontal spacing: wider gap after a, tight between b and c
+    pos_a = axes[0].get_position()
+    pos_b = axes[1].get_position()
+    pos_c = axes[2].get_position()
+    panel_w = pos_a.width
+    gap_ab = 0.09   # gap between a and b
+    gap_bc = 0.03   # tight gap between b and c (shared y-axis)
+    x0_a = pos_a.x0
+    x0_b = x0_a + panel_w + gap_ab
+    x0_c = x0_b + panel_w + gap_bc
+    axes[0].set_position([x0_a, pos_a.y0, panel_w, pos_a.height])
+    axes[1].set_position([x0_b, pos_b.y0, panel_w, pos_b.height])
+    axes[2].set_position([x0_c, pos_c.y0, panel_w, pos_c.height])
+
+    # Total years per scenario (sum across all zone categories)
+    total_years = {}
+    for sc in SCENARIOS:
+        total_years[sc] = sum(len(df) for df in all_categorized[sc].values())
 
     for col_i, col in enumerate(COL_ZONES):
         ax = axes[col_i]
@@ -168,18 +186,19 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
                 continue
             color = DATASET_COLORS[sc]
             sns.kdeplot(
-                r, ax=ax, fill=True, alpha=0.35,
-                color=color, linewidth=1.5,
+                r, ax=ax, fill=False,
+                color=color, linewidth=4.5,
                 common_norm=False, clip=(0, xmax * 1.2),
                 label=DATASET_LABELS[sc],
             )
 
-        # N= annotation in upper right, one line per scenario
+        # % of years annotation in upper right, one line per scenario
         y_text = 0.88
         for sc in SCENARIOS:
             r = _get_col_ratios(all_categorized[sc], col)
             n = len(r) if r is not None else 0
-            ax.text(0.97, y_text, f'N={n:,}', transform=ax.transAxes,
+            pct = 100.0 * n / total_years[sc] if total_years[sc] > 0 else 0
+            ax.text(0.97, y_text, f'{pct:.0f}% of years', transform=ax.transAxes,
                     fontsize=FONTSIZE_SMALL, color=DATASET_COLORS[sc],
                     ha='right', va='top', fontweight='bold')
             y_text -= 0.06
@@ -190,6 +209,7 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
             ax.vlines(recon_ratio, 0, ymax * 0.15, color='black', linewidth=3.0, zorder=5)
 
         ax.set_xlim(0, xmax)
+
         ax.set_xlabel(
             f'NYC contribution / inflow ({n_months_prior}-mo, %)',
             fontsize=FONTSIZE_LABEL,
@@ -200,9 +220,16 @@ def create_figure(all_categorized, n_months_prior, recon_ratio):
             spine.set_linewidth(0.8)
             spine.set_color('#444444')
 
-    # Y-axis labels on a and b (c shares with b)
+    # Add breathing room to ylim
+    for ax in axes:
+        y_lo, y_hi = ax.get_ylim()
+        ax.set_ylim(y_lo, y_hi * 1.15)
+
+    # Y-axis labels on a and b only; hide ticks/label on c
     axes[0].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
     axes[1].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
+    axes[2].tick_params(labelleft=False)
+    axes[2].set_ylabel('')
 
     # Shared legend below the figure
     from matplotlib.lines import Line2D
