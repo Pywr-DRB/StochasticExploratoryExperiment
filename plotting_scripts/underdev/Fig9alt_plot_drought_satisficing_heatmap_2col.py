@@ -3,7 +3,7 @@ Fig9alt: Drought Satisficing Heatmaps with Multi-Metric Focal Region
 
 Six-panel figure (3 rows x 2 columns).
   Rows    = climate scenarios (Baseline, Mixed Future, Wet Future)
-  Col 1   = Worst-case minimum NYC storage (%) during drought events
+  Col 1   = Joint exceedance rate (events/year) per (severity, magnitude) bin
   Col 2   = Fraction of events avoiding Drought Emergency
 
 A focal region is identified via multi-metric criteria applied across all
@@ -133,8 +133,14 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
     print(f"  Focal region: {len(focal_cells)} cells — {sorted(focal_cells)}")
 
     # -- colour maps & norms ------------------------------------------------
-    cmap_sto = plt.cm.plasma_r
-    norm_sto = mcolors.Normalize(vmin=0, vmax=60)
+    cmap_rate = plt.cm.YlOrRd
+    all_rates = np.concatenate([rg[~np.isnan(rg)] for rg in rate_grids.values()])
+    if len(all_rates) > 0:
+        rate_vmin = max(all_rates.min(), 1e-4)
+        rate_vmax = all_rates.max()
+    else:
+        rate_vmin, rate_vmax = 1e-4, 1.0
+    norm_rate = mcolors.LogNorm(vmin=rate_vmin, vmax=rate_vmax)
 
     cmap_frac = plt.cm.plasma_r
     norm_frac = mcolors.Normalize(vmin=0.3, vmax=1.0)
@@ -148,50 +154,41 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
         left=0.10, right=0.95, bottom=0.06, top=0.90,
     )
 
-    axes_sto = []
+    axes_rate = []
     axes_frac = []
 
     for row_idx, did in enumerate(DATASETS):
         label = DATASET_LABELS.get(did, did)
 
-        # ── Col 0: worst-case min storage ────────────────────────────
-        ax_sto = fig.add_subplot(gs[row_idx, 0])
-        min_grid = min_grids[did]
+        # ── Col 0: exceedance rate ───────────────────────────────────
+        ax_rate = fig.add_subplot(gs[row_idx, 0])
+        rate_grid = rate_grids[did]
 
-        ax_sto.pcolormesh(
+        ax_rate.pcolormesh(
             sev_edges, mag_edges,
-            np.ma.masked_invalid(min_grid.T),
-            cmap=cmap_sto, norm=norm_sto, rasterized=True,
+            np.ma.masked_invalid(rate_grid.T),
+            cmap=cmap_rate, norm=norm_rate, rasterized=True,
         )
-        ax_sto.set_facecolor('#f0f0f0')
-        _add_focal_region(ax_sto, sev_edges, mag_edges, focal_cells)
+        ax_rate.set_facecolor('#f0f0f0')
+        _add_focal_region(ax_rate, sev_edges, mag_edges, focal_cells)
 
-        # Mark bins where worst-case storage < threshold
-        for i, sc in enumerate(sev_centers):
-            for j, mc in enumerate(mag_centers):
-                if np.isnan(min_grid[i, j]):
-                    continue
-                if min_grid[i, j] < WORST_STORAGE_THRESH:
-                    ax_sto.scatter(sc, mc, s=55, marker='v', color='black',
-                                   linewidths=0.8, zorder=5)
-
-        ax_sto.set_xlim(sev_edges[0], sev_edges[-1])
-        ax_sto.set_yscale('log')
-        ax_sto.set_ylim(mag_edges[0], mag_edges[-1])
+        ax_rate.set_xlim(sev_edges[0], sev_edges[-1])
+        ax_rate.set_yscale('log')
+        ax_rate.set_ylim(mag_edges[0], mag_edges[-1])
 
         letter = PANEL_LETTERS[row_idx * 2]
-        label_panel(ax_sto, letter, label=label, fontsize=FONTSIZE_LABEL)
+        label_panel(ax_rate, letter, label=label, fontsize=FONTSIZE_LABEL)
 
-        ax_sto.set_ylabel('Drought Magnitude\n(cumulative SSI deficit)',
+        ax_rate.set_ylabel('Drought Magnitude\n(cumulative SSI deficit)',
                           fontsize=FONTSIZE_LABEL)
         if row_idx == 2:
-            ax_sto.set_xlabel('Drought Severity\n(peak SSI deviation)',
+            ax_rate.set_xlabel('Drought Severity\n(peak SSI deviation)',
                               fontsize=FONTSIZE_LABEL)
         else:
-            ax_sto.set_xticklabels([])
+            ax_rate.set_xticklabels([])
 
-        ax_sto.tick_params(labelsize=FONTSIZE_SMALL)
-        axes_sto.append(ax_sto)
+        ax_rate.tick_params(labelsize=FONTSIZE_SMALL)
+        axes_rate.append(ax_rate)
 
         # ── Col 1: fraction avoiding Drought Emergency ───────────────
         ax_frac = fig.add_subplot(gs[row_idx, 1])
@@ -205,14 +202,15 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
         ax_frac.set_facecolor('#f0f0f0')
         _add_focal_region(ax_frac, sev_edges, mag_edges, focal_cells)
 
-        # Mark bins below satisficing threshold
+        # Triangle markers for worst-case storage
+        min_grid = min_grids[did]
         for i, sc in enumerate(sev_centers):
             for j, mc in enumerate(mag_centers):
-                if np.isnan(frac_grid[i, j]):
+                if np.isnan(min_grid[i, j]):
                     continue
-                if frac_grid[i, j] < SATISFICING_THRESHOLD:
-                    ax_frac.scatter(sc, mc, s=50, marker='x', color='black',
-                                     linewidths=1.2, zorder=5)
+                if min_grid[i, j] < WORST_STORAGE_THRESH:
+                    ax_frac.scatter(sc, mc, s=40, marker='v', color='black',
+                                     linewidths=0.6, zorder=5)
 
         ax_frac.set_xlim(sev_edges[0], sev_edges[-1])
         ax_frac.set_yscale('log')
@@ -237,15 +235,15 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
     cbar_h = 0.012
     cbar_top = 0.92
 
-    bb_left = axes_sto[0].get_position()
+    bb_left = axes_rate[0].get_position()
     cbar_ax1 = fig.add_axes([bb_left.x0, cbar_top, bb_left.width, cbar_h])
     cb1 = fig.colorbar(
-        plt.cm.ScalarMappable(cmap=cmap_sto, norm=norm_sto),
+        plt.cm.ScalarMappable(cmap=cmap_rate, norm=norm_rate),
         cax=cbar_ax1, orientation='horizontal',
     )
     cbar_ax1.xaxis.set_ticks_position('top')
     cbar_ax1.xaxis.set_label_position('top')
-    cb1.set_label('Worst-Case Minimum\nNYC Combined Reservoir Storage (%)',
+    cb1.set_label('Exceedance Rate (events yr$^{-1}$)',
                   fontsize=FONTSIZE_LABEL)
     cb1.ax.tick_params(labelsize=FONTSIZE_SMALL)
 
@@ -262,12 +260,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
     cb2.ax.tick_params(labelsize=FONTSIZE_SMALL)
 
     # -- legend at bottom ---------------------------------------------------
-    h_sto = Line2D([0], [0], marker='v', color='black', linestyle='none',
+    h_tri = Line2D([0], [0], marker='v', color='black', linestyle='none',
                    markersize=7,
-                   label=f'Worst-case < {WORST_STORAGE_THRESH:.0f}% storage')
-    h_frac = Line2D([0], [0], marker='x', color='black', linestyle='none',
-                    markeredgewidth=1.2, markersize=7,
-                    label=f'< {SATISFICING_THRESHOLD:.0%} avoid Emergency')
+                   label=f'Worst-case storage < {WORST_STORAGE_THRESH:.0f}%')
     h_nodata = Patch(facecolor='#f0f0f0', edgecolor='#cccccc', linewidth=0.8,
                      label='No drought events in this range')
     h_focal = Patch(facecolor='none', edgecolor='white', linewidth=2.0,
@@ -275,7 +270,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
                            f'frac<{FOCAL_FRAC_THRESH:.0%} all, '
                            f'min sto<{WORST_STORAGE_THRESH:.0f}% any)'))
     fig.legend(
-        handles=[h_sto, h_frac, h_nodata, h_focal], loc='lower center', ncol=2,
+        handles=[h_tri, h_nodata, h_focal], loc='lower center', ncol=3,
         fontsize=FONTSIZE_SMALL, frameon=True, framealpha=0.9,
         edgecolor='none', shadow=False,
         bbox_to_anchor=(0.52, -0.01),
