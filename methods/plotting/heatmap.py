@@ -245,6 +245,96 @@ def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
     return frac_grid, count_grid
 
 
+def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
+                        edgecolor='white', linewidth=2.0, zorder=6):
+    """Draw a continuous boundary around the outer edge of focal-region cells.
+
+    Instead of individual rectangles per cell, this traces the outer contour
+    of the connected focal region by walking the boundary edges of the
+    cell set on a rectilinear grid.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    sev_edges, mag_edges : np.ndarray
+        Bin edges (length n_bins + 1).
+    focal_cells : set of (i, j)
+        Grid-cell indices in the focal region.
+    edgecolor : str
+    linewidth : float
+    zorder : int
+    """
+    if not focal_cells:
+        return
+
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+
+    # Collect all boundary edge segments.
+    # For each cell (i, j), check the 4 neighbours.  If a neighbour is NOT
+    # in the focal set, the shared edge is a boundary segment.
+    segments = []
+    for (i, j) in focal_cells:
+        x0, x1 = sev_edges[i], sev_edges[i + 1]
+        y0, y1 = mag_edges[j], mag_edges[j + 1]
+
+        # bottom edge: neighbour (i, j-1)
+        if (i, j - 1) not in focal_cells:
+            segments.append(((x0, y0), (x1, y0)))
+        # top edge: neighbour (i, j+1)
+        if (i, j + 1) not in focal_cells:
+            segments.append(((x0, y1), (x1, y1)))
+        # left edge: neighbour (i-1, j)
+        if (i - 1, j) not in focal_cells:
+            segments.append(((x0, y0), (x0, y1)))
+        # right edge: neighbour (i+1, j)
+        if (i + 1, j) not in focal_cells:
+            segments.append(((x1, y0), (x1, y1)))
+
+    # Chain segments into closed loops for clean rendering.
+    # Build adjacency: at each vertex, which segments meet?
+    from collections import defaultdict
+    adjacency = defaultdict(list)
+    for idx, (p0, p1) in enumerate(segments):
+        adjacency[p0].append(idx)
+        adjacency[p1].append(idx)
+
+    used = [False] * len(segments)
+    loops = []
+
+    for start_idx in range(len(segments)):
+        if used[start_idx]:
+            continue
+        used[start_idx] = True
+        loop = [segments[start_idx][0], segments[start_idx][1]]
+
+        while loop[-1] != loop[0]:
+            current = loop[-1]
+            found = False
+            for seg_idx in adjacency[current]:
+                if used[seg_idx]:
+                    continue
+                used[seg_idx] = True
+                p0, p1 = segments[seg_idx]
+                next_pt = p1 if p0 == current else p0
+                loop.append(next_pt)
+                found = True
+                break
+            if not found:
+                break
+
+        loops.append(loop)
+
+    # Draw each loop as a closed path
+    for loop in loops:
+        verts = loop
+        codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
+        path = Path(verts, codes)
+        patch = PathPatch(path, facecolor='none', edgecolor=edgecolor,
+                          linewidth=linewidth, zorder=zorder)
+        ax.add_patch(patch)
+
+
 def identify_focal_region(rate_grids, frac_grids, min_grids, datasets,
                           frac_thresh=FOCAL_FRAC_THRESH,
                           rate_thresh=FOCAL_RATE_THRESH,

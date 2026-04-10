@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch, Rectangle
+from matplotlib.patches import Patch
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -35,8 +35,8 @@ from methods.plotting.styles import (
 )
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
-    compute_exceedance_rate_grid, identify_focal_region, GRID_N_BINS,
-    WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
+    compute_exceedance_rate_grid, identify_focal_region, draw_focal_boundary,
+    GRID_N_BINS, WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
     FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH,
 )
 
@@ -48,17 +48,6 @@ SSI_WINDOW_DEFAULT = 3
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 PANEL_LETTERS = list('abcdef')
 
-
-def _add_focal_region(ax, sev_edges, mag_edges, focal_cells):
-    """Draw white rectangles around all cells in the focal region."""
-    for i, j in focal_cells:
-        x = sev_edges[i]
-        y = mag_edges[j]
-        w = sev_edges[i + 1] - x
-        h = mag_edges[j + 1] - y
-        rect = Rectangle((x, y), w, h, linewidth=2.0,
-                          edgecolor='white', facecolor='none', zorder=6)
-        ax.add_patch(rect)
 
 
 def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
@@ -121,7 +110,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
             cmap=cmap_rate, norm=norm_rate, rasterized=True,
         )
         ax_rate.set_facecolor('#f0f0f0')
-        _add_focal_region(ax_rate, sev_edges, mag_edges, focal_cells)
+        draw_focal_boundary(ax_rate, sev_edges, mag_edges, focal_cells)
 
         ax_rate.set_xlim(sev_edges[0], sev_edges[-1])
         ax_rate.set_yscale('log')
@@ -151,7 +140,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1):
             cmap=cmap_frac, norm=norm_frac, rasterized=True,
         )
         ax_frac.set_facecolor('#f0f0f0')
-        _add_focal_region(ax_frac, sev_edges, mag_edges, focal_cells)
+        draw_focal_boundary(ax_frac, sev_edges, mag_edges, focal_cells)
 
         # Triangle markers for worst-case storage
         min_grid = min_grids[did]
