@@ -355,18 +355,17 @@ def main():
 
         if use_cached:
             window_days = n_mo * 30
-            col_map = {
-                f'contribution_total_{window_days}d': 'contribution_total',
-                f'contribution_ratio_{window_days}d': 'contribution_ratio',
-                f'inflow_total_{window_days}d':       'inflow_total',
-                f'diversion_total_{window_days}d':    'diversion_total',
-                f'diversion_ratio_{window_days}d':    'diversion_ratio',
-                f'demand_satisfaction_{window_days}d': 'demand_satisfaction',
-                f'worst_1mo_demand_sat_{window_days}d': 'worst_1mo_demand_sat',
-            }
+            # Request only metrics that exist in the CSV
+            base_metrics = ['contribution_total', 'contribution_ratio', 'inflow_total',
+                            'demand_satisfaction', 'worst_1mo_demand_sat']
+            sample_cols = metrics_cache[SCENARIOS[0]].columns
+            if f'diversion_total_{window_days}d' in sample_cols:
+                base_metrics += ['diversion_total', 'diversion_ratio']
+
+            col_map = {f'{m}_{window_days}d': m for m in base_metrics}
             all_categorized = {}
             for sc in SCENARIOS:
-                df = get_metrics_for_window(metrics_cache[sc], window_days)
+                df = get_metrics_for_window(metrics_cache[sc], window_days, metrics=base_metrics)
                 df = df.rename(columns=col_map)
                 all_categorized[sc] = categorize_by_zone(df, ZONE_CATEGORIES)
         else:

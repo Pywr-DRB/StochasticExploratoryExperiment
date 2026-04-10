@@ -23,8 +23,8 @@ SATISFICING_THRESHOLD = 0.90
 # Central location so heatmap and dynamics figures use identical bins.
 GRID_N_BINS = 16
 GRID_LOG_MAG = True
-GRID_TARGET_SEV_BIN = 7   # 0-indexed severity bin for focal cell
-GRID_TARGET_MAG_BIN = 11   # 0-indexed magnitude bin for focal cell
+GRID_TARGET_SEV_BIN = 2   # 0-indexed severity bin for focal cell
+GRID_TARGET_MAG_BIN = 3   # 0-indexed magnitude bin for focal cell
 
 
 def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,

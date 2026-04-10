@@ -423,13 +423,19 @@ def plot_drought_dynamics_overlay(
             dur = (de - ds).days
             dataset_events[ev['dataset_id']].append((idx, ds, de, dur))
 
-        def _water_year_month(item):
-            """Sort key: month offset from June (Jun=0, Jul=1, … May=11)."""
+        def _water_year_month_then_duration(item):
+            """Sort key: month offset from June, then duration (shortest first).
+
+            This produces a cascading bar chart: events grouped by start month
+            (Jun=0, Jul=1, … May=11), with shorter events before longer ones
+            within each month.
+            """
             m = item[1].month  # shifted start month
-            return (m - 6) % 12
+            dur = item[3]       # duration in days
+            return ((m - 6) % 12, dur)
 
         for did in dataset_events:
-            dataset_events[did].sort(key=_water_year_month)
+            dataset_events[did].sort(key=_water_year_month_then_duration)
 
         # Stack datasets vertically; within each dataset stack events
         unique_datasets = list(dataset_events.keys())
