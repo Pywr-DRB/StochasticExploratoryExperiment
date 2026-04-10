@@ -62,7 +62,6 @@ def plot_manuscript_ensemble_figure(dataset_id: str):
         fname=fname,
         percentiles=(0.5, 99.5),
         figsize=(9, 9),
-        timescale='weekly',
     )
 
     print(f"Saved: {fname}")

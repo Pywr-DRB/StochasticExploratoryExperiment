@@ -785,7 +785,8 @@ def plot_ensemble_summary_figure(
     figsize: tuple = (12, 14),
     percentiles: tuple = (0, 100),
     max_lag: int = 30,
-    timescale: str = 'monthly',
+    timescale: str = 'weekly',
+    stats_timescale: str = 'monthly',
 ):
     """
     Create 4-panel summary figure for manuscript with autocorrelation, FDC,
@@ -817,8 +818,11 @@ def plot_ensemble_summary_figure(
     max_lag : int
         Maximum lag for autocorrelation plot (default 30 days)
     timescale : str
-        Time-period aggregation for panels C–E: 'monthly' (12 periods) or
-        'weekly' (52 periods). Default 'monthly'.
+        Time-period aggregation for panel C (flow percentiles): 'monthly'
+        (12 periods) or 'weekly' (52 periods). Default 'weekly'.
+    stats_timescale : str or None
+        Time-period aggregation for panels D–E (statistical tests).
+        If None, uses the same value as ``timescale``. Default 'monthly'.
 
     Returns
     -------
@@ -832,6 +836,9 @@ def plot_ensemble_summary_figure(
 
     synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
     synthetic_label = DATASET_LABELS.get(dataset_id, 'Synthetic')
+
+    if stats_timescale is None:
+        stats_timescale = timescale
 
     # Pre-aggregate flows ONCE for all panels
     hist_agg = _get_aggregate_flow(Q_historic, sites)
@@ -883,7 +890,7 @@ def plot_ensemble_summary_figure(
     # Panel D: Wilcoxon rank-sum p-values (no x-tick labels — shared with panel E)
     plot_pvalue_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_wilcoxon, which='wilcoxon', timescale=timescale,
+        ax=ax_wilcoxon, which='wilcoxon', timescale=stats_timescale,
         show_xticklabels=False,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
@@ -894,7 +901,7 @@ def plot_ensemble_summary_figure(
     # Panel E: Levene p-values (x-tick labels shown here)
     plot_pvalue_comparison(
         Q_historic, Q_synthetic,
-        ax=ax_levene, which='levene', timescale=timescale,
+        ax=ax_levene, which='levene', timescale=stats_timescale,
         show_xticklabels=True,
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
