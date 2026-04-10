@@ -43,8 +43,8 @@ WORST_STORAGE_THRESH = 15.0
 # These define the multi-metric criteria for selecting "interesting" cells.
 # On the HPC (many realizations) the defaults work well; on small local runs
 # they are relaxed automatically — see _identify_focal_region().
-FOCAL_FRAC_THRESH = 0.90       # fraction avoiding emergency must be < this (any dataset)
-FOCAL_RATE_THRESH = 1e-1        # exceedance rate must exceed this in ALL datasets
+FOCAL_FRAC_THRESH = 0.95       # fraction avoiding emergency must be < this (any dataset)
+FOCAL_RATE_THRESH = 10e-4        # exceedance rate must exceed this in ALL datasets
 
 # -- configuration -----------------------------------------------------------
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig9alt_exceedance_satisficing"
@@ -60,7 +60,7 @@ def _identify_focal_region(rate_grids, frac_grids, min_grids, datasets):
 
     Criteria
     --------
-    1. Fraction avoiding emergency < FOCAL_FRAC_THRESH in at least 1 dataset
+    1. Fraction avoiding emergency < FOCAL_FRAC_THRESH in ALL datasets
     2. Exceedance rate > FOCAL_RATE_THRESH in ALL datasets
     3. Worst-case storage < WORST_STORAGE_THRESH in at least 1 dataset
 
@@ -77,12 +77,12 @@ def _identify_focal_region(rate_grids, frac_grids, min_grids, datasets):
             # Criterion 2: rate > threshold in ALL datasets
             if not all(
                 not np.isnan(rate_grids[d][i, j]) and
-                rate_grids[d][i, j] > FOCAL_RATE_THRESH
+                rate_grids[d][i, j] >= FOCAL_RATE_THRESH
                 for d in datasets
             ):
                 continue
-            # Criterion 1: frac < threshold in >= 1 dataset
-            if not any(
+            # Criterion 1: frac < threshold in ALL dataset
+            if not all(
                 not np.isnan(frac_grids[d][i, j]) and
                 frac_grids[d][i, j] < FOCAL_FRAC_THRESH
                 for d in datasets
