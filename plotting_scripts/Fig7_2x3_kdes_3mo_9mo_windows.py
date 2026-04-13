@@ -117,6 +117,13 @@ COL_LABELS = {
     'other':         'Min NYC storage in\nNormal or Flood zone',
     'watch_warning': 'Min NYC storage in\nWatch or Warning zone',
     'emergency':     'Min NYC storage in\nEmergency zone',
+    'drought_all':   'Min NYC storage in\nWatch, Warning or Emergency zone',
+}
+
+# 2x2 layout options for the right column
+LAYOUT_2X2_COLS = {
+    'drought_all':    ['other', 'drought_all'],
+    'emergency_only': ['other', 'emergency'],
 }
 
 ZONE_CATEGORIES = {
@@ -140,6 +147,11 @@ PANEL_LETTERS = [
     ['d', 'e', 'f'],
 ]
 
+PANEL_LETTERS_2X2 = [
+    ['a', 'b'],
+    ['c', 'd'],
+]
+
 
 # ============================================================================
 # DATA HELPERS
@@ -158,16 +170,20 @@ def _get_ratios(categorized, zone, numerator_col='contribution_total'):
 def _get_col_ratios(categorized, col_zone, numerator_col='contribution_total'):
     """Return combined ratios for a column zone group."""
     if col_zone == 'watch_warning':
-        parts = []
-        for z in ('watch', 'warning'):
-            r = _get_ratios(categorized, z, numerator_col)
-            if r is not None:
-                parts.append(r)
-        if not parts:
-            return None
-        return pd.concat(parts, ignore_index=True)
+        sub_zones = ('watch', 'warning')
+    elif col_zone == 'drought_all':
+        sub_zones = ('watch', 'warning', 'emergency')
     else:
         return _get_ratios(categorized, col_zone, numerator_col)
+
+    parts = []
+    for z in sub_zones:
+        r = _get_ratios(categorized, z, numerator_col)
+        if r is not None:
+            parts.append(r)
+    if not parts:
+        return None
+    return pd.concat(parts, ignore_index=True)
 
 
 def _kde_line(data, x_grid):
@@ -181,47 +197,52 @@ def _kde_line(data, x_grid):
 # FIGURE
 # ============================================================================
 
-def create_figure(all_categorized_by_window, recon_data):
+def create_figure(all_categorized_by_window, recon_data,
+                   col_zones=None, panel_letters=None):
     """
-    2-row × 3-col KDE grid.
+    2-row × N-col KDE grid (N = 2 or 3).
     Row 1: 3-mo window, Row 2: 9-mo window.
     Solid = contribution/inflow, dashed = diversion/inflow.
     """
     apply_publication_style()
+    if col_zones is None:
+        col_zones = COL_ZONES
+    if panel_letters is None:
+        panel_letters = PANEL_LETTERS if len(col_zones) == 3 else PANEL_LETTERS_2X2
+
     n_rows = 2
-    n_cols = 3
+    n_cols = len(col_zones)
     size = 4
 
     fig = plt.figure(figsize=(size * n_cols + 1, size * n_rows + 1.0))
 
-    # Row 1
-    r1_a = fig.add_subplot(n_rows, n_cols, 1)
-    r1_b = fig.add_subplot(n_rows, n_cols, 2)
-    r1_c = fig.add_subplot(n_rows, n_cols, 3, sharey=r1_b)
-
-    # Row 2
-    r2_a = fig.add_subplot(n_rows, n_cols, 4)
-    r2_b = fig.add_subplot(n_rows, n_cols, 5)
-    r2_c = fig.add_subplot(n_rows, n_cols, 6, sharey=r2_b)
-
-    axes = [[r1_a, r1_b, r1_c], [r2_a, r2_b, r2_c]]
+    axes = [[None] * n_cols for _ in range(n_rows)]
+    for row_i in range(n_rows):
+        for col_i in range(n_cols):
+            idx = row_i * n_cols + col_i + 1
+            sharey = None
+            # In 3-col layout, col c shares y with col b (both drought zones)
+            if n_cols == 3 and col_i == 2:
+                sharey = axes[row_i][1]
+            axes[row_i][col_i] = fig.add_subplot(n_rows, n_cols, idx, sharey=sharey)
 
     fig.subplots_adjust(bottom=0.12, left=0.07, right=0.97, top=0.94, hspace=0.32)
 
     # Custom horizontal spacing per row
     for row_i in range(n_rows):
-        pos_a = axes[row_i][0].get_position()
-        pos_b = axes[row_i][1].get_position()
-        pos_c = axes[row_i][2].get_position()
-        panel_w = pos_a.width
-        gap_ab = 0.09
-        gap_bc = 0.03
-        x0_a = pos_a.x0
-        x0_b = x0_a + panel_w + gap_ab
-        x0_c = x0_b + panel_w + gap_bc
-        axes[row_i][0].set_position([x0_a, pos_a.y0, panel_w, pos_a.height])
-        axes[row_i][1].set_position([x0_b, pos_b.y0, panel_w, pos_b.height])
-        axes[row_i][2].set_position([x0_c, pos_c.y0, panel_w, pos_c.height])
+        positions = [axes[row_i][c].get_position() for c in range(n_cols)]
+        panel_w = positions[0].width
+        if n_cols == 3:
+            gaps = [0.09, 0.03]
+        else:
+            gaps = [0.10]
+        x0 = positions[0].x0
+        for col_i in range(n_cols):
+            if col_i > 0:
+                x0 = x0 + panel_w + gaps[col_i - 1]
+            axes[row_i][col_i].set_position(
+                [x0, positions[col_i].y0, panel_w, positions[col_i].height]
+            )
 
     # Total years per scenario (same across windows)
     first_window = ROW_WINDOWS[0]
@@ -232,7 +253,7 @@ def create_figure(all_categorized_by_window, recon_data):
     for row_i, n_mo in enumerate(ROW_WINDOWS):
         all_categorized = all_categorized_by_window[n_mo]
 
-        for col_i, col in enumerate(COL_ZONES):
+        for col_i, col in enumerate(col_zones):
             ax = axes[row_i][col_i]
 
             # Compute xlim across both metrics for this row/col
@@ -244,7 +265,7 @@ def create_figure(all_categorized_by_window, recon_data):
                         all_vals.append(r)
 
             if not all_vals:
-                label_panel(ax, PANEL_LETTERS[row_i][col_i],
+                label_panel(ax, panel_letters[row_i][col_i],
                             label=COL_LABELS[col] if row_i == 0 else '')
                 continue
 
@@ -297,25 +318,29 @@ def create_figure(all_categorized_by_window, recon_data):
 
             # Panel label: zone title on row 1, just letter on row 2
             if row_i == 0:
-                label_panel(ax, PANEL_LETTERS[row_i][col_i], label=COL_LABELS[col])
+                label_panel(ax, panel_letters[row_i][col_i], label=COL_LABELS[col])
             else:
-                label_panel(ax, PANEL_LETTERS[row_i][col_i])
+                label_panel(ax, panel_letters[row_i][col_i])
 
             for spine in ax.spines.values():
                 spine.set_visible(True)
                 spine.set_linewidth(0.8)
                 spine.set_color('#444444')
 
-    # Breathing room and y-axis labels per row
+    # Breathing room and y-axis labels per row (ymin pinned to 0)
     for row_i in range(n_rows):
         for ax in axes[row_i]:
-            y_lo, y_hi = ax.get_ylim()
-            ax.set_ylim(y_lo, y_hi * 1.15)
+            _, y_hi = ax.get_ylim()
+            ax.set_ylim(0, y_hi * 1.15)
 
-        axes[row_i][0].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
-        axes[row_i][1].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
-        axes[row_i][2].tick_params(labelleft=False)
-        axes[row_i][2].set_ylabel('')
+        if n_cols == 3:
+            axes[row_i][0].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
+            axes[row_i][1].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
+            axes[row_i][2].tick_params(labelleft=False)
+            axes[row_i][2].set_ylabel('')
+        else:
+            for col_i in range(n_cols):
+                axes[row_i][col_i].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
 
     # Legend: two rows — scenarios on top, line styles below
     scenario_handles = [
@@ -388,11 +413,17 @@ def main():
     print("\n  Loading reconstruction data...")
     recon_data = _load_reconstruction_1964()
 
-    fig = create_figure(all_categorized_by_window, recon_data)
-    fname = f"{FIG_OUTPUT_DIR}/F4alt_2x3_kde_windows.png"
-    fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"\n  Saved: {fname}")
-    plt.close(fig)
+    variants = [
+        ('2x3',                None,                            'F4alt_2x3_kde_windows.png'),
+        ('2x2_drought_all',    LAYOUT_2X2_COLS['drought_all'],    'F4alt_2x2_kde_drought_all.png'),
+        ('2x2_emergency_only', LAYOUT_2X2_COLS['emergency_only'], 'F4alt_2x2_kde_emergency_only.png'),
+    ]
+    for tag, col_zones, basename in variants:
+        fig = create_figure(all_categorized_by_window, recon_data, col_zones=col_zones)
+        fname = f"{FIG_OUTPUT_DIR}/{basename}"
+        fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        print(f"  Saved [{tag}]: {fname}")
+        plt.close(fig)
 
     print("\n" + "=" * 70)
     print("Done!")
