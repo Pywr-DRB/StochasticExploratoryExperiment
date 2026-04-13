@@ -299,8 +299,8 @@ def create_figure(all_categorized_by_window, recon_data,
                             fontweight='bold')
                     y_text -= 0.06
 
-            # 1964 reconstruction ticks on emergency column
-            if col == 'emergency' and recon_data is not None:
+            # 1964 reconstruction ticks on emergency / drought_all columns
+            if col in ('emergency', 'drought_all') and recon_data is not None:
                 for metric in METRICS:
                     recon_key = 'contribution' if metric['numerator'] == 'contribution_total' else 'diversion'
                     recon_val = _recon_ratio(recon_data, n_mo, recon_key)
