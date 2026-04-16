@@ -30,7 +30,7 @@ for DATASET_ID in "${DATASETS[@]}"; do
     echo "========================================"
 
     if [ "$USE_LOW_MEMORY" = true ]; then
-        mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory
+        mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID" --low-memory --skip-recombine
     else
         mpirun -np $np python3 04_postprocess_data_mpi.py "$DATASET_ID"
     fi

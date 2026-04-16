@@ -47,16 +47,16 @@ done
 echo ""
 echo "All performance metrics processed successfully."
 
-################################################################################
-echo "========================================"
-echo "Calculating storage zone probabilities..."
-echo "========================================"
-python3 si_scripts/SI3_calculate_storage_zone_probabilities.py --all
+# ################################################################################
+# echo "========================================"
+# echo "Calculating storage zone probabilities..."
+# echo "========================================"
+# python3 si_scripts/SI3_calculate_storage_zone_probabilities.py --all
 
-if [ $? -ne 0 ]; then
-    echo "ERROR: Zone probability calculation failed"
-    exit 1
-fi
+# if [ $? -ne 0 ]; then
+#     echo "ERROR: Zone probability calculation failed"
+#     exit 1
+# fi
 
-echo ""
-echo "All metrics and zone probabilities completed successfully."
+# echo ""
+# echo "All metrics and zone probabilities completed successfully."
