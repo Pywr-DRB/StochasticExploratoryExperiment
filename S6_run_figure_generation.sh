@@ -46,8 +46,8 @@ run() {
 # Fig9: Drought satisficing heatmaps (severity x magnitude)
 run plotting_scripts/Fig9_plot_drought_satisficing_heatmap.py 3
 
-# Fig10: State dynamics for selected drought bin
-run plotting_scripts/Fig10_drought_dynamics.py
+# Fig10: Focal-event DOY quantile gradient (3x3 storage/release/flow x scenarios)
+run plotting_scripts/Fig10alt_focal_doy_quantiles.py
 
 echo ""
 echo "========================================"
