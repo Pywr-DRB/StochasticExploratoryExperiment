@@ -50,7 +50,7 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 PANEL_LETTERS = list('abcdef')
 
 # Show climate rows as change relative to baseline?
-SHOW_CHANGE = True
+SHOW_CHANGE = False
 
 
 def plot_satisficing_heatmaps(all_data, ssi_window, min_count=1,

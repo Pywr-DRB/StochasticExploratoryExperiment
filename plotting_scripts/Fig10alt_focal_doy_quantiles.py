@@ -75,7 +75,7 @@ RESULTS_SETS = ['inflow', 'res_storage', 'contribution', 'major_flow']
 
 # TEST_MODE relaxes focal thresholds when the strict Fig9/Fig10 region is empty
 # on the local 5-realization dataset. Final-run default: TEST_MODE = False.
-TEST_MODE = True
+TEST_MODE = False
 
 STRICT_THRESHOLDS = dict(
     rate_thresh=FOCAL_RATE_THRESH,
