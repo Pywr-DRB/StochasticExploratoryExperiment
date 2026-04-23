@@ -23,7 +23,7 @@ import pathlib
 # Chosen to avoid conflict with FFMP zone colors (green/yellow/orange/red)
 # and observed data (black/gray).
 DATASET_COLORS = {
-    'stationary_ensemble': '#4a4af5',           # Deep blue (historic baseline)
+    'stationary_ensemble': "#2946d7",           # Deep blue (historic baseline)
     'climate_adjusted_low': '#ed9f1c',          # Orange (wetter winter, drier summer)
     'climate_adjusted_high': '#009e73',         # Green (wetter winter, similar summer)
 }
@@ -88,6 +88,7 @@ DATASET_LABELS_DESCRIPTIVE = {
 
 # Historic/observed label
 HISTORIC_LABEL = 'Historical'
+RECONSTRUCTED_HIST_LABEL = 'Reconstructed Historical'
 
 # =============================================================================
 # IQR LABELS
@@ -140,6 +141,10 @@ ALPHA_FILL = 0.3        # For fill_between areas
 ALPHA_LINE = 0.8        # For line plots
 ALPHA_SCATTER = 0.7     # For scatter plots
 ALPHA_BAR = 0.8         # For bar plots
+
+# IQR band alphas — shared across all figures for consistent band appearance
+ALPHA_BAND_OUTER = 0.35  # 99% IQR fill (Q0.5–Q99.5)
+ALPHA_BAND_INNER = 0.35  # 50% IQR fill (Q25–Q75)
 
 # =============================================================================
 # LINE WIDTHS

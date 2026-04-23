@@ -48,9 +48,12 @@ from methods.plotting.ensemble_summary import (
     MGD_TO_MCM,
 )
 from methods.plotting.styles import (
-    DATASET_COLORS, ALPHA_FILL, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
+    DATASET_COLORS, DATASET_LABELS,
+    HISTORIC_COLOR, RECONSTRUCTED_HIST_LABEL,
+    ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
+    LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_PRINT, apply_publication_style,
-    save_fig, add_scope_annotation, label_panel, IQR_LABELS,
+    save_fig, label_panel,
 )
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import (
@@ -61,11 +64,6 @@ from methods.ensemble_utils import ENSEMBLE_SETS
 
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig4_ensemble_diagnostics"
-
-# Rev1 legend labels
-_RECONSTRUCTED_HIST_LABEL = 'Reconstructed Historical'
-_STATIONARY_BASELINE_LABEL = 'Stationary Baseline'
-_IQR_99_LABEL = IQR_LABELS['99']   # "99% IQR (Q0.5-Q99.5)"
 
 # Smoothing window (weeks) for _rev1_smooth variant
 _SMOOTH_WINDOW = 3
@@ -91,13 +89,15 @@ def _plot_weekly_smooth(
     periods = np.arange(1, n_periods + 1)
 
     # --- Historic ---
-    Q_hist_weekly = hist_agg.resample('W').mean()
+    Q_hist_weekly = hist_agg.resample('W').sum()
     hist_weeks = Q_hist_weekly.index.isocalendar().week.values.astype(int)
     hist_values = Q_hist_weekly.values
 
     hist_median = np.empty(n_periods)
     hist_p_low = np.empty(n_periods)
     hist_p_high = np.empty(n_periods)
+    hist_iq_low = np.empty(n_periods)
+    hist_iq_high = np.empty(n_periods)
     for w in periods:
         vals = hist_values[hist_weeks == w]
         vals = vals[~np.isnan(vals)]
@@ -105,13 +105,16 @@ def _plot_weekly_smooth(
             hist_median[w - 1] = np.median(vals)
             hist_p_low[w - 1] = np.percentile(vals, pct[0])
             hist_p_high[w - 1] = np.percentile(vals, pct[1])
+            hist_iq_low[w - 1] = np.percentile(vals, 25)
+            hist_iq_high[w - 1] = np.percentile(vals, 75)
         else:
-            hist_median[w - 1] = hist_p_low[w - 1] = hist_p_high[w - 1] = np.nan
+            hist_median[w-1] = hist_p_low[w-1] = hist_p_high[w-1] = np.nan
+            hist_iq_low[w-1] = hist_iq_high[w-1] = np.nan
 
     # --- Synthetic ---
     syn_weekly_by_week = {w: [] for w in periods}
     for flow_series in syn_agg.values():
-        weekly = flow_series.resample('W').mean()
+        weekly = flow_series.resample('W').sum()
         w_arr = weekly.index.isocalendar().week.values.astype(int)
         v_arr = weekly.values
         for w in periods:
@@ -123,45 +126,60 @@ def _plot_weekly_smooth(
     syn_median = np.empty(n_periods)
     syn_p_low = np.empty(n_periods)
     syn_p_high = np.empty(n_periods)
+    syn_iq_low = np.empty(n_periods)
+    syn_iq_high = np.empty(n_periods)
     for w in periods:
         if syn_weekly_by_week[w]:
             all_vals = np.concatenate(syn_weekly_by_week[w])
             syn_median[w - 1] = np.median(all_vals)
             syn_p_low[w - 1] = np.percentile(all_vals, pct[0])
             syn_p_high[w - 1] = np.percentile(all_vals, pct[1])
+            syn_iq_low[w - 1] = np.percentile(all_vals, 25)
+            syn_iq_high[w - 1] = np.percentile(all_vals, 75)
         else:
-            syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
+            syn_median[w-1] = syn_p_low[w-1] = syn_p_high[w-1] = np.nan
+            syn_iq_low[w-1] = syn_iq_high[w-1] = np.nan
 
-    # Convert units
-    syn_p_low *= MGD_TO_MCM
-    syn_p_high *= MGD_TO_MCM
-    syn_median *= MGD_TO_MCM
-    hist_p_low *= MGD_TO_MCM
+    # Convert MGD to MCM (weekly totals)
+    syn_p_low   *= MGD_TO_MCM
+    syn_p_high  *= MGD_TO_MCM
+    syn_iq_low  *= MGD_TO_MCM
+    syn_iq_high *= MGD_TO_MCM
+    syn_median  *= MGD_TO_MCM
+    hist_p_low  *= MGD_TO_MCM
     hist_p_high *= MGD_TO_MCM
+    hist_iq_low  *= MGD_TO_MCM
+    hist_iq_high *= MGD_TO_MCM
     hist_median *= MGD_TO_MCM
 
-    # Apply smoothing to envelope bounds only (not median)
+    # Apply smoothing to outer bounds only (not inner or median)
     syn_p_low_s = _rolling_mean_1d(syn_p_low, smooth_window)
     syn_p_high_s = _rolling_mean_1d(syn_p_high, smooth_window)
     hist_p_low_s = _rolling_mean_1d(hist_p_low, smooth_window)
     hist_p_high_s = _rolling_mean_1d(hist_p_high, smooth_window)
 
+    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
     ax.fill_between(periods, syn_p_low_s, syn_p_high_s,
-                    alpha=ALPHA_FILL, color=synthetic_color,
-                    label=f'{synthetic_label} {IQR_LABELS["99"]} (smoothed)')
+                    alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
+                    zorder=1, label=f'{synthetic_label} 99% IQR (smoothed)')
+    ax.fill_between(periods, hist_p_low_s, hist_p_high_s,
+                    alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
+                    zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 99% IQR (smoothed)')
+    ax.fill_between(periods, syn_iq_low, syn_iq_high,
+                    alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+                    zorder=3, label=f'{synthetic_label} 50% IQR')
+    ax.fill_between(periods, hist_iq_low, hist_iq_high,
+                    alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+                    zorder=4, label=f'{RECONSTRUCTED_HIST_LABEL} 50% IQR')
     ax.plot(periods, syn_median,
             color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-            label=f'{synthetic_label} (median)')
-
-    ax.fill_between(periods, hist_p_low_s, hist_p_high_s,
-                    alpha=ALPHA_FILL * 0.7, color='black',
-                    label=f'Reconstructed Historical {IQR_LABELS["99"]} (smoothed)')
+            zorder=5, label=f'{synthetic_label} (median)')
     ax.plot(periods, hist_median,
-            color='black', linewidth=LINEWIDTH_THICK, linestyle='--',
-            label='Reconstructed Historical (median)')
+            color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
+            zorder=6, label=f'{RECONSTRUCTED_HIST_LABEL} (median)')
 
     ax.set_xlabel('Week of Year', fontsize=10)
-    ax.set_ylabel('Streamflow (MCM/day)', fontsize=10)
+    ax.set_ylabel('Combined NYC Reservoir\nWeekly Total Inflow (MCM)', fontsize=10)
     ax.set_xlim(1, 52.85)
     ax.set_yscale('log')
     ax.set_xticks(MONTH_WEEK_STARTS)
@@ -199,7 +217,7 @@ def _build_ensemble_figure_rev1(
 
     sites = NYC_RESERVOIRS
     synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
-    synthetic_label = _STATIONARY_BASELINE_LABEL
+    synthetic_label = DATASET_LABELS.get(dataset_id, dataset_id)
 
     # Pre-aggregate ONCE
     hist_agg = _get_aggregate_flow(Q_historic, sites)
@@ -226,7 +244,7 @@ def _build_ensemble_figure_rev1(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    label_panel(ax_autocorr, 'a', fontweight='bold')
+    label_panel(ax_autocorr, 'a')
 
     # ---------- Panel (b): FDC ----------
     plot_fdc_percentile_comparison(
@@ -236,7 +254,7 @@ def _build_ensemble_figure_rev1(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    label_panel(ax_fdc, 'b', fontweight='bold')
+    label_panel(ax_fdc, 'b')
 
     # ---------- Panel (c): Weekly percentile bands ----------
     if not smooth_envelope:
@@ -257,12 +275,7 @@ def _build_ensemble_figure_rev1(
             synthetic_label=synthetic_label,
         )
 
-    label_panel(ax_periodic, 'c', fontweight='bold')
-    add_scope_annotation(
-        ax_periodic,
-        "Aggregate inflow to Cannonsville, Pepacton, Neversink",
-        fontsize=8,
-    )
+    label_panel(ax_periodic, 'c')
 
     # ---------- Panel (d): Wilcoxon p-values ----------
     plot_pvalue_comparison(
@@ -272,7 +285,7 @@ def _build_ensemble_figure_rev1(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    label_panel(ax_wilcoxon, 'd', fontweight='bold', y=0.85)
+    label_panel(ax_wilcoxon, 'd', y=0.85)
 
     # ---------- Panel (e): Levene p-values ----------
     plot_pvalue_comparison(
@@ -282,25 +295,28 @@ def _build_ensemble_figure_rev1(
         show_legend=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
-    label_panel(ax_levene, 'e', fontweight='bold', y=0.85)
+    label_panel(ax_levene, 'e', y=0.85)
 
     # ---------- Shared legend ----------
-    iqr_label = _IQR_99_LABEL
     legend_handles = [
-        Patch(facecolor=synthetic_color, alpha=ALPHA_FILL,
-              label=f'{synthetic_label} {iqr_label}'),
+        Patch(facecolor=synthetic_color, alpha=ALPHA_BAND_OUTER, linewidth=0,
+              label=f'{synthetic_label} 99% IQR'),
+        Patch(facecolor=synthetic_color, alpha=ALPHA_BAND_INNER, linewidth=0,
+              label=f'{synthetic_label} 50% IQR'),
         Line2D([0], [0], color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
                linestyle='-', label=f'{synthetic_label} (median)'),
-        Patch(facecolor='black', alpha=ALPHA_FILL * 0.7,
-              label=f'{_RECONSTRUCTED_HIST_LABEL} {iqr_label}'),
+        Patch(facecolor='black', alpha=ALPHA_BAND_OUTER, linewidth=0,
+              label=f'{RECONSTRUCTED_HIST_LABEL} 99% IQR'),
+        Patch(facecolor='black', alpha=ALPHA_BAND_INNER, linewidth=0,
+              label=f'{RECONSTRUCTED_HIST_LABEL} 50% IQR'),
         Line2D([0], [0], color='black', linewidth=LINEWIDTH_THICK,
-               linestyle='--', label=f'{_RECONSTRUCTED_HIST_LABEL} (median)'),
+               linestyle='--', label=f'{RECONSTRUCTED_HIST_LABEL} (median)'),
         Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p = 0.05'),
     ]
 
     fig.legend(
         handles=legend_handles,
-        loc='lower center', ncol=3, frameon=False,
+        loc='lower center', ncol=4, frameon=False,
         bbox_to_anchor=(0.5, -0.04), fontsize=9,
     )
 

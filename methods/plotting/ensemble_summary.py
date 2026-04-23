@@ -16,7 +16,8 @@ from scipy.stats import ranksums, levene
 from .styles import (
     HISTORIC_COLOR, HISTORIC_LABEL,
     DATASET_COLORS, DATASET_LABELS,
-    ALPHA_FILL, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
+    ALPHA_FILL, ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
+    LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_PRINT, apply_publication_style
 )
 
@@ -127,9 +128,10 @@ def plot_fdc_percentile_comparison(
     Q_synthetic: dict,
     sites: list = None,
     ax=None,
-    ylabel: str = 'Streamflow (MCM/day)',
+    ylabel: str = 'Combined NYC Reservoir Inflow\nAnnual FDCs (MCM/day)',
     xlabel: str = 'Exceedance Probability',
-    percentiles: tuple = (5, 95),
+    percentiles: tuple = (0.5, 99.5),
+    inner_percentiles: tuple = (25, 75),
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
@@ -223,32 +225,44 @@ def plot_fdc_percentile_comparison(
     syn_median = np.median(all_syn_fdcs, axis=0) * MGD_TO_MCM
     syn_p_low = np.percentile(all_syn_fdcs, percentiles[0], axis=0) * MGD_TO_MCM
     syn_p_high = np.percentile(all_syn_fdcs, percentiles[1], axis=0) * MGD_TO_MCM
+    syn_iq_low = np.percentile(all_syn_fdcs, inner_percentiles[0], axis=0) * MGD_TO_MCM
+    syn_iq_high = np.percentile(all_syn_fdcs, inner_percentiles[1], axis=0) * MGD_TO_MCM
     hist_median = hist_median * MGD_TO_MCM
     hist_p_low = hist_p_low * MGD_TO_MCM
     hist_p_high = hist_p_high * MGD_TO_MCM
+    hist_iq_low = np.percentile(hist_fdcs, inner_percentiles[0], axis=0) * MGD_TO_MCM
+    hist_iq_high = np.percentile(hist_fdcs, inner_percentiles[1], axis=0) * MGD_TO_MCM
 
-    # Plot synthetic range and median
+    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
     ax.fill_between(
         exceedance_probs, syn_p_low, syn_p_high,
-        alpha=ALPHA_FILL, color=synthetic_color,
-        label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
+        alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
+        zorder=1, label=f'{synthetic_label} 99% IQR'
+    )
+    ax.fill_between(
+        exceedance_probs, hist_p_low, hist_p_high,
+        alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
+    )
+    ax.fill_between(
+        exceedance_probs, syn_iq_low, syn_iq_high,
+        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+        zorder=3, label=f'{synthetic_label} 50% IQR'
+    )
+    ax.fill_between(
+        exceedance_probs, hist_iq_low, hist_iq_high,
+        alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+        zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
     )
     ax.plot(
         exceedance_probs, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        label=f'{synthetic_label} (median)'
-    )
-
-    # Plot historic range and median
-    ax.fill_between(
-        exceedance_probs, hist_p_low, hist_p_high,
-        alpha=ALPHA_FILL * 0.7, color=HISTORIC_COLOR,
-        label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'
+        zorder=5, label=f'{synthetic_label} (median)'
     )
     ax.plot(
         exceedance_probs, hist_median,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
-        label=f'{HISTORIC_LABEL} (median)'
+        zorder=6, label=f'{HISTORIC_LABEL} (median)'
     )
 
     ax.set_xlabel(xlabel)
@@ -271,9 +285,10 @@ def plot_autocorrelation_comparison(
     sites: list = None,
     ax=None,
     max_lag: int = 30,
-    ylabel: str = 'Autocorrelation',
+    ylabel: str = 'Daily Streamflow\nAutocorrelation',
     xlabel: str = 'Lag (days)',
-    percentiles: tuple = (1, 99),
+    percentiles: tuple = (0.5, 99.5),
+    inner_percentiles: tuple = (25, 75),
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
@@ -338,13 +353,20 @@ def plot_autocorrelation_comparison(
         series = flow_series.dropna().values
         syn_autocorr[i, :] = _vectorized_autocorr(series, max_lag)
 
-    # Plot synthetic range and median
+    # Plot synthetic: outer band → inner band → median
     ax.fill_between(
         lag_range,
         np.nanpercentile(syn_autocorr, percentiles[0], axis=0),
         np.nanpercentile(syn_autocorr, percentiles[1], axis=0),
-        alpha=ALPHA_FILL, color=synthetic_color,
-        label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
+        alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
+        label=f'{synthetic_label} 99% IQR'
+    )
+    ax.fill_between(
+        lag_range,
+        np.nanpercentile(syn_autocorr, inner_percentiles[0], axis=0),
+        np.nanpercentile(syn_autocorr, inner_percentiles[1], axis=0),
+        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+        label=f'{synthetic_label} 50% IQR'
     )
     ax.plot(
         lag_range, np.nanmedian(syn_autocorr, axis=0),
@@ -352,7 +374,7 @@ def plot_autocorrelation_comparison(
         label=f'{synthetic_label} (median)'
     )
 
-    # Plot historic autocorrelation
+    # Historic: single line (only one series — no uncertainty band)
     ax.plot(
         lag_range, hist_autocorr,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
@@ -378,9 +400,10 @@ def plot_weekly_streamflow_percentiles(
     sites: list = None,
     ax=None,
     timescale: str = 'weekly',
-    ylabel: str = 'Streamflow (MCM/day)',
+    ylabel: str = 'Combined NYC Reservoir\nWeekly Inflow (MCM)',
     xlabel: str = None,
-    percentiles: tuple = (5, 95),
+    percentiles: tuple = (0.5, 99.5),
+    inner_percentiles: tuple = (25, 75),
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
@@ -437,13 +460,15 @@ def plot_weekly_streamflow_percentiles(
         n_periods = 12
         periods = np.arange(1, n_periods + 1)
 
-        Q_hist_res = _hist_agg.resample('ME').mean()
+        Q_hist_res = _hist_agg.resample('ME').sum()
         hist_period_nums = Q_hist_res.index.month.values
         hist_values = Q_hist_res.values
 
         hist_median = np.empty(n_periods)
         hist_p_low = np.empty(n_periods)
         hist_p_high = np.empty(n_periods)
+        hist_iq_low = np.empty(n_periods)
+        hist_iq_high = np.empty(n_periods)
         for p in periods:
             vals = hist_values[hist_period_nums == p]
             vals = vals[~np.isnan(vals)]
@@ -451,12 +476,15 @@ def plot_weekly_streamflow_percentiles(
                 hist_median[p - 1] = np.median(vals)
                 hist_p_low[p - 1] = np.percentile(vals, percentiles[0])
                 hist_p_high[p - 1] = np.percentile(vals, percentiles[1])
+                hist_iq_low[p - 1] = np.percentile(vals, inner_percentiles[0])
+                hist_iq_high[p - 1] = np.percentile(vals, inner_percentiles[1])
             else:
-                hist_median[p - 1] = hist_p_low[p - 1] = hist_p_high[p - 1] = np.nan
+                hist_median[p-1] = hist_p_low[p-1] = hist_p_high[p-1] = np.nan
+                hist_iq_low[p-1] = hist_iq_high[p-1] = np.nan
 
         syn_by_period = {p: [] for p in periods}
         for flow_series in _syn_agg.values():
-            res = flow_series.resample('ME').mean()
+            res = flow_series.resample('ME').sum()
             p_arr = res.index.month.values
             v_arr = res.values
             for p in periods:
@@ -468,14 +496,19 @@ def plot_weekly_streamflow_percentiles(
         syn_median = np.empty(n_periods)
         syn_p_low = np.empty(n_periods)
         syn_p_high = np.empty(n_periods)
+        syn_iq_low = np.empty(n_periods)
+        syn_iq_high = np.empty(n_periods)
         for p in periods:
             if syn_by_period[p]:
                 all_vals = np.array(syn_by_period[p])
                 syn_median[p - 1] = np.median(all_vals)
                 syn_p_low[p - 1] = np.percentile(all_vals, percentiles[0])
                 syn_p_high[p - 1] = np.percentile(all_vals, percentiles[1])
+                syn_iq_low[p - 1] = np.percentile(all_vals, inner_percentiles[0])
+                syn_iq_high[p - 1] = np.percentile(all_vals, inner_percentiles[1])
             else:
-                syn_median[p - 1] = syn_p_low[p - 1] = syn_p_high[p - 1] = np.nan
+                syn_median[p-1] = syn_p_low[p-1] = syn_p_high[p-1] = np.nan
+                syn_iq_low[p-1] = syn_iq_high[p-1] = np.nan
 
         xtick_positions = periods
         xtick_labels = MONTH_LABELS
@@ -486,13 +519,15 @@ def plot_weekly_streamflow_percentiles(
         n_periods = 52
         periods = np.arange(1, n_periods + 1)
 
-        Q_hist_weekly = _hist_agg.resample('W').mean()
+        Q_hist_weekly = _hist_agg.resample('W').sum()
         hist_weeks = Q_hist_weekly.index.isocalendar().week.values.astype(int)
         hist_values = Q_hist_weekly.values
 
         hist_median = np.empty(n_periods)
         hist_p_low = np.empty(n_periods)
         hist_p_high = np.empty(n_periods)
+        hist_iq_low = np.empty(n_periods)
+        hist_iq_high = np.empty(n_periods)
         for w in periods:
             vals = hist_values[hist_weeks == w]
             vals = vals[~np.isnan(vals)]
@@ -500,12 +535,15 @@ def plot_weekly_streamflow_percentiles(
                 hist_median[w - 1] = np.median(vals)
                 hist_p_low[w - 1] = np.percentile(vals, percentiles[0])
                 hist_p_high[w - 1] = np.percentile(vals, percentiles[1])
+                hist_iq_low[w - 1] = np.percentile(vals, inner_percentiles[0])
+                hist_iq_high[w - 1] = np.percentile(vals, inner_percentiles[1])
             else:
-                hist_median[w - 1] = hist_p_low[w - 1] = hist_p_high[w - 1] = np.nan
+                hist_median[w-1] = hist_p_low[w-1] = hist_p_high[w-1] = np.nan
+                hist_iq_low[w-1] = hist_iq_high[w-1] = np.nan
 
         syn_weekly_by_week = {w: [] for w in periods}
         for flow_series in _syn_agg.values():
-            weekly = flow_series.resample('W').mean()
+            weekly = flow_series.resample('W').sum()
             w_arr = weekly.index.isocalendar().week.values.astype(int)
             v_arr = weekly.values
             for w in periods:
@@ -517,50 +555,67 @@ def plot_weekly_streamflow_percentiles(
         syn_median = np.empty(n_periods)
         syn_p_low = np.empty(n_periods)
         syn_p_high = np.empty(n_periods)
+        syn_iq_low = np.empty(n_periods)
+        syn_iq_high = np.empty(n_periods)
         for w in periods:
             if syn_weekly_by_week[w]:
                 all_vals = np.concatenate(syn_weekly_by_week[w])
                 syn_median[w - 1] = np.median(all_vals)
                 syn_p_low[w - 1] = np.percentile(all_vals, percentiles[0])
                 syn_p_high[w - 1] = np.percentile(all_vals, percentiles[1])
+                syn_iq_low[w - 1] = np.percentile(all_vals, inner_percentiles[0])
+                syn_iq_high[w - 1] = np.percentile(all_vals, inner_percentiles[1])
             else:
-                syn_median[w - 1] = syn_p_low[w - 1] = syn_p_high[w - 1] = np.nan
+                syn_median[w-1] = syn_p_low[w-1] = syn_p_high[w-1] = np.nan
+                syn_iq_low[w-1] = syn_iq_high[w-1] = np.nan
 
         xtick_positions = MONTH_WEEK_STARTS
         xtick_labels = MONTH_LABELS
         xlim = (1, 52.85)
         xlabel = xlabel or 'Week of Year'
 
-    # Convert MGD to MCM/day before plotting
+    # Convert MGD to MCM (weekly/monthly total)
     syn_p_low   = syn_p_low   * MGD_TO_MCM
     syn_p_high  = syn_p_high  * MGD_TO_MCM
+    syn_iq_low  = syn_iq_low  * MGD_TO_MCM
+    syn_iq_high = syn_iq_high * MGD_TO_MCM
     syn_median  = syn_median  * MGD_TO_MCM
     hist_p_low  = hist_p_low  * MGD_TO_MCM
     hist_p_high = hist_p_high * MGD_TO_MCM
+    hist_iq_low  = hist_iq_low  * MGD_TO_MCM
+    hist_iq_high = hist_iq_high * MGD_TO_MCM
     hist_median = hist_median * MGD_TO_MCM
 
-    # Plot synthetic range and median
+    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
     ax.fill_between(
         periods, syn_p_low, syn_p_high,
-        alpha=ALPHA_FILL, color=synthetic_color,
-        label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'
+        alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
+        zorder=1, label=f'{synthetic_label} 99% IQR'
+    )
+    ax.fill_between(
+        periods, hist_p_low, hist_p_high,
+        alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
+    )
+    ax.fill_between(
+        periods, syn_iq_low, syn_iq_high,
+        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+        zorder=3, label=f'{synthetic_label} 50% IQR'
+    )
+    ax.fill_between(
+        periods, hist_iq_low, hist_iq_high,
+        alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+        zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
     )
     ax.plot(
         periods, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        label=f'{synthetic_label} (median)'
-    )
-
-    # Plot historic range and median
-    ax.fill_between(
-        periods, hist_p_low, hist_p_high,
-        alpha=ALPHA_FILL * 0.7, color=HISTORIC_COLOR,
-        label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'
+        zorder=5, label=f'{synthetic_label} (median)'
     )
     ax.plot(
         periods, hist_median,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
-        label=f'{HISTORIC_LABEL} (median)'
+        zorder=6, label=f'{HISTORIC_LABEL} (median)'
     )
 
     ax.set_xlabel(xlabel)
