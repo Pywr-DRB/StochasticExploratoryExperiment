@@ -956,7 +956,10 @@ def load_contribution_metrics(dataset_id):
     -------
     pd.DataFrame
         Contribution metrics with columns:
-        - realization_id, year, annual_max_zone, annual_max_zone_date, annual_min_storage_pct
+        - realization_id, year, annual_max_zone, annual_max_zone_date,
+          annual_min_storage_pct, annual_min_storage_date
+          (annual_min_storage_date is the window anchor; annual_max_zone_date
+          is retained for FFMP zone classification only)
         - contribution_total_{W}d, contribution_ratio_{W}d, inflow_total_{W}d,
           demand_satisfaction_{W}d, worst_1mo_demand_sat_{W}d
           for W in [30, 60, 90, 120, 150, 180, 270]
@@ -978,6 +981,9 @@ def load_contribution_metrics(dataset_id):
 
     if 'annual_max_zone_date' in df.columns:
         df['annual_max_zone_date'] = pd.to_datetime(df['annual_max_zone_date'])
+
+    if 'annual_min_storage_date' in df.columns:
+        df['annual_min_storage_date'] = pd.to_datetime(df['annual_min_storage_date'])
 
     return df
 

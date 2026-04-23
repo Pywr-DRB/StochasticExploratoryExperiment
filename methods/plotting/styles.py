@@ -13,6 +13,8 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
          label=DATASET_LABELS['stationary_ensemble'])
 """
 
+import pathlib
+
 # =============================================================================
 # DATASET COLORS
 # =============================================================================
@@ -22,18 +24,16 @@ plt.plot(data, color=DATASET_COLORS['stationary_ensemble'],
 # and observed data (black/gray).
 DATASET_COLORS = {
     'stationary_ensemble': '#4a4af5',           # Deep blue (historic baseline)
-    'climate_adjusted_low': '#ed9f1c',          # Purple (wetter winter, drier summer)
-    'climate_adjusted_medium': '#CC79A7',       # Reddish purple (Medium scenario)
-    'climate_adjusted_high': '#009e73',         # Green (wetter winter)
+    'climate_adjusted_low': '#ed9f1c',          # Orange (wetter winter, drier summer)
+    'climate_adjusted_high': '#009e73',         # Green (wetter winter, similar summer)
 }
 
 # Alternative color scheme - also colorblind-friendly
 # Using IBM Design Language accessible palette
 DATASET_COLORS_ALT = {
     'stationary_ensemble': '#648FFF',           # Ultramarine blue (baseline)
-    'climate_adjusted_low': '#FE6100',          # Orange (Dry)
-    'climate_adjusted_medium': '#DC267F',       # Magenta (Medium)
-    'climate_adjusted_high': '#785EF0',         # Purple (Wet)
+    'climate_adjusted_low': '#FE6100',          # Orange (WWDS)
+    'climate_adjusted_high': '#785EF0',         # Purple (WWSS)
 }
 
 # Historic/observed data color
@@ -67,30 +67,36 @@ FFMP_ZONE_COLORS_INT = {
 
 # Standard labels for datasets
 DATASET_LABELS = {
-    'stationary_ensemble': 'Historic Baseline',
-    'climate_adjusted_low': 'Wetter Winter, Drier Summer',
-    'climate_adjusted_medium': 'Climate Medium',
-    'climate_adjusted_high': 'Wetter Winter',
+    'stationary_ensemble': 'Stationary Baseline',
+    'climate_adjusted_low': 'Wetter Winter, Drier Summer (WWDS)',
+    'climate_adjusted_high': 'Wetter Winter, Similar Summer (WWSS)',
 }
 
 # Short labels (for tight layouts)
 DATASET_LABELS_SHORT = {
-    'stationary_ensemble': 'Baseline',
-    'climate_adjusted_low': 'Wet/Dry',
-    'climate_adjusted_medium': 'Medium',
-    'climate_adjusted_high': 'Wetter',
+    'stationary_ensemble': 'Stationary',
+    'climate_adjusted_low': 'WWDS',
+    'climate_adjusted_high': 'WWSS',
 }
 
 # Descriptive labels (for titles/captions)
 DATASET_LABELS_DESCRIPTIVE = {
-    'stationary_ensemble': 'Historic Baseline (Stationary Ensemble)',
-    'climate_adjusted_low': 'Wetter Winter, Drier Summer (Climate Adjusted)',
-    'climate_adjusted_medium': 'Climate Adjusted - Medium (Mid-range Scenario)',
-    'climate_adjusted_high': 'Wetter Winter (Climate Adjusted)',
+    'stationary_ensemble': 'Stationary Baseline (Historic Climate)',
+    'climate_adjusted_low': 'Wetter Winter, Drier Summer (WWDS, Climate Adjusted)',
+    'climate_adjusted_high': 'Wetter Winter, Similar Summer (WWSS, Climate Adjusted)',
 }
 
 # Historic/observed label
 HISTORIC_LABEL = 'Historical'
+
+# =============================================================================
+# IQR LABELS
+# =============================================================================
+
+IQR_LABELS = {
+    '50': '50% IQR (Q25-Q75)',
+    '99': '99% IQR (Q0.5-Q99.5)',
+}
 
 # =============================================================================
 # DATASET ORDER
@@ -100,7 +106,6 @@ HISTORIC_LABEL = 'Historical'
 DATASET_ORDER = [
     'stationary_ensemble',
     'climate_adjusted_low',
-    'climate_adjusted_medium',
     'climate_adjusted_high',
 ]
 
@@ -112,7 +117,6 @@ DATASET_ORDER = [
 DATASET_MARKERS = {
     'stationary_ensemble': 'o',
     'climate_adjusted_low': 's',
-    'climate_adjusted_medium': '^',
     'climate_adjusted_high': 'D',
 }
 
@@ -120,7 +124,6 @@ DATASET_MARKERS = {
 DATASET_LINESTYLES = {
     'stationary_ensemble': '-',
     'climate_adjusted_low': '--',
-    'climate_adjusted_medium': '-.',
     'climate_adjusted_high': ':',
 }
 
@@ -237,7 +240,7 @@ def get_dataset_label(dataset_id, style='standard'):
 
 
 def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
-                x=0.02, y=0.97):
+                fontweight='normal', x=0.02, y=0.97):
     """
     Add a panel label inside the top-left of the axes.
 
@@ -254,6 +257,8 @@ def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
     label : str, optional
         Explicit label text (takes precedence over dataset_id).
     fontsize : int
+    fontweight : str
+        Font weight (default 'normal'). Pass 'bold' for a bold panel letter.
     x, y : float
         Position in axes coordinates.
     """
@@ -262,7 +267,54 @@ def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
 
     text = f'{letter}) {label}' if label else f'{letter})'
     ax.text(x, y, text, transform=ax.transAxes,
-            fontsize=fontsize, va='top', ha='left')
+            fontsize=fontsize, fontweight=fontweight, va='top', ha='left')
+
+
+def save_fig(fig, path_stem, dpi=600):
+    """Save *fig* as PNG, SVG, and PDF alongside each other.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        Figure to save.
+    path_stem : str or path-like
+        Full path WITHOUT extension, e.g.
+        ``"/some/dir/F1_stationary_ensemble_diagnostics_rev1"``.
+        The parent directory is created if it does not exist.
+    dpi : int
+        Resolution for raster formats (PNG). SVG and PDF are vector and
+        ignore dpi, but the value is passed for consistency.
+    """
+    stem = pathlib.Path(path_stem)
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    for ext in ('png', 'svg', 'pdf'):
+        out_path = str(stem) + f'.{ext}'
+        fig.savefig(out_path, dpi=dpi, bbox_inches='tight')
+        print(f"Saved: {out_path}")
+
+
+def add_scope_annotation(ax, text, fontsize=8):
+    """Place a small italic annotation in the lower-left of *ax*.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    text : str
+        Annotation text.
+    fontsize : int
+        Font size (default 8 pt).
+    """
+    ax.text(
+        0.02, 0.03, text,
+        transform=ax.transAxes,
+        fontsize=fontsize,
+        va='bottom', ha='left',
+        style='italic',
+        color='#444444',
+        bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
+                  edgecolor='none', alpha=0.7),
+    )
 
 
 def apply_publication_style():

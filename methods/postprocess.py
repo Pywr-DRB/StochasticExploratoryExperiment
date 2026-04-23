@@ -436,6 +436,12 @@ def _contribution_metrics_for_realization(args):
     Designed to be called from ProcessPoolExecutor or directly in a loop.
     Uses cumulative sums for O(1) window-sum lookups instead of repeated masking.
 
+    Rolling windows are anchored on the date of annual minimum NYC combined
+    reservoir storage (``annual_min_storage_date``), matching the manuscript
+    description. The date of the deepest FFMP zone reached (``annual_max_zone_date``)
+    is still recorded for zone-classification purposes but is NOT used as the
+    window anchor.
+
     Parameters
     ----------
     args : tuple
@@ -459,8 +465,9 @@ def _contribution_metrics_for_realization(args):
     max_zone_per_year = nyc_zone.groupby(years).max()
     max_zone_date_per_year = nyc_zone.groupby(years).idxmax()
 
-    # Min storage per year
+    # Min storage per year and the date on which it occurs
     min_storage_per_year = nyc_storage_pct.groupby(nyc_storage_pct.index.year).min()
+    min_storage_date_per_year = nyc_storage_pct.groupby(nyc_storage_pct.index.year).idxmin()
 
     # Build cumulative sums for O(1) window lookups
     # Align all series to same index (they should already be aligned)
@@ -481,20 +488,24 @@ def _contribution_metrics_for_realization(args):
         annual_max_zone = max_zone_per_year[year]
         annual_max_zone_date = max_zone_date_per_year[year]
         annual_min_storage = min_storage_per_year[year]
+        annual_min_storage_date = min_storage_date_per_year[year]
 
         record = {
             'realization_id': r,
             'year': year,
             'annual_max_zone': annual_max_zone,
             'annual_max_zone_date': annual_max_zone_date.isoformat(),
-            'annual_min_storage_pct': annual_min_storage
+            'annual_min_storage_pct': annual_min_storage,
+            'annual_min_storage_date': annual_min_storage_date.isoformat(),
         }
 
-        # Find the position of annual_max_zone_date in the index
-        # Use searchsorted for O(log n) lookup
-        end_pos = idx.searchsorted(annual_max_zone_date, side='right') - 1
+        # Find the position of annual_min_storage_date in the index.
+        # Windows are anchored here (matching the manuscript: "preceding the
+        # annual minimum NYC reservoir storage"), NOT on annual_max_zone_date.
+        # Use searchsorted for O(log n) lookup.
+        end_pos = idx.searchsorted(annual_min_storage_date, side='right') - 1
         if end_pos < 0:
-            # annual_max_zone_date is before the start of the timeseries
+            # annual_min_storage_date is before the start of the timeseries
             for W in window_days:
                 record.update({
                     f'contribution_total_{W}d': np.nan,
@@ -508,7 +519,7 @@ def _contribution_metrics_for_realization(args):
 
         # Compute metrics for each window using cumsum differences
         for W in window_days:
-            start_date = annual_max_zone_date - pd.Timedelta(days=W)
+            start_date = annual_min_storage_date - pd.Timedelta(days=W)
             start_pos = idx.searchsorted(start_date, side='left')
 
             # Cumsum-based window sums: sum[start:end+1] = cumsum[end] - cumsum[start-1]
@@ -581,7 +592,12 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     -------
     metrics_df : pd.DataFrame
         DataFrame with columns:
-        - realization_id, year, annual_max_zone, annual_max_zone_date, annual_min_storage_pct
+        - realization_id, year, annual_max_zone, annual_max_zone_date,
+          annual_min_storage_pct, annual_min_storage_date
+        - Rolling windows are anchored on ``annual_min_storage_date`` (date of
+          annual minimum NYC combined reservoir storage), matching the manuscript
+          description. ``annual_max_zone_date`` is retained for FFMP zone
+          classification but is NOT the window anchor.
         - For each window W in window_days:
           - contribution_total_{W}d: NYC→Montague contributions sum (MG)
           - contribution_ratio_{W}d: (contribution/inflow) × 100 (%)
@@ -622,6 +638,18 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
 
     print(f"  Calculated {len(metrics_df)} year-realization pairs × {len(metrics_df.columns)} metrics")
 
+    # -------------------------------------------------------------------------
+    # REGENERATION NOTE (2026-04-23)
+    # Window anchor changed from annual_max_zone_date to annual_min_storage_date.
+    # All pre-computed contribution metrics CSVs must be regenerated. The entry
+    # point is 06_calculate_performance_metrics.py (calls this function for each
+    # dataset_id). Run on HPC with the full ensemble; local spot-checks only.
+    # The output CSV schema now includes an additional column:
+    #   annual_min_storage_date  (ISO-format date string)
+    # Downstream loaders (methods/load.py::load_contribution_metrics) will parse
+    # this column automatically once the CSVs are regenerated.
+    # -------------------------------------------------------------------------
+
     return metrics_df
 
 
@@ -645,8 +673,6 @@ def save_metrics_csv(df, dataset_id, suffix, output_dir):
 
 
 def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir=None):
-    if output_dir is None:
-        output_dir = PERFORMANCE_METRICS_DIR
     """
     Calculate drought zone episode durations for all realizations and save to CSV.
 
@@ -672,6 +698,8 @@ def calculate_and_save_zone_duration_events(data, dataset_id, realizations, outp
         DataFrame with columns: realization_id, start_date, end_date,
         duration_days, max_zone.
     """
+    if output_dir is None:
+        output_dir = PERFORMANCE_METRICS_DIR
     print(f"  Calculating zone drought episode durations...")
 
     records = []
