@@ -224,7 +224,7 @@ def _build_ensemble_figure_rev1(
     syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
     pct = percentiles
-    stats_timescale = 'monthly'
+    stats_timescale = 'weekly'
     timescale = 'weekly'
 
     fig = plt.figure(figsize=figsize)
@@ -371,7 +371,7 @@ def plot_manuscript_ensemble_figure(dataset_id):
     fig = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=False,
-        percentiles=(0.5, 99.5),
+        percentiles=(2.5, 97.5),
     )
     save_fig(fig, rev1_stem, dpi=600)
     plt.close(fig)
@@ -381,7 +381,7 @@ def plot_manuscript_ensemble_figure(dataset_id):
     fig_smooth = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=True,
-        percentiles=(0.5, 99.5),
+        percentiles=(2.5, 97.5),
     )
     save_fig(fig_smooth, rev1_smooth_stem, dpi=600)
     plt.close(fig_smooth)

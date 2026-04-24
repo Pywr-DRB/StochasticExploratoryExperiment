@@ -246,12 +246,18 @@ def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
 
 
 def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
-                        edgecolor='white', linewidth=2.0, zorder=6):
+                        edgecolor='white', linewidth=2.0, zorder=9,
+                        halo=True, halo_color='#000000', halo_linewidth=3.5,
+                        halo_zorder=8):
     """Draw a continuous boundary around the outer edge of focal-region cells.
 
     Instead of individual rectangles per cell, this traces the outer contour
     of the connected focal region by walking the boundary edges of the
     cell set on a rectilinear grid.
+
+    When *halo* is True (default), a darker outline is drawn first beneath the
+    main line so the boundary stays visible against bright and dark cell
+    colours alike.
 
     Parameters
     ----------
@@ -261,8 +267,17 @@ def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
     focal_cells : set of (i, j)
         Grid-cell indices in the focal region.
     edgecolor : str
+        Colour of the inner (core) line.
     linewidth : float
+        Width of the inner (core) line.
     zorder : int
+        z-order of the inner (core) line.
+    halo : bool
+        If True, draw a darker outline of width *halo_linewidth* below the
+        core line.
+    halo_color : str
+    halo_linewidth : float
+    halo_zorder : int
     """
     if not focal_cells:
         return
@@ -325,14 +340,16 @@ def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
 
         loops.append(loop)
 
-    # Draw each loop as a closed path
+    # Draw each loop as a closed path — halo first (if requested), then core.
     for loop in loops:
         verts = loop
         codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
         path = Path(verts, codes)
-        patch = PathPatch(path, facecolor='none', edgecolor=edgecolor,
-                          linewidth=linewidth, zorder=zorder)
-        ax.add_patch(patch)
+        if halo:
+            ax.add_patch(PathPatch(path, facecolor='none', edgecolor=halo_color,
+                                   linewidth=halo_linewidth, zorder=halo_zorder))
+        ax.add_patch(PathPatch(path, facecolor='none', edgecolor=edgecolor,
+                               linewidth=linewidth, zorder=zorder))
 
 
 def identify_focal_region(rate_grids, frac_grids, min_grids, datasets,

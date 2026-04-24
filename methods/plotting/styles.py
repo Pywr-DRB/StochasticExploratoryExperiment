@@ -68,9 +68,9 @@ FFMP_ZONE_COLORS_INT = {
 # Standard labels for datasets (two-row format so they fit in narrow legends
 # and side-anchored row labels without truncation).
 DATASET_LABELS = {
-    'stationary_ensemble': 'Stationary\nBaseline',
-    'climate_adjusted_low': 'Wetter Winter,\nDrier Summer (WWDS)',
-    'climate_adjusted_high': 'Wetter Winter,\nSimilar Summer (WWSS)',
+    'stationary_ensemble': 'Stationary Baseline',
+    'climate_adjusted_low': 'Wetter Winter, Drier Summer',
+    'climate_adjusted_high': 'Wetter Winter, Similar Summer',
 }
 
 # Short labels (for tight layouts)

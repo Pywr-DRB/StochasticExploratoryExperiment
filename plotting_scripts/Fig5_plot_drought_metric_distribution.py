@@ -19,6 +19,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+import matplotlib.patheffects as patheffects
 from matplotlib.ticker import MultipleLocator
 import warnings
 warnings.filterwarnings("ignore")
@@ -397,11 +398,18 @@ def plot_drought_manuscript_figure(
 
     if hexbin_x == 'magnitude':
         ax_hex.set_xlim(right=mag_lim)
+    elif hexbin_x == 'severity':
+        ax_hex.set_xlim(right=5.0)
     if hexbin_y == 'magnitude':
         ax_hex.set_ylim(top=mag_lim)
+    elif hexbin_y == 'severity':
+        ax_hex.set_ylim(top=5.0)
     ax_hex.set_xlabel(METRIC_AXIS_LABELS[hexbin_x], fontsize=FONTSIZE_MEDIUM)
     ax_hex.set_ylabel(METRIC_AXIS_LABELS[hexbin_y], fontsize=FONTSIZE_MEDIUM)
     ax_hex.tick_params(labelsize=FONTSIZE_SMALL)
+    ax_hex.grid(True, which='both', color='gray', alpha=0.15,
+                linewidth=0.5, linestyle='--')
+    ax_hex.set_axisbelow(True)
     ax_hex.text(
         0.03, 0.97, f'({PANEL_LETTERS[0]})',
         transform=ax_hex.transAxes, fontsize=FONTSIZE_MEDIUM,
@@ -413,18 +421,21 @@ def plot_drought_manuscript_figure(
         start_year = pd.to_datetime(row_1960s['start']).year
         end_year = pd.to_datetime(row_1960s['end']).year
         short_1960s_label = f"{start_year}–{end_year} Drought"
-        ax_hex.annotate(
+        ann_1960s = ax_hex.annotate(
             short_1960s_label,
             xy=(float(row_1960s[hexbin_x]), float(row_1960s[hexbin_y])),
-            xytext=(-12, -14),
+            xytext=(14, -14),
             textcoords='offset points',
-            fontsize=FONTSIZE_SMALL - 2,
+            fontsize=FONTSIZE_SMALL,
             color='red', fontweight='bold',
-            ha='right', va='top',
+            ha='left', va='top',
             arrowprops=dict(arrowstyle='->', color='red', lw=0.7,
                             shrinkA=1, shrinkB=3),
             zorder=12,
         )
+        ann_1960s.set_path_effects([
+            patheffects.withStroke(linewidth=2, foreground='white'),
+        ])
 
     # ------------------------------------------------------------------
     # Colorbar in bottom-left cell: discrete bins with end arrows
@@ -444,13 +455,7 @@ def plot_drought_manuscript_figure(
             cb.set_ticks(log_ticks)
             cb.set_ticklabels(log_labels)
     else:
-        # One tick per discrete boundary. If there are many bins, thin the
-        # labels to only powers of 10 to avoid overlap.
-        if len(cbar_boundaries) <= 8:
-            tick_vals = cbar_boundaries
-        else:
-            tick_vals = np.array([b for b in cbar_boundaries
-                                  if np.isclose(np.log10(b) % 1, 0, atol=1e-6)])
+        tick_vals = cbar_boundaries
         cb.set_ticks(tick_vals)
         cb.set_ticklabels([f'{int(round(t))}' if t >= 1 else f'{t:.2g}'
                            for t in tick_vals])
@@ -597,6 +602,7 @@ def plot_drought_manuscript_figure(
                 ax.set_xlim(right=100 if ssi_window == 3 else 200)
             if metric == 'severity':
                 ax.xaxis.set_major_locator(MultipleLocator(1))
+                ax.set_xlim(right=5.0)
 
             ax.tick_params(labelsize=FONTSIZE_SMALL)
             ax.grid(True, which='both', color='gray', alpha=0.15,
@@ -612,9 +618,10 @@ def plot_drought_manuscript_figure(
             # Row label on right side of rightmost column
             if c == n_cols - 1:
                 ax.text(
-                    1.12, 0.5, DATASET_LABELS.get(dataset_id, dataset_id),
+                    1.18, 0.5, DATASET_LABELS.get(dataset_id, dataset_id),
                     transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
-                    va='center', ha='left', rotation=-90,
+                    va='center', ha='center', rotation=-90,
+                    rotation_mode='anchor',
                 )
 
             panel_idx += 1
