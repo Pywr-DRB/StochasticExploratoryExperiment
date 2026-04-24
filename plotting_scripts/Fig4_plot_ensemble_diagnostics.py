@@ -32,7 +32,6 @@ warnings.filterwarnings("ignore")
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 
 from methods.plotting.ensemble_summary import (
@@ -54,6 +53,9 @@ from methods.plotting.styles import (
     LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_PRINT, apply_publication_style,
     save_fig, label_panel,
+)
+from methods.plotting.legend import (
+    IQRBandHandle, iqr_band_legend_kwargs, draw_iqr_anatomy,
 )
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
 from methods.config import (
@@ -193,7 +195,7 @@ def _build_ensemble_figure_rev1(
     dataset_id,
     smooth_envelope=False,
     percentiles=(0.5, 99.5),
-    figsize=(9, 9),
+    figsize=(9, 10.5),
 ):
     """Build the rev1 ensemble-diagnostic figure.
 
@@ -224,17 +226,32 @@ def _build_ensemble_figure_rev1(
     syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
     pct = percentiles
-    stats_timescale = 'weekly'
+    stats_timescale = 'monthly'
     timescale = 'weekly'
 
     fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(4, 2, figure=fig, height_ratios=[1, 1, 0.22, 0.22])
+    gs = gridspec.GridSpec(
+        5, 2, figure=fig, height_ratios=[1, 1, 0.22, 0.22, 0.4],
+    )
 
     ax_autocorr = fig.add_subplot(gs[0, 0])
     ax_fdc = fig.add_subplot(gs[0, 1])
     ax_periodic = fig.add_subplot(gs[1, :])
     ax_wilcoxon = fig.add_subplot(gs[2, :])
     ax_levene = fig.add_subplot(gs[3, :])
+
+    # Bottom row: composite legend strip — [markers | anatomy | ensembles]
+    legend_gs = gridspec.GridSpecFromSubplotSpec(
+        1, 3,
+        subplot_spec=gs[4, :],
+        width_ratios=[0.6, 1.0, 1.4],
+        wspace=0.2,
+    )
+    ax_markers = fig.add_subplot(legend_gs[0, 0])
+    ax_anatomy = fig.add_subplot(legend_gs[0, 1])
+    ax_datasets = fig.add_subplot(legend_gs[0, 2])
+    for _ax in (ax_markers, ax_anatomy, ax_datasets):
+        _ax.set_axis_off()
 
     # ---------- Panel (a): Autocorrelation ----------
     plot_autocorrelation_comparison(
@@ -297,31 +314,42 @@ def _build_ensemble_figure_rev1(
     )
     label_panel(ax_levene, 'e', y=0.85)
 
-    # ---------- Shared legend ----------
-    legend_handles = [
-        Patch(facecolor=synthetic_color, alpha=ALPHA_BAND_OUTER, linewidth=0,
-              label=f'{synthetic_label} 99% IQR'),
-        Patch(facecolor=synthetic_color, alpha=ALPHA_BAND_INNER, linewidth=0,
-              label=f'{synthetic_label} 50% IQR'),
-        Line2D([0], [0], color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
-               linestyle='-', label=f'{synthetic_label} (median)'),
-        Patch(facecolor='black', alpha=ALPHA_BAND_OUTER, linewidth=0,
-              label=f'{RECONSTRUCTED_HIST_LABEL} 99% IQR'),
-        Patch(facecolor='black', alpha=ALPHA_BAND_INNER, linewidth=0,
-              label=f'{RECONSTRUCTED_HIST_LABEL} 50% IQR'),
-        Line2D([0], [0], color='black', linewidth=LINEWIDTH_THICK,
-               linestyle='--', label=f'{RECONSTRUCTED_HIST_LABEL} (median)'),
-        Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p = 0.05'),
-    ]
+    # ---------- Composite legend: [markers | anatomy | ensembles] ----------
+    # Panel 1 (left): other markers — just the p = 0.05 line
+    ax_markers.legend(
+        handles=[Line2D([0], [0], color='k', linestyle='--', linewidth=1)],
+        labels=['p = 0.05'],
+        loc='center', frameon=False, fontsize=9,
+        handletextpad=1.0,
+    )
 
-    fig.legend(
-        handles=legend_handles,
-        loc='lower center', ncol=4, frameon=False,
-        bbox_to_anchor=(0.5, -0.04), fontsize=9,
+    # Panel 2 (middle): anatomy teaching glyph
+    draw_iqr_anatomy(ax_anatomy, fontsize=9)
+
+    # Panel 3 (right): ensembles with IQR glyphs. Reconstructed historical
+    # shares the alpha structure but uses a dashed thick median.
+    dataset_handles = [
+        IQRBandHandle(color=synthetic_color),
+        IQRBandHandle(color=HISTORIC_COLOR, linestyle='--',
+                      linewidth=LINEWIDTH_THICK),
+    ]
+    dataset_labels = [
+        f'{synthetic_label} Ensemble',
+        f'{RECONSTRUCTED_HIST_LABEL} Ensemble',
+    ]
+    ax_datasets.legend(
+        handles=dataset_handles,
+        labels=dataset_labels,
+        loc='center left',
+        bbox_to_anchor=(0.0, 0.5),
+        frameon=False,
+        fontsize=9,
+        **iqr_band_legend_kwargs(
+            handleheight=1.8, handlelength=2.4, labelspacing=0.7,
+        ),
     )
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.09)
 
     fig.align_ylabels([ax_autocorr, ax_periodic, ax_wilcoxon, ax_levene])
 

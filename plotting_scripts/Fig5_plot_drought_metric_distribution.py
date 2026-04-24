@@ -33,6 +33,9 @@ from methods.plotting.styles import (
     LINEWIDTH_MEDIUM, CMAP_SEQUENTIAL, DPI_HIGH,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
 )
+from methods.plotting.legend import (
+    IQRBandHandle, iqr_band_legend_kwargs, draw_iqr_anatomy,
+)
 
 
 HISTORIC_LABEL += " Droughts"
@@ -253,7 +256,7 @@ def plot_drought_manuscript_figure(
     n_cols = len(cdf_metrics)
 
     if figsize is None:
-        figsize = (11.5, 8) 
+        figsize = (11.5, 9.2)
     
     # ------------------------------------------------------------------
     # Load data
@@ -272,14 +275,17 @@ def plot_drought_manuscript_figure(
     hexbin_droughts = ensemble_data[hexbin_dataset]['droughts']
 
     # ------------------------------------------------------------------
-    # Figure layout: 2 rows (main panels + bottom bar), 2 columns
+    # Figure layout:
+    #   Row 0 — main panels (hexbin left, 3x2 CDF grid right)
+    #   Row 1 — colorbar (left cell only; right cell is empty spacer)
+    #   Row 2 — full-width legend strip: [anatomy] [datasets] [markers]
     # ------------------------------------------------------------------
     fig = plt.figure(figsize=figsize)
 
     outer_gs = gridspec.GridSpec(
-        2, 2,
-        width_ratios=[1.3, 1.0],
-        height_ratios=[1, 0.04],
+        3, 2,
+        width_ratios=[1.15, 1.15],
+        height_ratios=[1.0, 0.03, 0.22],
         hspace=0.25, wspace=0.35,
     )
 
@@ -297,12 +303,23 @@ def plot_drought_manuscript_figure(
         for c in range(n_cols):
             cdf_axes[r, c] = fig.add_subplot(inner_gs[r, c])
 
-    # Bottom-left: colorbar axes
+    # Middle-left: colorbar
     ax_cbar = fig.add_subplot(outer_gs[1, 0])
 
-    # Bottom-right: legend axes (invisible, used for anchor)
-    ax_legend = fig.add_subplot(outer_gs[1, 1])
-    ax_legend.set_axis_off()
+    # Bottom row — legend strip. Left cell (under panel a / hexbin) holds
+    # the observed-event markers. Right cell (under panels b-g) is split
+    # into [anatomy | ensembles].
+    ax_markers = fig.add_subplot(outer_gs[2, 0])
+    legend_gs_right = gridspec.GridSpecFromSubplotSpec(
+        1, 2,
+        subplot_spec=outer_gs[2, 1],
+        width_ratios=[0.8, 1.4],
+        wspace=0.2,
+    )
+    ax_anatomy = fig.add_subplot(legend_gs_right[0, 0])
+    ax_datasets = fig.add_subplot(legend_gs_right[0, 1])
+    for _ax in (ax_anatomy, ax_datasets, ax_markers):
+        _ax.set_axis_off()
 
     # ------------------------------------------------------------------
     # Left panel: 2-D distribution (square bins or hexbin)
@@ -411,7 +428,7 @@ def plot_drought_manuscript_figure(
                 linewidth=0.5, linestyle='--')
     ax_hex.set_axisbelow(True)
     ax_hex.text(
-        0.03, 0.97, f'({PANEL_LETTERS[0]})',
+        0.03, 0.97, f'{PANEL_LETTERS[0]})',
         transform=ax_hex.transAxes, fontsize=FONTSIZE_MEDIUM,
         va='top', ha='left',
     )
@@ -610,7 +627,7 @@ def plot_drought_manuscript_figure(
             ax.set_axisbelow(True)
 
             ax.text(
-                0.03, 0.97, f'({PANEL_LETTERS[panel_idx]})',
+                0.03, 0.97, f'{PANEL_LETTERS[panel_idx]})',
                 transform=ax.transAxes, fontsize=FONTSIZE_MEDIUM,
                 va='top', ha='left',
             )
@@ -664,50 +681,54 @@ def plot_drought_manuscript_figure(
         cdf_axes[r, 0].yaxis.set_label_coords(label_x, 0.5)
 
     # ------------------------------------------------------------------
-    # Shared legend below figure
+    # Composite legend strip: [anatomy] [datasets] [markers + patches]
     # ------------------------------------------------------------------
-    legend_handles = [
-        mlines.Line2D([], [], color=HISTORIC_COLOR, marker='^',
-                      linestyle='None', markersize=8, label=HISTORIC_LABEL),
-    ]
-    if len(drought_1960s) > 0:
-        legend_handles.append(
-            mlines.Line2D([], [], color='red', marker='^',
-                          linestyle='None', markersize=8, label=drought_1960s_label),
-        )
-    # Add all datasets (combined range + median as single entry)
-    from matplotlib.legend_handler import HandlerTuple
-    legend_labels = [h.get_label() for h in legend_handles]
-    for dataset_id in ALL_DATASETS:
-        color = DATASET_COLORS[dataset_id]
-        patch_outer = mpatches.Patch(facecolor=color, alpha=ALPHA_BAND_OUTER)
-        patch_inner = mpatches.Patch(facecolor=color, alpha=ALPHA_BAND_INNER)
-        line = mlines.Line2D([], [], color=color,
-                             linestyle='-',
-                             linewidth=LINEWIDTH_MEDIUM)
-        legend_handles.append((patch_outer, patch_inner, line))
-        legend_labels.append(
-            f'{DATASET_LABELS.get(dataset_id, dataset_id)} '
-            '(99% IQR, 50% IQR, median)'
-        )
-    if plot_relative_change:
-        no_data_handle = mpatches.Patch(facecolor='#d0d0d0', alpha=0.35,
-                                         hatch='///', edgecolor='#333333', linewidth=0.8)
-        legend_handles.append(no_data_handle)
-        legend_labels.append('No scenario droughts beyond this value')
 
-    # Place legend in the bottom-right cell, shifted down to add whitespace above
-    ax_legend.legend(
-        handles=legend_handles,
-        labels=legend_labels,
-        loc='upper center',
-        bbox_to_anchor=(0.5, 1.25),
-        ncol=1,
+    # Panel 1: anatomy — teaching glyph that names each layer
+    draw_iqr_anatomy(ax_anatomy, fontsize=FONTSIZE_SMALL + 0.5)
+
+    # Panel 2: dataset entries (one composite IQR glyph per dataset)
+    dataset_handles = [IQRBandHandle(color=DATASET_COLORS[d]) for d in ALL_DATASETS]
+    dataset_labels = [f"{DATASET_LABELS.get(d, d)} Ensemble" for d in ALL_DATASETS]
+    ax_datasets.legend(
+        handles=dataset_handles,
+        labels=dataset_labels,
+        loc='center left',
+        bbox_to_anchor=(0.0, 0.5),
         frameon=False,
         fontsize=FONTSIZE_SMALL,
-        columnspacing=1.0,
-        handler_map={tuple: HandlerTuple(ndivide=1)},
-        handleheight=1.5,
+        **iqr_band_legend_kwargs(
+            handleheight=1.8, handlelength=2.4, labelspacing=0.7,
+        ),
+    )
+
+    # Panel 3: historic markers + "no data" patch
+    marker_handles = [
+        mlines.Line2D([], [], color=HISTORIC_COLOR, marker='^',
+                      linestyle='None', markersize=9),
+    ]
+    marker_labels = [HISTORIC_LABEL]
+    if len(drought_1960s) > 0:
+        marker_handles.append(
+            mlines.Line2D([], [], color='red', marker='^',
+                          linestyle='None', markersize=9),
+        )
+        marker_labels.append(drought_1960s_label)
+    if plot_relative_change:
+        marker_handles.append(mpatches.Patch(
+            facecolor='#d0d0d0', alpha=0.35,
+            hatch='///', edgecolor='#333333', linewidth=0.8,
+        ))
+        marker_labels.append('No scenario droughts\nbeyond this value')
+
+    ax_markers.legend(
+        handles=marker_handles,
+        labels=marker_labels,
+        loc='center',
+        frameon=False,
+        fontsize=FONTSIZE_SMALL,
+        labelspacing=0.9,
+        handletextpad=1.0,
     )
 
     # ------------------------------------------------------------------

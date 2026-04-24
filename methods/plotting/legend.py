@@ -24,6 +24,8 @@ from methods.plotting.styles import ALPHA_BAND_OUTER, LINEWIDTH_MEDIUM
 # Legend-only: inner-band alpha is bumped above the plot's ALPHA_BAND_INNER
 # so the three layers stay distinguishable at small legend-handle sizes.
 # The plot itself continues to use ALPHA_BAND_INNER from styles.py.
+ANATOMY_ALPHA_INNER = 0.55
+ANATOMY_COLOR_DEFAULT = '#4d4d4d'
 
 
 class IQRBandHandle:
@@ -89,6 +91,86 @@ class IQRBandHandler(HandlerBase):
         )
 
         return [outer, inner, median]
+
+
+def draw_iqr_anatomy(
+    ax,
+    *,
+    color=ANATOMY_COLOR_DEFAULT,
+    alpha_outer=ALPHA_BAND_OUTER,
+    alpha_inner=ANATOMY_ALPHA_INNER,
+    inner_height_frac=0.5,
+    fontsize=10,
+    label_outer='1–99% range',
+    label_inner='25–75% range',
+    label_median='50th percentile',
+    arrow_color='#555555',
+    label_color='#222222',
+):
+    """Draw the teaching/anatomy glyph for IQR-band + median legends.
+
+    Renders a large grey glyph in the right half of ``ax`` with callout
+    labels fanned vertically to the left: outer band label sits above
+    and arrows up-left onto the top outer-only strip; inner band label
+    is horizontal into the 25–75% band; median label sits below and
+    arrows down-left onto the median line.
+
+    The function configures ``ax`` (turns axis off, sets xlim/ylim to
+    ``(0, 10)``); caller just needs to place the axes in the desired
+    location on the figure.
+    """
+    ax.set_axis_off()
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+
+    gx0, gx1 = 5.5, 9.4
+    gy_mid = 5.0
+    outer_h = 5.2
+    inner_h = outer_h * inner_height_frac
+    gy_outer_bot = gy_mid - outer_h / 2
+    gy_outer_top = gy_mid + outer_h / 2
+    gy_inner_top = gy_mid + inner_h / 2
+
+    # Median thickness scaled to match the handle's median-to-height ratio
+    median_lw = LINEWIDTH_MEDIUM * (outer_h / 2.6)
+
+    ax.add_patch(Rectangle(
+        (gx0, gy_outer_bot), gx1 - gx0, outer_h,
+        facecolor=color, alpha=alpha_outer, edgecolor='none', zorder=2,
+    ))
+    ax.add_patch(Rectangle(
+        (gx0, gy_mid - inner_h / 2), gx1 - gx0, inner_h,
+        facecolor=color, alpha=alpha_inner, edgecolor='none', zorder=3,
+    ))
+    ax.plot([gx0, gx1], [gy_mid, gy_mid],
+            color=color, linewidth=median_lw,
+            solid_capstyle='butt', zorder=4)
+
+    target_x = gx0 + 0.1
+    outer_only_top_y = (gy_inner_top + gy_outer_top) / 2
+    inner_above_median_y = (gy_mid + gy_inner_top) / 2
+    label_x = 4.6
+
+    callouts = [
+        (label_outer,  (target_x, outer_only_top_y),     (label_x, 8.4)),
+        (label_inner,  (target_x, inner_above_median_y), (label_x, inner_above_median_y)),
+        (label_median, (target_x, gy_mid),               (label_x, 1.6)),
+    ]
+
+    for text, xy, xytext in callouts:
+        ax.annotate(
+            text, xy=xy, xytext=xytext,
+            fontsize=fontsize, color=label_color,
+            va='center', ha='right',
+            arrowprops=dict(
+                arrowstyle='-', color=arrow_color, lw=0.9,
+                shrinkA=5, shrinkB=3,
+            ),
+            zorder=5,
+        )
+        ax.plot(*xy, marker='o', markersize=4.0,
+                markerfacecolor=arrow_color, markeredgecolor='white',
+                markeredgewidth=0.6, zorder=6)
 
 
 def iqr_band_legend_kwargs(handleheight=2.6, handlelength=3.6,
