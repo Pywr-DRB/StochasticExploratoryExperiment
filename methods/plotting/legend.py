@@ -44,6 +44,7 @@ class IQRBandHandle:
         linewidth=LINEWIDTH_MEDIUM,
         linestyle='-',
         inner_height_frac=0.5,
+        show_inner_band=True,
     ):
         self.color = color
         self.alpha_outer = alpha_outer
@@ -51,6 +52,7 @@ class IQRBandHandle:
         self.linewidth = linewidth
         self.linestyle = linestyle
         self.inner_height_frac = inner_height_frac
+        self.show_inner_band = show_inner_band
 
 
 class IQRBandHandler(HandlerBase):
@@ -69,16 +71,6 @@ class IQRBandHandler(HandlerBase):
             transform=trans,
         )
 
-        inner_h = height * orig_handle.inner_height_frac
-        inner_y = y0 + (height - inner_h) / 2
-        inner = Rectangle(
-            (x0, inner_y), width, inner_h,
-            facecolor=orig_handle.color,
-            alpha=orig_handle.alpha_inner,
-            edgecolor='none',
-            transform=trans,
-        )
-
         median_y = y0 + height / 2
         median = Line2D(
             [x0, x0 + width],
@@ -90,7 +82,19 @@ class IQRBandHandler(HandlerBase):
             transform=trans,
         )
 
-        return [outer, inner, median]
+        if getattr(orig_handle, 'show_inner_band', True):
+            inner_h = height * orig_handle.inner_height_frac
+            inner_y = y0 + (height - inner_h) / 2
+            inner = Rectangle(
+                (x0, inner_y), width, inner_h,
+                facecolor=orig_handle.color,
+                alpha=orig_handle.alpha_inner,
+                edgecolor='none',
+                transform=trans,
+            )
+            return [outer, inner, median]
+
+        return [outer, median]
 
 
 def draw_iqr_anatomy(
@@ -106,6 +110,7 @@ def draw_iqr_anatomy(
     label_median='50th percentile',
     arrow_color='#555555',
     label_color='#222222',
+    show_inner_band=True,
 ):
     """Draw the teaching/anatomy glyph for IQR-band + median legends.
 
@@ -138,10 +143,11 @@ def draw_iqr_anatomy(
         (gx0, gy_outer_bot), gx1 - gx0, outer_h,
         facecolor=color, alpha=alpha_outer, edgecolor='none', zorder=2,
     ))
-    ax.add_patch(Rectangle(
-        (gx0, gy_mid - inner_h / 2), gx1 - gx0, inner_h,
-        facecolor=color, alpha=alpha_inner, edgecolor='none', zorder=3,
-    ))
+    if show_inner_band:
+        ax.add_patch(Rectangle(
+            (gx0, gy_mid - inner_h / 2), gx1 - gx0, inner_h,
+            facecolor=color, alpha=alpha_inner, edgecolor='none', zorder=3,
+        ))
     ax.plot([gx0, gx1], [gy_mid, gy_mid],
             color=color, linewidth=median_lw,
             solid_capstyle='butt', zorder=4)
@@ -151,11 +157,17 @@ def draw_iqr_anatomy(
     inner_above_median_y = (gy_mid + gy_inner_top) / 2
     label_x = 4.6
 
-    callouts = [
-        (label_outer,  (target_x, outer_only_top_y),     (label_x, 8.4)),
-        (label_inner,  (target_x, inner_above_median_y), (label_x, inner_above_median_y)),
-        (label_median, (target_x, gy_mid),               (label_x, 1.6)),
-    ]
+    if show_inner_band:
+        callouts = [
+            (label_outer,  (target_x, outer_only_top_y),     (label_x, 8.4)),
+            (label_inner,  (target_x, inner_above_median_y), (label_x, inner_above_median_y)),
+            (label_median, (target_x, gy_mid),               (label_x, 1.6)),
+        ]
+    else:
+        callouts = [
+            (label_outer,  (target_x, outer_only_top_y),     (label_x, 8.4)),
+            (label_median, (target_x, gy_mid),               (label_x, 1.6)),
+        ]
 
     for text, xy, xytext in callouts:
         ax.annotate(

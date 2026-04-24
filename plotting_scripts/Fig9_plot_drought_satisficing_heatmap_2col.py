@@ -15,6 +15,7 @@ Usage:
 
 import sys
 import os
+import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
@@ -29,6 +30,7 @@ from methods.config import FIG_DIR, N_YEARS
 from methods.load import load_event_metrics
 from methods.plotting.styles import (
     DATASET_LABELS, DPI_HIGH, apply_publication_style, label_panel,
+    MANUSCRIPT_CMAPS,
 )
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
@@ -122,17 +124,29 @@ def _absolute_change(scenario_grid, baseline_grid):
     return diff
 
 
-def _discrete_norm(boundaries, cmap_name, extend='both'):
-    n_intervals = len(boundaries) - 1
-    if extend == 'both':
-        n_colors = n_intervals + 2
-    elif extend in ('min', 'max'):
-        n_colors = n_intervals + 1
-    else:
-        n_colors = n_intervals
-    cmap = plt.get_cmap(cmap_name, n_colors)
-    norm = mcolors.BoundaryNorm(boundaries, n_colors, extend=extend)
-    return cmap, norm
+def _ceil_to_5pct(v):
+    """Round *v* (in percentage points) up to the next multiple of 5."""
+    if not np.isfinite(v):
+        return 5.0
+    return float(math.ceil(v / 5.0) * 5.0)
+
+
+def _count_events_in_focal_region(df, sev_edges, mag_edges, focal_cells):
+    """Count events (rows of ``df``) whose (sev_bin, mag_bin) falls in
+    ``focal_cells``. Uses the same digitize logic as the grid builders in
+    ``methods.plotting.heatmap`` so the count is consistent with the
+    rendered heatmaps.
+    """
+    if not focal_cells:
+        return 0
+    ns = len(sev_edges) - 1
+    nm = len(mag_edges) - 1
+    sev_idx = np.clip(np.digitize(df['severity'].values, sev_edges) - 1, 0, ns - 1)
+    mag_idx = np.clip(np.digitize(df['magnitude'].values, mag_edges) - 1, 0, nm - 1)
+    mask = np.zeros(len(df), dtype=bool)
+    for i, j in focal_cells:
+        mask |= (sev_idx == i) & (mag_idx == j)
+    return int(mask.sum())
 
 
 def _audit_text_overlaps(fig, extra_artists=()):
@@ -197,44 +211,68 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         min_grids[did] = mg
 
     focal_cells = identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
+    focal_event_counts = {
+        did: _count_events_in_focal_region(
+            all_data[did], sev_edges, mag_edges, focal_cells)
+        for did in DATASETS
+    }
     print(f"  Focal region: {len(focal_cells)} cells")
+    for did in DATASETS:
+        print(f"    {DATASET_LABELS[did]}: "
+              f"{focal_event_counts[did]:,} events in focal region")
 
     rp_grids = {did: _rate_to_return_period(rate_grids[did]) for did in DATASETS}
     pct_de_grids = {did: (1.0 - frac_grids[did]) * 100.0 for did in DATASETS}
 
-    # -- discrete colormaps & norms -----------------------------------------
-    rp_abs_bounds = np.array([100, 500, 1000, 5000, 10000], dtype=float)
-    cmap_rp_abs, norm_rp_abs = _discrete_norm(
-        rp_abs_bounds, 'YlOrRd_r', extend='both')
-    rp_abs_ticks = rp_abs_bounds.tolist()
+    # -- colormaps & continuous norms ---------------------------------------
+    # Manuscript-wide palette: sequential = viridis_r, diverging = BrBG_r.
+    # For the two Δ panels we want "brown = adverse in each metric", so
+    # the diverging palette is used as-is where *positive* Δ is adverse
+    # (%DE increases → more emergencies), and reversed where *negative* Δ
+    # is adverse (RP shortens → more frequent droughts). Reversing BrBG_r
+    # yields BrBG (brown on the low / negative end).
+    cmap_sequential = MANUSCRIPT_CMAPS['sequential']         # viridis_r
+    cmap_diverging_pos_brown = MANUSCRIPT_CMAPS['diverging']  # BrBG_r
+    cmap_diverging_neg_brown = cmap_diverging_pos_brown.reversed()  # BrBG
+
+    # Panel (a): return period (years), log-scaled 100 → 10,000.
+    cmap_rp_abs = cmap_sequential
+    norm_rp_abs = mcolors.LogNorm(vmin=100, vmax=10000)
+    rp_abs_ticks = [100, 1000, 10000]
     rp_abs_tick_labels = [_fmt_years(v) for v in rp_abs_ticks]
 
-    pct_de_bounds = np.array([0, 10, 20, 30, 40, 50, 60, 70], dtype=float)
-    cmap_pct_de_abs, norm_pct_de_abs = _discrete_norm(
-        pct_de_bounds, 'Reds', extend='max')
-    pct_de_ticks = pct_de_bounds.tolist()
+    # Panel (b): percent reaching DE, 0 → ceil-to-5pp of the observed max.
+    pct_de_data_max = float(np.nanmax(
+        [np.nanmax(pct_de_grids[did]) for did in DATASETS]
+    ))
+    pct_de_vmax = _ceil_to_5pct(pct_de_data_max)
+    cmap_pct_de_abs = cmap_sequential
+    norm_pct_de_abs = mcolors.Normalize(vmin=0.0, vmax=pct_de_vmax)
+    pct_de_ticks = list(np.arange(0, pct_de_vmax + 0.01, 10, dtype=float))
     pct_de_tick_labels = [_fmt_pct(v) for v in pct_de_ticks]
 
+    # Panels (c, e): Δ return period (years), symmetric log around zero.
+    # Brown should mark the adverse side (negative Δ = RP shortened).
     rp_diff_grids = {
         did: _absolute_change(rp_grids[did], rp_grids[baseline_id])
         for did in DATASETS[1:]
     }
-    rp_diff_bounds = np.array(
-        [-1000, -100, -10, 10, 100, 1000], dtype=float)
-    cmap_rp_rel, norm_rp_rel = _discrete_norm(
-        rp_diff_bounds, 'RdBu', extend='both')
-    rp_diff_ticks = rp_diff_bounds.tolist()
+    cmap_rp_rel = cmap_diverging_neg_brown  # brown on negative (adverse)
+    norm_rp_rel = mcolors.SymLogNorm(
+        linthresh=10, linscale=0.5, vmin=-1000, vmax=1000, base=10)
+    rp_diff_ticks = [-1000, -100, -10, 10, 100, 1000]
     rp_diff_tick_labels = [_fmt_signed_years(v) for v in rp_diff_ticks]
 
+    # Panels (d, f): Δ percent reaching DE (percentage points), linear
+    # two-slope around zero. Brown should mark the adverse side (positive
+    # Δ = more droughts reach Drought Emergency).
     pct_de_diff_grids = {
         did: _absolute_change(pct_de_grids[did], pct_de_grids[baseline_id])
         for did in DATASETS[1:]
     }
-    pct_de_diff_bounds = np.array(
-        [-50, -25, -10, -5, 5, 10, 25, 50], dtype=float)
-    cmap_pct_de_rel, norm_pct_de_rel = _discrete_norm(
-        pct_de_diff_bounds, 'RdBu_r', extend='both')
-    pct_de_diff_ticks = pct_de_diff_bounds.tolist()
+    cmap_pct_de_rel = cmap_diverging_pos_brown  # brown on positive (adverse)
+    norm_pct_de_rel = mcolors.TwoSlopeNorm(vcenter=0.0, vmin=-50, vmax=50)
+    pct_de_diff_ticks = [-50, -25, 0, 25, 50]
     pct_de_diff_tick_labels = [_fmt_signed_pct(v) for v in pct_de_diff_ticks]
 
     # -- figure layout ------------------------------------------------------
@@ -463,11 +501,11 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     cbar_labels_bot = [
         (cb_rp_rel, cbar_ax_rp_rel,
-         r'$\Delta$ Return period'
-         '\n(years; scenario − baseline)'),
+         r'$\Delta$ Return period (years)'
+         '\nbrown = more frequent than baseline'),
         (cb_pct_rel, cbar_ax_pct_rel,
-         r'$\Delta$ Droughts reaching Drought Emergency'
-         '\n(percentage points; scenario − baseline)'),
+         r'$\Delta$ Droughts reaching DE (pp)'
+         '\nbrown = more emergencies than baseline'),
     ]
     for cb, cax, label in cbar_labels_bot:
         cax.xaxis.set_ticks_position('bottom')
@@ -477,10 +515,11 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cb.outline.set_edgecolor(AXIS_FRAME_COLOR)
         cb.outline.set_linewidth(0.8)
 
-    # -- bottom annotations: symbols + left-aligned focal-region key --------
-    # Symbol line stays centred; the focal-region criteria list reads like
-    # a bulleted key and is left-aligned so the three items stack under a
-    # common indent.
+    # -- bottom annotations: symbols + 2-column key -------------------------
+    # Symbol strap stays centred.
+    # Below it, a two-column block: the left column lists the three
+    # focal-region satisficing criteria; the right column lists the number
+    # of drought events in the focal region within each ensemble.
     symbol_line = (
         r'$\times$ = bin where $\geq$1 event drove combined NYC storage '
         '<15% of capacity    |    '
@@ -490,23 +529,47 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     fig.text(0.5, 0.115, symbol_line, ha='center', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
 
-    criteria_x = 0.14
-    fig.text(criteria_x, 0.088,
-             'Focal region (white outline): bins satisfying all three criteria simultaneously —',
+    # Two columns. The criteria (left) use the full left half of the figure
+    # and are kept terse so none exceed the column width; the event-count
+    # list (right) starts at x=0.62, clear of the longest criterion line.
+    crit_x = 0.06
+    crit_indent_x = crit_x + 0.02
+    counts_x = 0.62
+    counts_indent_x = counts_x + 0.02
+
+    y_header = 0.088
+    y_item_1 = 0.064
+    y_item_2 = 0.040
+    y_item_3 = 0.016
+
+    # Left column — satisficing criteria (abbreviated to fit half width).
+    fig.text(crit_x, y_header,
+             'Focal region (white outline) — all three must hold:',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(criteria_x + 0.02, 0.064,
-             r'(i)   Return period $\leq$ 10,000 years in all three ensembles',
+    fig.text(crit_indent_x, y_item_1,
+             r'(i)   Return period $\leq$ 10,000 yr in all ensembles',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(criteria_x + 0.02, 0.040,
-             r'(ii)  $\geq$5% of droughts reach Drought Emergency in all three ensembles',
+    fig.text(crit_indent_x, y_item_2,
+             r'(ii)  $\geq$5% of droughts reach DE in all ensembles',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(criteria_x + 0.02, 0.016,
-             r'(iii) $\geq$1 event drove combined NYC storage <15% of capacity in any ensemble',
+    fig.text(crit_indent_x, y_item_3,
+             r'(iii) NYC storage <15% in $\geq$1 event of any ensemble',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
+
+    # Right column — drought-event counts in the focal region per ensemble.
+    fig.text(counts_x, y_header,
+             'Drought events in focal region:',
+             ha='left', va='center',
+             fontsize=FONTSIZE_SMALL, color='#333333')
+    for did, y in zip(DATASETS, (y_item_1, y_item_2, y_item_3)):
+        fig.text(counts_indent_x, y,
+                 f'{DATASET_LABELS[did]}: {focal_event_counts[did]:,}',
+                 ha='left', va='center',
+                 fontsize=FONTSIZE_SMALL, color='#333333')
 
     cbar_label_artists = [
         cb.ax.xaxis.label for cb in

@@ -177,6 +177,17 @@ CMAP_SEQUENTIAL = 'viridis'      # For sequential data
 CMAP_DIVERGING = 'BrBG'          # For diverging data (differences)
 CMAP_HEATMAP = 'magma'           # For heatmaps/return periods
 
+# Manuscript-wide two-palette rule. Every figure in the manuscript should
+# pull its sequential and diverging colormap from this dict so readers see
+# a consistent colour language across Fig5, Fig9, Fig10, etc. Individual
+# figures may reverse the diverging palette locally so "brown" always
+# marks the adverse direction of each specific metric.
+import matplotlib.pyplot as _plt_for_cmaps
+MANUSCRIPT_CMAPS = {
+    'sequential': _plt_for_cmaps.cm.viridis_r,
+    'diverging': _plt_for_cmaps.cm.BrBG_r,
+}
+
 # =============================================================================
 # FIGURE SIZES
 # =============================================================================

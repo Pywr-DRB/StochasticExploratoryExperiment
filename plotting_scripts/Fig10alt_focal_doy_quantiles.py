@@ -1,9 +1,11 @@
 """
 Fig10 alternative: Focal-event DOY quantile gradient (3x3 grid).
 
-Shows the distribution of focal-zone drought water-years as a BrBG gradient
-background at each day-of-water-year, with the single worst-case trajectory
-overlaid, for three variables x three climate scenarios.
+Shows the distribution of focal-zone drought water-years as a viridis
+sequential gradient background at each day-of-water-year, with the single
+worst-case trajectory overlaid, for three variables x three climate scenarios.
+The storage row additionally overlays the time-varying FFMP
+Watch/Warning/Emergency zone thresholds as dashed lines.
 
 Rows (top -> bottom):
   (a) NYC total storage (%)
@@ -41,7 +43,9 @@ from methods.config import (
 from methods.water_year import (
     MONTH_STARTS_WY, vectorized_water_year_doy,
 )
-from methods.load import load_event_metrics, load_rank_subset_from_export
+from methods.load import (
+    load_event_metrics, load_rank_subset_from_export, load_ffmp_boundaries,
+)
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, assign_grid_bins,
     compute_exceedance_rate_grid, compute_emergency_grid,
@@ -49,17 +53,14 @@ from methods.plotting.heatmap import (
     select_events_from_focal_region,
     GRID_N_BINS, FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH, WORST_STORAGE_THRESH,
 )
-from methods.plotting.drought_dynamics import (
-    extract_drought_timeseries,
-    align_to_water_year,
-    compute_fixed_extraction_window,
-)
+from methods.plotting.drought_dynamics import compute_fixed_extraction_window
 from methods.plotting.percentile_bands import format_xaxis_water_year
 from methods.plotting.styles import (
-    DATASET_LABELS, HISTORIC_COLOR, CMAP_DIVERGING,
-    DPI_PRINT, FONTSIZE_LABEL, FONTSIZE_TITLE, FONTSIZE_LEGEND,
-    apply_publication_style,
+    DATASET_LABELS, FFMP_ZONE_COLORS, CMAP_SEQUENTIAL,
+    DPI_PRINT, FONTSIZE_LABEL, FONTSIZE_TITLE, FONTSIZE_LEGEND, FONTSIZE_SMALL,
+    apply_publication_style, label_panel, save_fig,
 )
+from methods.plotting.ensemble_summary import MGD_TO_MCM
 from methods.plotting.doy_quantile_gradient import (
     compute_doy_quantile_grid, plot_doy_quantile_gradient,
 )
@@ -71,7 +72,9 @@ SSI_WINDOW = 12
 MIN_COUNT = 1
 
 DATASETS = list(DATASET_CONFIGS.keys())
-RESULTS_SETS = ['inflow', 'res_storage', 'contribution', 'major_flow']
+# Only the result sets we actually consume — inflow is unused, dropping it
+# avoids loading a large DataFrame per realization from HDF5.
+RESULTS_SETS = ['res_storage', 'contribution', 'major_flow']
 
 # TEST_MODE relaxes focal thresholds when the strict Fig9/Fig10 region is empty
 # on the local 5-realization dataset. Final-run default: TEST_MODE = False.
@@ -92,25 +95,39 @@ REFERENCE_WY_START = pd.Timestamp('2000-06-01')
 REFERENCE_WY_END = pd.Timestamp('2001-05-31')
 N_QUANTILE_LEVELS = 21    # 0, 5, 10, ..., 100 %
 
-CMAP = CMAP_DIVERGING     # BrBG
+CMAP = CMAP_SEQUENTIAL    # sequential viridis (from methods/plotting/styles.py)
 
 # (variable_key, y-label, y-scale, rolling-mean window in days)
+# Release and flow are converted from MGD to MCM/day (same convention as
+# Fig4); storage stays as a percentage of capacity.
 VARIABLES = [
-    ('nyc_storage_pct', 'NYC Total\nStorage (%)',          'linear', 1),
-    ('nyc_release',     'NYC Releases to\nMontague (MGD)', 'linear', 7),
-    ('montague_flow',   'Montague Flow\n(MGD)',            'log',    7),
+    ('nyc_storage_pct',
+     'Combined NYC storage\n(% of capacity)',                    'linear', 1),
+    ('nyc_release',
+     'Mandated NYC release to\nMontague target (MCM/day)',       'linear', 7),
+    ('montague_flow',
+     'Montague gauge flow\n(MCM/day, log scale)',                'log',    7),
 ]
 
+PANEL_LETTERS = list('abcdefghi')
+XAXIS_SUFFIX_LABEL = 'Water Year (Jun 1 - May 31, FFMP convention)'
+
 FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'Fig10')
-FIG_NAME = f'Fig10alt_focal_doy_quantiles_ssi{SSI_WINDOW}.png'
+FIG_NAME_STEM = f'Fig10alt_focal_doy_quantiles_ssi{SSI_WINDOW}'
 if TEST_MODE:
-    FIG_NAME = FIG_NAME.replace('.png', '_TESTMODE.png')
+    FIG_NAME_STEM += '_TESTMODE'
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 def _traces_to_doy_df(traces_by_event):
-    """Stack a list of (event_id, pd.Series) into a DOY-indexed DataFrame."""
+    """Stack a list of (event_id, pd.Series) into a DOY-indexed DataFrame.
+
+    DOY is invariant under whole-year date shifts, so we do not need to
+    align every event's DatetimeIndex onto a common reference year before
+    building the DOY frame — `vectorized_water_year_doy` yields identical
+    values regardless of calendar year.
+    """
     frames = {}
     for event_id, s in traces_by_event:
         if s is None or len(s) == 0:
@@ -122,8 +139,41 @@ def _traces_to_doy_df(traces_by_event):
     return pd.DataFrame(frames).sort_index()
 
 
+def _build_realization_cache(data, dataset_id, realization_ids):
+    """Pre-aggregate per-realization time series for the three plotted variables.
+
+    The per-event loop previously recomputed NYC-reservoir sums and column
+    lookups for *every* focal event (often many events share a realization).
+    Building one DataFrame per realization up front collapses that work
+    from O(events) down to O(unique realizations).
+    """
+    cache = {}
+    for r in realization_ids:
+        storage_raw = data.res_storage[dataset_id][r][NYC_RESERVOIRS].sum(axis=1)
+        nyc_storage_pct = 100.0 * storage_raw / NYC_TOTAL_CAPACITY
+
+        contribution = data.contribution[dataset_id][r]
+        if isinstance(contribution, pd.DataFrame):
+            nyc_release = contribution['mrf_montagueTrenton_nyc']
+        else:
+            nyc_release = contribution
+        nyc_release = nyc_release * MGD_TO_MCM
+
+        montague_flow = data.major_flow[dataset_id][r]['delMontague'] * MGD_TO_MCM
+
+        cache[r] = pd.DataFrame({
+            'nyc_storage_pct': nyc_storage_pct,
+            'nyc_release': nyc_release,
+            'montague_flow': montague_flow,
+        })
+    return cache
+
+
 def load_reconstruction_annual_cycle():
-    """Mean annual cycle (by DOY) for the three plotted variables."""
+    """Mean annual cycle (by DOY) for the three plotted variables.
+
+    Release and flow are converted from MGD to MCM/day to match the figure.
+    """
     if not os.path.exists(RECONSTRUCTION_OUTPUT_FNAME):
         print(f"  Warning: reconstruction file not found at "
               f"{RECONSTRUCTION_OUTPUT_FNAME}")
@@ -141,9 +191,12 @@ def load_reconstruction_annual_cycle():
         nyc_storage_pct = 100.0 * storage_raw / NYC_TOTAL_CAPACITY
 
         contrib_cols = [f'mrf_montagueTrenton_{res}' for res in NYC_RESERVOIRS]
-        nyc_release = data.nyc_release_components[ds][r][contrib_cols].sum(axis=1)
+        nyc_release = (
+            data.nyc_release_components[ds][r][contrib_cols].sum(axis=1)
+            * MGD_TO_MCM
+        )
 
-        montague_flow = data.major_flow[ds][r]['delMontague']
+        montague_flow = data.major_flow[ds][r]['delMontague'] * MGD_TO_MCM
     except Exception as e:
         print(f"  Warning: Error loading reconstruction: {e}")
         return None
@@ -160,12 +213,36 @@ def load_reconstruction_annual_cycle():
     return out
 
 
-def _slice_variable_trace(aligned, var_name, smooth_window=1):
-    s = aligned[var_name]
-    if smooth_window and smooth_window > 1:
-        s = s.rolling(smooth_window, center=True, min_periods=1).mean()
-    mask = (s.index >= REFERENCE_WY_START) & (s.index <= REFERENCE_WY_END)
-    return s[mask]
+def build_ffmp_by_wy_doy():
+    """FFMP Watch/Warning/Emergency thresholds (%) indexed by water-year DOY.
+
+    Time-varies: reflects the seasonal FFMP rule curves, aligned so that
+    DOY 1 = June 1 (water-year convention).
+    """
+    fb = load_ffmp_boundaries().copy()
+    fb['cal_doy'] = fb.index.dayofyear
+
+    col_map = {}
+    for candidate, zone in [('L3', 'Watch'), ('level3', 'Watch'),
+                             ('L4', 'Warning'), ('level4', 'Warning'),
+                             ('L5', 'Emergency'), ('level5', 'Emergency')]:
+        if candidate in fb.columns:
+            col_map[candidate] = zone
+    if not col_map:
+        return None
+    fb = fb.rename(columns=col_map)
+    zone_cols = [z for z in ['Watch', 'Warning', 'Emergency'] if z in fb.columns]
+    seasonal = fb.groupby('cal_doy')[zone_cols].median()
+
+    wy_doys = np.arange(1, 367)
+    dates = pd.date_range(REFERENCE_WY_START, periods=366, freq='D')
+    cal_doys = dates.dayofyear
+
+    out = pd.DataFrame(index=wy_doys, columns=zone_cols, dtype=float)
+    for wy_doy, cal_doy in zip(wy_doys, cal_doys):
+        if cal_doy in seasonal.index:
+            out.loc[wy_doy] = seasonal.loc[cal_doy].values
+    return out
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
@@ -239,35 +316,39 @@ def main():
             fname, unique_reals, RESULTS_SETS, rank=0, size=1,
         )
 
+        # Aggregate each realization's three variables once, reuse across
+        # every focal event that lands in that realization.
+        realization_cache = _build_realization_cache(data, ds, unique_reals)
+        del data
+        gc.collect()
+
         per_var_traces = {v[0]: [] for v in VARIABLES}
         worst_event_id = None
 
         for event_idx, (_, row) in enumerate(selected.iterrows()):
-            event_id = (f"R{int(row['realization_id']):04d}_"
+            r_id = int(row['realization_id'])
+            event_id = (f"R{r_id:04d}_"
                         f"{pd.Timestamp(row['start']).date()}")
             min_storage_date = pd.Timestamp(row['min_storage_date'])
 
             w_start, w_end = compute_fixed_extraction_window(
                 min_storage_date, pad_before_wy=0, pad_after_wy=0,
             )
-            ts = extract_drought_timeseries(
-                data, ds, int(row['realization_id']), w_start, w_end,
-            )
-            aligned, _, _ = align_to_water_year(
-                ts, row['start'], row['end'], min_storage_date,
-                reference_wy_start=REFERENCE_WY_START,
-            )
+            # Slice the pre-aggregated per-realization frame by date range
+            # (.loc[start:end] is cheap on a DatetimeIndex).
+            window = realization_cache[r_id].loc[w_start:w_end]
+
             for var_name, _, _, smooth in VARIABLES:
-                per_var_traces[var_name].append(
-                    (event_id, _slice_variable_trace(
-                        aligned, var_name, smooth_window=smooth))
-                )
+                s = window[var_name]
+                if smooth and smooth > 1:
+                    s = s.rolling(smooth, center=True, min_periods=1).mean()
+                per_var_traces[var_name].append((event_id, s))
 
             if event_idx == 0:
                 worst_event_id = event_id
                 dataset_worst_meta[ds] = {
                     'event_id': event_id,
-                    'realization_id': int(row['realization_id']),
+                    'realization_id': r_id,
                     'start': pd.Timestamp(row['start']),
                     'min_storage_date': min_storage_date,
                     'min_storage_pct': float(row['event_min_storage_pct']),
@@ -291,12 +372,21 @@ def main():
             print(f"    worst-case: {meta['event_id']} "
                   f"(min_storage={meta['min_storage_pct']:.1f}%)")
 
-        del data
+        del realization_cache
         gc.collect()
 
     # 5. Reconstruction mean annual cycle (shared reference across columns)
     print("\nLoading reconstruction mean annual cycle...")
     recon = load_reconstruction_annual_cycle()
+
+    # 5b. FFMP zone thresholds by water-year DOY (time-varying)
+    ffmp_by_wy = build_ffmp_by_wy_doy()
+
+    # 5c. Per-dataset event counts (for column annotations)
+    dataset_n_events = {
+        ds: int(dataset_traces[ds][VARIABLES[0][0]].shape[1])
+        for ds in DATASETS
+    }
 
     # 6. Figure
     fig, axes = plt.subplots(
@@ -312,6 +402,7 @@ def main():
     sm_for_colorbar = None
     worst_handle = None
     recon_handle = None
+    ffmp_handles = {}
 
     for row_idx, (var_name, var_label, yscale, _) in enumerate(VARIABLES):
         for col_idx, ds in enumerate(DATASETS):
@@ -328,24 +419,48 @@ def main():
                 )
                 sm_for_colorbar = sm
 
-            # Reconstruction mean (dashed black)
+            # FFMP Watch/Warning/Emergency thresholds (storage row only)
+            if var_name == 'nyc_storage_pct' and ffmp_by_wy is not None:
+                for zone in ['Watch', 'Warning', 'Emergency']:
+                    if zone not in ffmp_by_wy.columns:
+                        continue
+                    zvals = ffmp_by_wy[zone].astype(float)
+                    ln, = ax.plot(
+                        zvals.index, zvals.values,
+                        color=FFMP_ZONE_COLORS[zone], linestyle='--',
+                        linewidth=1.0, alpha=0.95, zorder=4,
+                    )
+                    ffmp_handles.setdefault(zone, ln)
+                    # Thin left-edge label
+                    if col_idx == 0:
+                        y0 = zvals.dropna().iloc[0] if zvals.dropna().size else None
+                        if y0 is not None:
+                            ax.text(
+                                2, y0, zone,
+                                fontsize=FONTSIZE_SMALL - 1,
+                                color=FFMP_ZONE_COLORS[zone],
+                                va='center', ha='left',
+                                zorder=4.5,
+                            )
+
+            # Reconstruction mean (dashed black, full opacity, 1.8 pt)
             if recon is not None and var_name in recon:
                 rs = recon[var_name]
                 ln, = ax.plot(
                     rs.index, rs.values,
-                    color=HISTORIC_COLOR, linestyle='--', linewidth=1.5,
-                    alpha=0.85, zorder=5,
+                    color='#000000', linestyle='--', linewidth=1.8,
+                    alpha=1.0, zorder=5,
                 )
                 if recon_handle is None:
                     recon_handle = ln
 
-            # Worst-case focal trajectory (solid red)
+            # Worst-case focal trajectory (solid red, 2.5 pt)
             worst = dataset_worst[ds][var_name]
             if worst is not None and worst.dropna().size > 0:
                 w = worst.sort_index()
                 ln, = ax.plot(
                     w.index, w.values,
-                    color='#c0392b', linewidth=2.0, alpha=0.95, zorder=6,
+                    color='#c0392b', linewidth=2.5, alpha=0.98, zorder=6,
                 )
                 if worst_handle is None:
                     worst_handle = ln
@@ -355,6 +470,7 @@ def main():
 
             if row_idx == len(VARIABLES) - 1:
                 format_xaxis_water_year(ax)
+                ax.set_xlabel(XAXIS_SUFFIX_LABEL, fontsize=FONTSIZE_LABEL)
             else:
                 ax.set_xticks(MONTH_STARTS_WY)
                 ax.set_xticklabels([])
@@ -363,8 +479,19 @@ def main():
             if col_idx == 0:
                 ax.set_ylabel(var_label, fontsize=FONTSIZE_LABEL)
             if row_idx == 0:
-                ax.set_title(DATASET_LABELS.get(ds, ds),
-                             fontsize=FONTSIZE_TITLE)
+                n = dataset_n_events[ds]
+                ax.set_title(
+                    f"{DATASET_LABELS.get(ds, ds)}\n"
+                    f"n = {n} drought events",
+                    fontsize=FONTSIZE_TITLE,
+                )
+
+            # Panel letter (top-left), matches label_panel() style used
+            # by Fig4/Fig7/Fig8/Fig9.
+            label_panel(
+                ax, PANEL_LETTERS[row_idx * len(DATASETS) + col_idx],
+                fontsize=FONTSIZE_LABEL, fontweight='normal',
+            )
 
             ax.grid(False)
             for spine in ax.spines.values():
@@ -383,6 +510,10 @@ def main():
     if recon_handle is not None:
         legend_handles.append(recon_handle)
         legend_labels.append('Reconstruction mean')
+    for zone in ['Watch', 'Warning', 'Emergency']:
+        if zone in ffmp_handles:
+            legend_handles.append(ffmp_handles[zone])
+            legend_labels.append(f'FFMP {zone}')
 
     if legend_handles:
         fig.legend(
@@ -401,10 +532,10 @@ def main():
         cbar.set_ticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
         cbar.set_ticklabels(['0', '20', '40', '60', '80', '100'])
 
-    out_path = os.path.join(FIG_OUTPUT_DIR, FIG_NAME)
-    fig.savefig(out_path, dpi=DPI_PRINT, bbox_inches='tight')
+    out_stem = os.path.join(FIG_OUTPUT_DIR, FIG_NAME_STEM)
+    save_fig(fig, out_stem, dpi=DPI_PRINT)
     plt.close(fig)
-    print(f"\nSaved: {out_path}")
+    print(f"\nSaved (png/svg/pdf): {out_stem}")
 
 
 if __name__ == '__main__':

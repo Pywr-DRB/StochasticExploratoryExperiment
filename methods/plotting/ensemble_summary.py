@@ -136,6 +136,7 @@ def plot_fdc_percentile_comparison(
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
     log_scale: bool = True,
+    show_inner_band: bool = True,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
@@ -244,16 +245,17 @@ def plot_fdc_percentile_comparison(
         alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
         zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
     )
-    ax.fill_between(
-        exceedance_probs, syn_iq_low, syn_iq_high,
-        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-        zorder=3, label=f'{synthetic_label} 50% IQR'
-    )
-    ax.fill_between(
-        exceedance_probs, hist_iq_low, hist_iq_high,
-        alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
-        zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
-    )
+    if show_inner_band:
+        ax.fill_between(
+            exceedance_probs, syn_iq_low, syn_iq_high,
+            alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+            zorder=3, label=f'{synthetic_label} 50% IQR'
+        )
+        ax.fill_between(
+            exceedance_probs, hist_iq_low, hist_iq_high,
+            alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+            zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
+        )
     ax.plot(
         exceedance_probs, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
@@ -292,6 +294,7 @@ def plot_autocorrelation_comparison(
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
+    show_inner_band: bool = True,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
@@ -361,13 +364,14 @@ def plot_autocorrelation_comparison(
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
         label=f'{synthetic_label} 99% IQR'
     )
-    ax.fill_between(
-        lag_range,
-        np.nanpercentile(syn_autocorr, inner_percentiles[0], axis=0),
-        np.nanpercentile(syn_autocorr, inner_percentiles[1], axis=0),
-        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-        label=f'{synthetic_label} 50% IQR'
-    )
+    if show_inner_band:
+        ax.fill_between(
+            lag_range,
+            np.nanpercentile(syn_autocorr, inner_percentiles[0], axis=0),
+            np.nanpercentile(syn_autocorr, inner_percentiles[1], axis=0),
+            alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+            label=f'{synthetic_label} 50% IQR'
+        )
     ax.plot(
         lag_range, np.nanmedian(syn_autocorr, axis=0),
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
@@ -407,6 +411,7 @@ def plot_weekly_streamflow_percentiles(
     show_legend: bool = False,
     synthetic_color: str = None,
     synthetic_label: str = 'Synthetic',
+    show_inner_band: bool = True,
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
@@ -597,16 +602,17 @@ def plot_weekly_streamflow_percentiles(
         alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
         zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
     )
-    ax.fill_between(
-        periods, syn_iq_low, syn_iq_high,
-        alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-        zorder=3, label=f'{synthetic_label} 50% IQR'
-    )
-    ax.fill_between(
-        periods, hist_iq_low, hist_iq_high,
-        alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
-        zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
-    )
+    if show_inner_band:
+        ax.fill_between(
+            periods, syn_iq_low, syn_iq_high,
+            alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
+            zorder=3, label=f'{synthetic_label} 50% IQR'
+        )
+        ax.fill_between(
+            periods, hist_iq_low, hist_iq_high,
+            alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+            zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
+        )
     ax.plot(
         periods, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',

@@ -160,19 +160,13 @@ def _plot_weekly_smooth(
     hist_p_low_s = _rolling_mean_1d(hist_p_low, smooth_window)
     hist_p_high_s = _rolling_mean_1d(hist_p_high, smooth_window)
 
-    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
+    # Layered from bottom: syn 98% → hist 98% → syn median → hist median
     ax.fill_between(periods, syn_p_low_s, syn_p_high_s,
                     alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
-                    zorder=1, label=f'{synthetic_label} 99% IQR (smoothed)')
+                    zorder=1, label=f'{synthetic_label} 98% IQR (smoothed)')
     ax.fill_between(periods, hist_p_low_s, hist_p_high_s,
                     alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
-                    zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 99% IQR (smoothed)')
-    ax.fill_between(periods, syn_iq_low, syn_iq_high,
-                    alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-                    zorder=3, label=f'{synthetic_label} 50% IQR')
-    ax.fill_between(periods, hist_iq_low, hist_iq_high,
-                    alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
-                    zorder=4, label=f'{RECONSTRUCTED_HIST_LABEL} 50% IQR')
+                    zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 98% IQR (smoothed)')
     ax.plot(periods, syn_median,
             color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
             zorder=5, label=f'{synthetic_label} (median)')
@@ -258,7 +252,7 @@ def _build_ensemble_figure_rev1(
         Q_historic, Q_synthetic,
         ax=ax_autocorr, percentiles=pct,
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-        show_legend=False,
+        show_legend=False, show_inner_band=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
     label_panel(ax_autocorr, 'a')
@@ -268,7 +262,7 @@ def _build_ensemble_figure_rev1(
         Q_historic, Q_synthetic,
         ax=ax_fdc, percentiles=pct,
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-        show_legend=False,
+        show_legend=False, show_inner_band=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
     )
     label_panel(ax_fdc, 'b')
@@ -279,7 +273,7 @@ def _build_ensemble_figure_rev1(
             Q_historic, Q_synthetic,
             ax=ax_periodic, timescale=timescale, percentiles=pct,
             synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-            show_legend=False,
+            show_legend=False, show_inner_band=False,
             _hist_agg=hist_agg, _syn_agg=syn_agg,
         )
     else:
@@ -324,14 +318,14 @@ def _build_ensemble_figure_rev1(
     )
 
     # Panel 2 (middle): anatomy teaching glyph
-    draw_iqr_anatomy(ax_anatomy, fontsize=9)
+    draw_iqr_anatomy(ax_anatomy, fontsize=9, show_inner_band=False)
 
     # Panel 3 (right): ensembles with IQR glyphs. Reconstructed historical
     # shares the alpha structure but uses a dashed thick median.
     dataset_handles = [
-        IQRBandHandle(color=synthetic_color),
+        IQRBandHandle(color=synthetic_color, show_inner_band=False),
         IQRBandHandle(color=HISTORIC_COLOR, linestyle='--',
-                      linewidth=LINEWIDTH_THICK),
+                      linewidth=LINEWIDTH_THICK, show_inner_band=False),
     ]
     dataset_labels = [
         f'{synthetic_label} Ensemble',
@@ -399,7 +393,7 @@ def plot_manuscript_ensemble_figure(dataset_id):
     fig = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=False,
-        percentiles=(2.5, 97.5),
+        percentiles=(1, 99),
     )
     save_fig(fig, rev1_stem, dpi=600)
     plt.close(fig)
@@ -409,7 +403,7 @@ def plot_manuscript_ensemble_figure(dataset_id):
     fig_smooth = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=True,
-        percentiles=(2.5, 97.5),
+        percentiles=(1, 99),
     )
     save_fig(fig_smooth, rev1_smooth_stem, dpi=600)
     plt.close(fig_smooth)
