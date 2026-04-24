@@ -19,6 +19,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+from matplotlib.ticker import MultipleLocator
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -27,6 +28,7 @@ from methods.load import load_drought_events
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
     HISTORIC_COLOR, HISTORIC_LABEL,
+    ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
     LINEWIDTH_MEDIUM, CMAP_SEQUENTIAL, DPI_HIGH,
     FONTSIZE_SMALL, FONTSIZE_MEDIUM,
 )
@@ -41,14 +43,14 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 # Axis labels
 METRIC_AXIS_LABELS = {
     'severity': 'Severity (max deviation)',
-    'magnitude': 'Magnitude (cumulative deficit)',
+    'magnitude': 'Magnitude (cumulative deficit, deficit-months)',
     'duration': 'Duration (months)',
 }
 
 # Multiline x-axis labels for the right-panel (CDF) bottom row
 METRIC_CDF_AXIS_LABELS = {
     'severity': 'Severity\n(max deficit)',
-    'magnitude': 'Magnitude\n(cumulative deficit)',
+    'magnitude': 'Magnitude\n(cumulative deficit, deficit-months)',
     'duration': 'Duration\n(months)',
 }
 
@@ -339,11 +341,29 @@ def plot_drought_manuscript_figure(
         else:
             y_bins = np.linspace(y_data.min(), y_max, n_bins + 1)
 
-        hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=CMAP_SEQUENTIAL, cmin=1,
-                             norm=mcolors.LogNorm())
-        counts_2d, _, _, hb = ax_hex.hist2d(x_data, y_data, **hist2d_kwargs)
-        bin_min = int(np.nanmin(counts_2d[counts_2d >= 1])) if np.any(counts_2d >= 1) else 1
-        bin_max = int(np.nanmax(counts_2d))
+        # Pre-compute counts to find the true populated range, so the
+        # norm / colorbar don't extend into empty decades (10^4, 10^5).
+        counts_prelim, _, _ = np.histogram2d(x_data, y_data, bins=[x_bins, y_bins])
+        bin_min = int(counts_prelim[counts_prelim >= 1].min()) if np.any(counts_prelim >= 1) else 1
+        bin_max = int(counts_prelim.max()) if np.any(counts_prelim >= 1) else 1
+
+        # Discrete half-decade log-spaced color bins. extend='both' puts
+        # arrows on both colorbar ends that capture the tails.
+        log_step = 0.5
+        log_lo = np.floor(np.log10(max(bin_min, 1)) / log_step) * log_step
+        log_hi = np.ceil(np.log10(max(bin_max, 1)) / log_step) * log_step
+        cbar_boundaries = 10 ** np.arange(log_lo, log_hi + log_step / 2, log_step)
+        # BoundaryNorm with extend='both' needs ncolors = (#intervals) + 2
+        # so the two extension regions each get their own discrete color.
+        n_data_bins = max(len(cbar_boundaries) - 1, 1)
+        n_cbar_colors = n_data_bins + 2
+        discrete_cmap = plt.get_cmap(CMAP_SEQUENTIAL, n_cbar_colors)
+        discrete_norm = mcolors.BoundaryNorm(cbar_boundaries, n_cbar_colors,
+                                             extend='both')
+
+        hist2d_kwargs = dict(bins=[x_bins, y_bins], cmap=discrete_cmap, cmin=1,
+                             norm=discrete_norm)
+        _, _, _, hb = ax_hex.hist2d(x_data, y_data, **hist2d_kwargs)
 
         if log_magnitude and hexbin_y == 'magnitude':
             ax_hex.set_yscale('log')
@@ -388,15 +408,33 @@ def plot_drought_manuscript_figure(
         va='top', ha='left',
     )
 
+    # -------- 1960s drought-of-record callout (arrow + label) --------
+    if len(drought_1960s) > 0:
+        start_year = pd.to_datetime(row_1960s['start']).year
+        end_year = pd.to_datetime(row_1960s['end']).year
+        short_1960s_label = f"{start_year}–{end_year} Drought"
+        ax_hex.annotate(
+            short_1960s_label,
+            xy=(float(row_1960s[hexbin_x]), float(row_1960s[hexbin_y])),
+            xytext=(-12, -14),
+            textcoords='offset points',
+            fontsize=FONTSIZE_SMALL - 2,
+            color='red', fontweight='bold',
+            ha='right', va='top',
+            arrowprops=dict(arrowstyle='->', color='red', lw=0.7,
+                            shrinkA=1, shrinkB=3),
+            zorder=12,
+        )
+
     # ------------------------------------------------------------------
-    # Colorbar in bottom-left cell
+    # Colorbar in bottom-left cell: discrete bins with end arrows
     # ------------------------------------------------------------------
-    hb.set_clim(vmin=bin_min, vmax=bin_max)
-    cb = fig.colorbar(hb, cax=ax_cbar, orientation='horizontal')
-    cb.set_label('Number of Droughts in Ensemble', fontsize=FONTSIZE_SMALL)
+    cb = fig.colorbar(hb, cax=ax_cbar, orientation='horizontal',
+                      extend='both', spacing='uniform')
+    cb.set_label('Drought event count per bin', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
     if log_hexbin_counts and gridshape == 'hex':
-        # hexbin stores log10(count) internally; convert tick positions to labels
+        # hexbin stores log10(count) internally; legacy path (not discretized)
         vmin, vmax = hb.get_clim()
         log_ticks = [np.log10(10**e) for e in range(0, 7)
                      if vmin <= np.log10(10**e) <= vmax]
@@ -406,10 +444,16 @@ def plot_drought_manuscript_figure(
             cb.set_ticks(log_ticks)
             cb.set_ticklabels(log_labels)
     else:
-        # Force a tick at the minimum bin count so it is always labelled
-        auto_ticks = [t for t in cb.get_ticks() if t > bin_min]
-        cb.set_ticks([bin_min] + auto_ticks)
-    # For gridshape='square' with log_hexbin_counts, LogNorm handles ticks automatically
+        # One tick per discrete boundary. If there are many bins, thin the
+        # labels to only powers of 10 to avoid overlap.
+        if len(cbar_boundaries) <= 8:
+            tick_vals = cbar_boundaries
+        else:
+            tick_vals = np.array([b for b in cbar_boundaries
+                                  if np.isclose(np.log10(b) % 1, 0, atol=1e-6)])
+        cb.set_ticks(tick_vals)
+        cb.set_ticklabels([f'{int(round(t))}' if t >= 1 else f'{t:.2g}'
+                           for t in tick_vals])
 
     # ------------------------------------------------------------------
     # Right panels: exceedance-rate CDFs (3x2) - one dataset per row
@@ -460,9 +504,9 @@ def plot_drought_manuscript_figure(
                 if scenario_max < baseline_max:
                     valid_mask = x <= scenario_max
                     ax.axvspan(scenario_max, x[-1],
-                               facecolor='#d0d0d0', alpha=0.3,
-                               hatch='///', edgecolor='grey',
-                               linewidth=0.5, zorder=2)
+                               facecolor='#d0d0d0', alpha=0.35,
+                               hatch='///', edgecolor='#333333',
+                               linewidth=0.8, zorder=2)
                 else:
                     valid_mask = np.ones(len(x), dtype=bool)
 
@@ -470,11 +514,11 @@ def plot_drought_manuscript_figure(
                 ax.fill_between(xv,
                                 delta_bands[1][valid_mask],
                                 delta_bands[99][valid_mask],
-                                color=color, alpha=0.15, linewidth=0, zorder=4)
+                                color=color, alpha=ALPHA_BAND_OUTER, linewidth=0, zorder=4)
                 ax.fill_between(xv,
                                 delta_bands[25][valid_mask],
                                 delta_bands[75][valid_mask],
-                                color=color, alpha=0.35, linewidth=0, zorder=4)
+                                color=color, alpha=ALPHA_BAND_INNER, linewidth=0, zorder=4)
                 ax.plot(xv, delta_bands[50][valid_mask],
                         color=color,
                         linestyle='-',
@@ -504,9 +548,9 @@ def plot_drought_manuscript_figure(
                     )
 
                 ax.fill_between(x, bands[1], bands[99],
-                                color=color, alpha=0.15, linewidth=0, zorder=4)
+                                color=color, alpha=ALPHA_BAND_OUTER, linewidth=0, zorder=4)
                 ax.fill_between(x, bands[25], bands[75],
-                                color=color, alpha=0.35, linewidth=0, zorder=4)
+                                color=color, alpha=ALPHA_BAND_INNER, linewidth=0, zorder=4)
                 ax.plot(x, bands[50],
                         color=color,
                         linestyle='-',
@@ -540,16 +584,19 @@ def plot_drought_manuscript_figure(
                     ax.set_ylim(bottom=1e-3)
 
             # --- Common formatting ---
+            # Show numeric x-tick labels on every row (per reviewer feedback);
+            # only the bottom row gets the full axis-label text.
             if r == n_rows - 1:
                 ax.set_xlabel(METRIC_CDF_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
             else:
                 ax.set_xlabel('')
-                ax.set_xticklabels([])
 
             if log_magnitude and metric == 'magnitude':
                 ax.set_xscale('log')
             if metric == 'magnitude':
                 ax.set_xlim(right=100 if ssi_window == 3 else 200)
+            if metric == 'severity':
+                ax.xaxis.set_major_locator(MultipleLocator(1))
 
             ax.tick_params(labelsize=FONTSIZE_SMALL)
             ax.grid(True, which='both', color='gray', alpha=0.15,
@@ -626,16 +673,19 @@ def plot_drought_manuscript_figure(
     legend_labels = [h.get_label() for h in legend_handles]
     for dataset_id in ALL_DATASETS:
         color = DATASET_COLORS[dataset_id]
-        patch_outer = mpatches.Patch(facecolor=color, alpha=0.15)
-        patch_inner = mpatches.Patch(facecolor=color, alpha=0.35)
+        patch_outer = mpatches.Patch(facecolor=color, alpha=ALPHA_BAND_OUTER)
+        patch_inner = mpatches.Patch(facecolor=color, alpha=ALPHA_BAND_INNER)
         line = mlines.Line2D([], [], color=color,
                              linestyle='-',
                              linewidth=LINEWIDTH_MEDIUM)
         legend_handles.append((patch_outer, patch_inner, line))
-        legend_labels.append(f'{DATASET_LABELS.get(dataset_id, dataset_id)} (1-99th, 25-75th %ile, median)')
+        legend_labels.append(
+            f'{DATASET_LABELS.get(dataset_id, dataset_id)} '
+            '(99% IQR, 50% IQR, median)'
+        )
     if plot_relative_change:
-        no_data_handle = mpatches.Patch(facecolor='#d0d0d0', alpha=0.3,
-                                         hatch='///', edgecolor='grey', linewidth=0.5)
+        no_data_handle = mpatches.Patch(facecolor='#d0d0d0', alpha=0.35,
+                                         hatch='///', edgecolor='#333333', linewidth=0.8)
         legend_handles.append(no_data_handle)
         legend_labels.append('No scenario droughts beyond this value')
 

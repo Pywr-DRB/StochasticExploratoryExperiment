@@ -65,11 +65,12 @@ FFMP_ZONE_COLORS_INT = {
 # DATASET LABELS
 # =============================================================================
 
-# Standard labels for datasets
+# Standard labels for datasets (two-row format so they fit in narrow legends
+# and side-anchored row labels without truncation).
 DATASET_LABELS = {
-    'stationary_ensemble': 'Stationary Baseline',
-    'climate_adjusted_low': 'Wetter Winter, Drier Summer (WWDS)',
-    'climate_adjusted_high': 'Wetter Winter, Similar Summer (WWSS)',
+    'stationary_ensemble': 'Stationary\nBaseline',
+    'climate_adjusted_low': 'Wetter Winter,\nDrier Summer (WWDS)',
+    'climate_adjusted_high': 'Wetter Winter,\nSimilar Summer (WWSS)',
 }
 
 # Short labels (for tight layouts)
@@ -98,6 +99,19 @@ IQR_LABELS = {
     '50': '50% IQR (Q25-Q75)',
     '99': '99% IQR (Q0.5-Q99.5)',
 }
+
+# =============================================================================
+# SSI DROUGHT CLASSIFICATION
+# =============================================================================
+
+# SSI drought-class thresholds on positive severity (severity = |min SSI|,
+# so larger = more severe). Single source of truth for Fig5a bands and caption.
+SSI_DROUGHT_CLASSES = [
+    {'name': 'Mild',     'range': (0.0, 1.0),          'color': '#FDD0A2'},
+    {'name': 'Moderate', 'range': (1.0, 1.5),          'color': '#FDAE6B'},
+    {'name': 'Severe',   'range': (1.5, 2.0),          'color': '#E6550D'},
+    {'name': 'Extreme',  'range': (2.0, float('inf')), 'color': '#A63603'},
+]
 
 # =============================================================================
 # DATASET ORDER
