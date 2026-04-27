@@ -38,7 +38,8 @@ sys.path.insert(0, os.path.dirname(
 import pywrdrb
 from methods.config import (
     FIG_DIR, OUTPUT_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
-    RECONSTRUCTION_OUTPUT_FNAME, DATASET_CONFIGS,
+    RECONSTRUCTION_OUTPUT_FNAME, RECONSTRUCTION_START_DATE,
+    RECONSTRUCTION_END_DATE, DATASET_CONFIGS,
 )
 from methods.water_year import (
     MONTH_STARTS_WY, vectorized_water_year_doy,
@@ -95,7 +96,8 @@ REFERENCE_WY_START = pd.Timestamp('2000-06-01')
 REFERENCE_WY_END = pd.Timestamp('2001-05-31')
 N_QUANTILE_LEVELS = 21    # 0, 5, 10, ..., 100 %
 
-CMAP = CMAP_SEQUENTIAL    # sequential viridis (from methods/plotting/styles.py)
+CMAP_N_BINS = 10          # discrete viridis bands (matches Fig9 %DE 10-pp ticks)
+CMAP = plt.get_cmap(CMAP_SEQUENTIAL, CMAP_N_BINS)
 
 # (variable_key, y-label, y-scale, rolling-mean window in days)
 # Release and flow are converted from MGD to MCM/day (same convention as
@@ -170,7 +172,7 @@ def _build_realization_cache(data, dataset_id, realization_ids):
 
 
 def load_reconstruction_annual_cycle():
-    """Mean annual cycle (by DOY) for the three plotted variables.
+    """Median daily annual cycle (by DOY) for the three plotted variables.
 
     Release and flow are converted from MGD to MCM/day to match the figure.
     """
@@ -209,7 +211,7 @@ def load_reconstruction_annual_cycle():
     ]:
         doy = vectorized_water_year_doy(series.index)
         df = pd.DataFrame({'doy': doy, 'value': series.values})
-        out[name] = df.groupby('doy')['value'].mean().sort_index()
+        out[name] = df.groupby('doy')['value'].median().sort_index()
     return out
 
 
@@ -388,10 +390,12 @@ def main():
         for ds in DATASETS
     }
 
-    # 6. Figure
+    # 6. Figure — sized for readable 2-line titles, aligned y-labels, a
+    # 5-entry legend block, and a horizontal discrete colorbar without
+    # any overlap between those elements.
     fig, axes = plt.subplots(
         len(VARIABLES), len(DATASETS),
-        figsize=(3.8 * len(DATASETS), 2.8 * len(VARIABLES)),
+        figsize=(4.4 * len(DATASETS), 3.2 * len(VARIABLES)),
         sharex='col', sharey='row',
     )
     if len(VARIABLES) == 1:
@@ -443,7 +447,7 @@ def main():
                                 zorder=4.5,
                             )
 
-            # Reconstruction mean (dashed black, full opacity, 1.8 pt)
+            # Historical reconstruction daily median (dashed black, 1.8 pt)
             if recon is not None and var_name in recon:
                 rs = recon[var_name]
                 ln, = ax.plot(
@@ -468,9 +472,11 @@ def main():
             if yscale == 'log':
                 ax.set_yscale('log')
 
+            # Keep water-year tick marks on every subplot; only the bottom
+            # row shows tick labels, and the axis label is shared via
+            # fig.supxlabel() below so it only appears once.
             if row_idx == len(VARIABLES) - 1:
                 format_xaxis_water_year(ax)
-                ax.set_xlabel(XAXIS_SUFFIX_LABEL, fontsize=FONTSIZE_LABEL)
             else:
                 ax.set_xticks(MONTH_STARTS_WY)
                 ax.set_xticklabels([])
@@ -498,39 +504,67 @@ def main():
                 spine.set_edgecolor('#333333')
 
     fig.subplots_adjust(
-        left=0.09, right=0.98, top=0.92, bottom=0.22,
-        hspace=0.12, wspace=0.08,
+        left=0.11, right=0.98, top=0.90, bottom=0.28,
+        hspace=0.22, wspace=0.10,
     )
 
+    # Align all left-column y-axis labels so the text begins at the same
+    # x coordinate across rows (avoids the staggered look from variable-length
+    # first lines).
+    fig.align_ylabels(axes[:, 0])
+
+    # Single shared x-axis label — tick marks stay on every subplot, but
+    # only one "Water Year (Jun 1 - May 31, FFMP convention)" caption is
+    # rendered, centered under the bottom row.
+    fig.supxlabel(XAXIS_SUFFIX_LABEL, fontsize=FONTSIZE_LABEL, y=0.235)
+
     # Shared legend for overlay lines (placed above the colorbar)
+    recon_years = (
+        f"{pd.Timestamp(RECONSTRUCTION_START_DATE).year}"
+        f"–{pd.Timestamp(RECONSTRUCTION_END_DATE).year}"
+    )
     legend_handles, legend_labels = [], []
     if worst_handle is not None:
         legend_handles.append(worst_handle)
-        legend_labels.append('Worst-case focal event')
+        legend_labels.append(
+            'Worst-case focal drought trajectory '
+            '(lowest minimum NYC storage in focal region)'
+        )
     if recon_handle is not None:
         legend_handles.append(recon_handle)
-        legend_labels.append('Reconstruction mean')
+        legend_labels.append(
+            f'Historical reconstruction daily median ({recon_years})'
+        )
+    ffmp_level_map = {'Watch': 'L3', 'Warning': 'L4', 'Emergency': 'L5'}
     for zone in ['Watch', 'Warning', 'Emergency']:
         if zone in ffmp_handles:
             legend_handles.append(ffmp_handles[zone])
-            legend_labels.append(f'FFMP {zone}')
+            legend_labels.append(
+                f'FFMP {zone} threshold ({ffmp_level_map[zone]}, '
+                f'seasonal rule curve)'
+            )
 
     if legend_handles:
         fig.legend(
             legend_handles, legend_labels,
-            loc='lower center', bbox_to_anchor=(0.5, 0.095),
-            ncol=len(legend_handles), fontsize=FONTSIZE_LEGEND,
+            loc='lower center', bbox_to_anchor=(0.5, 0.14),
+            ncol=2, fontsize=FONTSIZE_LEGEND,
             frameon=False,
         )
 
     if sm_for_colorbar is not None:
-        cbar_ax = fig.add_axes([0.30, 0.04, 0.40, 0.018])
+        cbar_ax = fig.add_axes([0.30, 0.045, 0.40, 0.020])
         cbar = fig.colorbar(sm_for_colorbar, cax=cbar_ax,
                             orientation='horizontal')
+        # Label above the bar, tick marks and tick labels below.
+        cbar.ax.xaxis.set_label_position('top')
+        cbar.ax.xaxis.set_ticks_position('bottom')
         cbar.set_label('% of focal water-years below y-axis value',
-                       fontsize=FONTSIZE_LEGEND)
-        cbar.set_ticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-        cbar.set_ticklabels(['0', '20', '40', '60', '80', '100'])
+                       fontsize=FONTSIZE_LEGEND, labelpad=6)
+        # Tick at every discrete bin edge (0, 10, 20, ..., 100 %).
+        bin_edges = np.linspace(0.0, 1.0, CMAP_N_BINS + 1)
+        cbar.set_ticks(bin_edges)
+        cbar.set_ticklabels([f'{int(round(v * 100))}' for v in bin_edges])
 
     out_stem = os.path.join(FIG_OUTPUT_DIR, FIG_NAME_STEM)
     save_fig(fig, out_stem, dpi=DPI_PRINT)

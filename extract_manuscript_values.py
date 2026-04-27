@@ -1,16 +1,15 @@
 """
 Extract manuscript reference values for Section 4 from the full 2000-member ensemble.
 
-Writes:
-  manuscript/extracted_values_rev1.json         -- all numeric keys
-  manuscript/extracted_values_rev1.md           -- alphabetical human-readable listing
-  manuscript/extracted_values_by_section.md     -- section-grouped listing
-  manuscript/focal_event_selections.json        -- Section 4.6 focal event draws
-  manuscript/extracted_values_rev1_errors.log   -- any failures
+Writes (under manuscript/ensemble_stats/):
+  extracted_values_rev1.json         -- all numeric keys
+  extracted_values_rev1.md           -- alphabetical human-readable listing
+  extracted_values_by_section.md     -- section-grouped listing
+  focal_event_selections.json        -- Section 4.6 focal event draws
+  extracted_values_rev1_errors.log   -- any failures
 
-Runs on HPC from the repo root:
-  python -m analysis.extract_manuscript_values
-  python analysis/extract_manuscript_values.py
+Run from the experiment repo root (or via sbatch S8_extract_manuscript_values.sh):
+  python extract_manuscript_values.py
 """
 
 from __future__ import annotations
@@ -53,11 +52,12 @@ from methods.zone_duration_metrics import calculate_drought_zone_events
 # Paths and constants
 # ---------------------------------------------------------------------------
 
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent
 MS = ROOT / "manuscript"
-MS.mkdir(exist_ok=True)
+MS_OUT = MS / "ensemble_stats"
+MS_OUT.mkdir(parents=True, exist_ok=True)
 
-LOG_FILE = MS / "extracted_values_rev1_errors.log"
+LOG_FILE = MS_OUT / "extracted_values_rev1_errors.log"
 
 # Dataset id mappings  (prefix -> dataset_id)
 ENS_IDS: dict[str, str] = {
@@ -751,8 +751,10 @@ def section_43(out: dict) -> dict:
     try:
         import pywrdrb
         fname_rec = f"{OUTPUT_DIR}/reconstruction.hdf5"
-        data_rec_dur = pywrdrb.Data()
-        data_rec_dur.load_from_export(fname_rec, results_sets=["res_level"])
+        # reconstruction.hdf5 is a raw pywr output (not Data.export() schema),
+        # so it must be loaded via load_output().
+        data_rec_dur = pywrdrb.Data(results_sets=["res_level"], print_status=False)
+        data_rec_dur.load_output(output_filenames=[fname_rec])
         rec_realizations = sorted(data_rec_dur.res_level["reconstruction"].keys())
         emrg_durs: list[float] = []
         for r in rec_realizations:
@@ -875,19 +877,20 @@ def section_44(out: dict) -> dict:
             data_f8 = pywrdrb.Data()
             data_f8.load_from_export(
                 fname,
-                results_sets=["nyc_release_components", "major_flow"]
+                results_sets=["contribution", "major_flow"]
             )
             realizations_f8 = sorted(data_f8.major_flow[ens_id].keys())
 
             for r in realizations_f8:
-                release_df = data_f8.nyc_release_components[ens_id][r]
+                # 'contribution' is the per-realization sum of
+                # mrf_montagueTrenton_<res> across NYC reservoirs, written by
+                # 04_postprocess_data_mpi.py as a single-column DataFrame.
+                contrib_df = data_f8.contribution[ens_id][r]
                 mont_flow = data_f8.major_flow[ens_id][r]["delMontague"]
 
-                contrib_cols = [f"mrf_montagueTrenton_{res}" for res in NYC_RESERVOIRS
-                                if f"mrf_montagueTrenton_{res}" in release_df.columns]
-                if not contrib_cols:
-                    break  # no mandated release columns
-                nyc_mandate = release_df[contrib_cols].sum(axis=1)
+                if "mrf_montagueTrenton_nyc" not in contrib_df.columns:
+                    break  # no mandated release column
+                nyc_mandate = contrib_df["mrf_montagueTrenton_nyc"]
 
                 # Align to common index
                 common_idx_f8 = nyc_mandate.index.intersection(mont_flow.index)
@@ -1275,7 +1278,7 @@ def section_46(out: dict, focal_selections: dict) -> tuple[dict, dict]:
                 data_dyn = pywrdrb.Data()
                 data_dyn.load_from_export(
                     fname,
-                    results_sets=["res_storage", "res_level", "nyc_release_components",
+                    results_sets=["res_storage", "res_level", "contribution",
                                   "major_flow", "ibt_diversions"],
                     realizations=[r_sel],
                 )
@@ -1316,12 +1319,12 @@ def section_46(out: dict, focal_selections: dict) -> tuple[dict, dict]:
                 stor_ev = stor_r.loc[event_start:event_end]
                 out[f"focal_{key}_min_storage"] = float(stor_ev.min()) if len(stor_ev) > 0 else np.nan
 
-                # Mandate dominant days: NYC mandate > natural Montague flow
-                contrib_cols = [f"mrf_montagueTrenton_{res}" for res in NYC_RESERVOIRS
-                                if f"mrf_montagueTrenton_{res}" in
-                                data_dyn.nyc_release_components[ens_id][r_sel].columns]
-                if contrib_cols:
-                    mandate = data_dyn.nyc_release_components[ens_id][r_sel][contrib_cols].sum(axis=1)
+                # Mandate dominant days: NYC mandate > natural Montague flow.
+                # 'contribution' holds the pre-aggregated NYC mandate column
+                # (sum of mrf_montagueTrenton_<res> across NYC reservoirs).
+                contrib_df = data_dyn.contribution[ens_id][r_sel]
+                if "mrf_montagueTrenton_nyc" in contrib_df.columns:
+                    mandate = contrib_df["mrf_montagueTrenton_nyc"]
                     mandate_ev = mandate.reindex(stor_ev.index, fill_value=0)
                     mont_ev = mont_r.reindex(stor_ev.index, fill_value=np.nan)
                     natural_flow = mont_ev - mandate_ev
@@ -1463,7 +1466,7 @@ def _write_md_listings(out: dict) -> None:
             lines.append(f"- `{k}` = {v:.6g}\n")
         else:
             lines.append(f"- `{k}` = {v}\n")
-    (MS / "extracted_values_rev1.md").write_text("".join(lines), encoding="utf-8")
+    (MS_OUT / "extracted_values_rev1.md").write_text("".join(lines), encoding="utf-8")
 
     # Section-grouped listing
     section_lines = ["# Extracted manuscript values by section (rev1)\n\n"]
@@ -1497,7 +1500,7 @@ def _write_md_listings(out: dict) -> None:
             else:
                 section_lines.append(f"- `{k}` = {v}\n")
 
-    (MS / "extracted_values_by_section.md").write_text(
+    (MS_OUT / "extracted_values_by_section.md").write_text(
         "".join(section_lines), encoding="utf-8")
 
 
@@ -1527,7 +1530,7 @@ def _validate_against_text_edits(out: dict, n_written: int) -> str:
         logging.warning(msg)
         _error_log.append(msg)
 
-    return (f"Wrote {n_written} values to {MS / 'extracted_values_rev1.json'}; "
+    return (f"Wrote {n_written} values to {MS_OUT / 'extracted_values_rev1.json'}; "
             f"missing: {len(missing)} / {len(required_keys)} required keys.")
 
 
@@ -1551,11 +1554,11 @@ def main() -> None:
     out, focal_selections = section_46(out, focal_selections)
 
     # Write JSON (NaN → null)
-    json_path = MS / "extracted_values_rev1.json"
+    json_path = MS_OUT / "extracted_values_rev1.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, default=_nan_safe_default)
 
-    focal_path = MS / "focal_event_selections.json"
+    focal_path = MS_OUT / "focal_event_selections.json"
     with open(focal_path, "w", encoding="utf-8") as f:
         json.dump(focal_selections, f, indent=2, default=_nan_safe_default)
 
@@ -1576,7 +1579,7 @@ def main() -> None:
     else:
         print("No computation errors.")
 
-    print(f"\nOutputs written to {MS}/")
+    print(f"\nOutputs written to {MS_OUT}/")
     print(f"  extracted_values_rev1.json  ({len(out)} keys)")
     print(f"  focal_event_selections.json")
     print(f"  extracted_values_rev1.md")

@@ -29,8 +29,8 @@ run() {
 # run plotting_scripts/Fig4_plot_ensemble_diagnostics.py stationary_ensemble
 
 # # Fig5: Drought metric distributions
-# # run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
-# # run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
+# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
+# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
 # run plotting_scripts/Fig5_plot_drought_metric_distribution.py 3
 
 # # Fig6: Drought zone occurrence (temporal probability + frequency/duration boxplots)
@@ -38,13 +38,13 @@ run() {
 
 
 # # Fig7: KDEs of NYC contribution / total inflow
-# run plotting_scripts/Fig7_nyc_contribution_kdes.py
+# run plotting_scripts/Fig7_2x3_kdes_3mo_9mo_windows.py
 
 # # Fig8: NYC contribution distributions
 # run plotting_scripts/Fig8_plot_contribution_distributions.py --montague --layout side_by_side
 
 # Fig9: Drought satisficing heatmaps (severity x magnitude)
-run plotting_scripts/Fig9_plot_drought_satisficing_heatmap.py 3
+# run plotting_scripts/Fig9_plot_drought_satisficing_heatmap_2col.py 3
 
 # Fig10: Focal-event DOY quantile gradient (3x3 storage/release/flow x scenarios)
 run plotting_scripts/Fig10alt_focal_doy_quantiles.py
