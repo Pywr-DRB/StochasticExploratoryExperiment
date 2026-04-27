@@ -48,6 +48,7 @@ A serial workflow (`serial_workflow.py`) is available for debugging or small-sca
 | `S5_calculate_performance_metrics.sh` | Calculate annual, Hashimoto, and event metrics | 1 node, 20 tasks |
 | `S6_run_figure_generation.sh` | Generate manuscript figures | 1 node |
 | `S7_run_SI_scripts.sh` | Generate supplementary information figures | 1 node |
+| `S8_extract_manuscript_values.sh` | Extract Section 4 manuscript reference values from ensemble outputs | 1 node, 1 task |
 | `S99_run_entire_workflow.sh` | Submit full pipeline with SLURM dependency chains | All of the above |
 
 Usage:
@@ -64,6 +65,7 @@ sbatch S4_calculate_ssi.sh
 sbatch S5_calculate_performance_metrics.sh
 sbatch S6_run_figure_generation.sh
 sbatch S7_run_SI_scripts.sh
+sbatch S8_extract_manuscript_values.sh
 ```
 
 `S99_run_entire_workflow.sh` uses `--dependency=afterok` to chain jobs, maximizing parallelism:
@@ -81,7 +83,8 @@ S0 (baseline)
       S5 (performance metrics)
       |
       ├── S6 (figures)
-      └── S7 (SI figures)
+      ├── S7 (SI figures)
+      └── S8 (extract manuscript values)
 ```
 
 ## File naming conventions

@@ -14,6 +14,7 @@ Run from the experiment repo root (or via sbatch S8_extract_manuscript_values.sh
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import re
@@ -27,6 +28,7 @@ from scipy.stats import gaussian_kde
 from methods.config import (
     BASELINE_DATASET,
     DATASET_CONFIGS,
+    MGD_TO_MCM,
     N_YEARS,
     NYC_RESERVOIRS,
     NYC_TOTAL_CAPACITY,
@@ -139,7 +141,7 @@ def section_41(out: dict) -> dict:
     # --- Reconstruction flow ---
     try:
         rec_hist = load_baseline_historical_flow(
-            gage_flow=False, period="baseline", flowtype=BASELINE_DATASET
+            gage_flow=False, period="full", flowtype=BASELINE_DATASET
         )
         nyc_flow = rec_hist[NYC_RESERVOIRS].sum(axis=1)
 
@@ -162,7 +164,7 @@ def section_41(out: dict) -> dict:
 
         # Reconstruct median ACF (lags 1..30) from above
         rec_hist_full = load_baseline_historical_flow(
-            gage_flow=False, period="baseline", flowtype=BASELINE_DATASET
+            gage_flow=False, period="full", flowtype=BASELINE_DATASET
         )
         nyc_flow_full = rec_hist_full[NYC_RESERVOIRS].sum(axis=1)
         rec_acf_df = _compute_acf_per_year(nyc_flow_full, max_lag=30)
@@ -183,17 +185,19 @@ def section_41(out: dict) -> dict:
                 ens_acf_per_lag[lag_idx].append(lag_medians[lag_idx])
 
         ens_median_acf = np.array([np.median(v) for v in ens_acf_per_lag])
-        out["max_abs_median_acf_offset"] = float(
-            np.max(np.abs(ens_median_acf - rec_median_acf))
-        )
+        acf_offsets = np.abs(ens_median_acf - rec_median_acf)
+        out["max_abs_median_acf_offset"] = float(acf_offsets.max())
+        # 1-indexed lag (in days) at which the maximum offset occurs
+        out["max_abs_median_acf_offset_lag"] = int(np.argmax(acf_offsets) + 1)
     except Exception as exc:
         _log_error("max_abs_median_acf_offset", exc)
         out["max_abs_median_acf_offset"] = np.nan
+        out["max_abs_median_acf_offset_lag"] = np.nan
 
     # --- FDC values from annual FDCs ---
     try:
         rec_hist_fdc = load_baseline_historical_flow(
-            gage_flow=False, period="baseline", flowtype=BASELINE_DATASET
+            gage_flow=False, period="full", flowtype=BASELINE_DATASET
         )
         nyc_fdc_flow = rec_hist_fdc[NYC_RESERVOIRS].sum(axis=1)
         water_years_fdc = vectorized_water_year(nyc_fdc_flow.index)
@@ -209,8 +213,9 @@ def section_41(out: dict) -> dict:
             fdc_high_vals.append(float(np.interp(0.01, exceedance, wy_vals)))
             fdc_low_vals.append(float(np.interp(0.99, exceedance, wy_vals)))
 
-        out["hist_fdc_high"] = float(np.median(fdc_high_vals))
-        out["hist_fdc_low"]  = float(np.median(fdc_low_vals))
+        # FDC values are aggregated in MGD; convert to MCM/d for the manuscript.
+        out["hist_fdc_high"] = float(np.median(fdc_high_vals)) * MGD_TO_MCM
+        out["hist_fdc_low"]  = float(np.median(fdc_low_vals))  * MGD_TO_MCM
     except Exception as exc:
         _log_error("hist_fdc_high/low", exc)
         out.setdefault("hist_fdc_high", np.nan)
@@ -1538,27 +1543,69 @@ def _validate_against_text_edits(out: dict, n_written: int) -> str:
 # Main
 # ---------------------------------------------------------------------------
 
+SECTION_CHOICES = ["all", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]
+
+
+def _drop_section_keys(out: dict, section: str) -> dict:
+    """Remove keys assigned to the given section so they are recomputed cleanly."""
+    prefixes = SECTION_PREFIXES[section]
+    return {
+        k: v for k, v in out.items()
+        if not any(k.startswith(p) or k == p.rstrip("_") for p in prefixes)
+    }
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--section",
+        choices=SECTION_CHOICES,
+        default="all",
+        help="Run a single Section 4.x block (default: all). When a single "
+             "section is given, existing keys in extracted_values_rev1.json are "
+             "preserved and only the targeted section's keys are recomputed.",
+    )
+    args = parser.parse_args()
+
     print("=" * 70)
-    print("extract_manuscript_values.py — starting extraction")
+    print(f"extract_manuscript_values.py — starting extraction (section={args.section})")
     print("=" * 70)
 
     out: dict = {}
     focal_selections: dict = {}
 
-    out = section_41(out)
-    out = section_42(out)
-    out = section_43(out)
-    out = section_44(out)
-    out = section_45(out)
-    out, focal_selections = section_46(out, focal_selections)
+    json_path = MS_OUT / "extracted_values_rev1.json"
+    focal_path = MS_OUT / "focal_event_selections.json"
+
+    # Targeted rerun: preload prior values, then drop the section being rerun
+    # so its keys get recomputed without losing the other sections' results.
+    if args.section != "all" and json_path.exists():
+        with open(json_path, encoding="utf-8") as f:
+            prior = json.load(f)
+        out = _drop_section_keys(prior, args.section)
+        print(f"Loaded {len(prior)} prior keys; recomputing section {args.section} "
+              f"({len(prior) - len(out)} keys to refresh).")
+        if focal_path.exists():
+            with open(focal_path, encoding="utf-8") as f:
+                focal_selections = json.load(f)
+
+    if args.section in ("all", "4.1"):
+        out = section_41(out)
+    if args.section in ("all", "4.2"):
+        out = section_42(out)
+    if args.section in ("all", "4.3"):
+        out = section_43(out)
+    if args.section in ("all", "4.4"):
+        out = section_44(out)
+    if args.section in ("all", "4.5"):
+        out = section_45(out)
+    if args.section in ("all", "4.6"):
+        out, focal_selections = section_46(out, focal_selections)
 
     # Write JSON (NaN → null)
-    json_path = MS_OUT / "extracted_values_rev1.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, default=_nan_safe_default)
 
-    focal_path = MS_OUT / "focal_event_selections.json"
     with open(focal_path, "w", encoding="utf-8") as f:
         json.dump(focal_selections, f, indent=2, default=_nan_safe_default)
 

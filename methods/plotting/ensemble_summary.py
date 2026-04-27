@@ -30,8 +30,8 @@ MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 # Approximate week numbers for start of each month
 MONTH_WEEK_STARTS = [1, 5, 9, 14, 18, 22, 27, 31, 35, 40, 44, 48]
 
-# Unit conversion: 1 MGD = 0.003785411784 MCM/day
-MGD_TO_MCM = 3.785411784e-3
+# Re-exported for backward compatibility; canonical definition lives in methods.config.
+from methods.config import MGD_TO_MCM
 
 
 def _get_aggregate_flow(df: pd.DataFrame, sites: list = None) -> pd.Series:
