@@ -230,6 +230,11 @@ NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,800 MG
 # as zero to filter out numerical noise / trivially small deficits.
 DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
 
+# Unit conversion: 1 US gallon = 3.785411784 L exactly. Same factor for flow
+# (MGD → MCM/day) and volume (MG → MCM); two names are kept for call-site clarity.
+MGD_TO_MCM = 3.785411784e-3
+MG_TO_MCM = MGD_TO_MCM
+
 # =============================================================================
 # VALIDATION (runs at import time)
 # =============================================================================
