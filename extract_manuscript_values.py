@@ -1546,15 +1546,6 @@ def _validate_against_text_edits(out: dict, n_written: int) -> str:
 SECTION_CHOICES = ["all", "4.1", "4.2", "4.3", "4.4", "4.5", "4.6"]
 
 
-def _drop_section_keys(out: dict, section: str) -> dict:
-    """Remove keys assigned to the given section so they are recomputed cleanly."""
-    prefixes = SECTION_PREFIXES[section]
-    return {
-        k: v for k, v in out.items()
-        if not any(k.startswith(p) or k == p.rstrip("_") for p in prefixes)
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1563,7 +1554,7 @@ def main() -> None:
         default="all",
         help="Run a single Section 4.x block (default: all). When a single "
              "section is given, existing keys in extracted_values_rev1.json are "
-             "preserved and only the targeted section's keys are recomputed.",
+             "preserved and the targeted section's keys are overwritten in place.",
     )
     args = parser.parse_args()
 
@@ -1577,14 +1568,15 @@ def main() -> None:
     json_path = MS_OUT / "extracted_values_rev1.json"
     focal_path = MS_OUT / "focal_event_selections.json"
 
-    # Targeted rerun: preload prior values, then drop the section being rerun
-    # so its keys get recomputed without losing the other sections' results.
+    # Targeted rerun: load prior values so other sections survive; the section
+    # functions overwrite their own keys in place. We deliberately do NOT
+    # pre-drop keys by prefix — SECTION_PREFIXES is a section-grouping hint for
+    # the markdown listing, not a precise per-section ownership map (e.g. 4.2's
+    # 'ssb_q' would clobber 4.3's ssb_q25_*_years and 4.4's ssb_q99_share_*).
     if args.section != "all" and json_path.exists():
         with open(json_path, encoding="utf-8") as f:
-            prior = json.load(f)
-        out = _drop_section_keys(prior, args.section)
-        print(f"Loaded {len(prior)} prior keys; recomputing section {args.section} "
-              f"({len(prior) - len(out)} keys to refresh).")
+            out = json.load(f)
+        print(f"Loaded {len(out)} prior keys; recomputing section {args.section} in place.")
         if focal_path.exists():
             with open(focal_path, encoding="utf-8") as f:
                 focal_selections = json.load(f)

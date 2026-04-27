@@ -50,7 +50,7 @@ from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
     HISTORIC_COLOR, RECONSTRUCTED_HIST_LABEL,
     ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
-    LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
+    LINEWIDTH_THIN, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_PRINT, apply_publication_style,
     save_fig, label_panel,
 )
@@ -164,9 +164,12 @@ def _plot_weekly_smooth(
     ax.fill_between(periods, syn_p_low_s, syn_p_high_s,
                     alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
                     zorder=1, label=f'{synthetic_label} 98% IQR (smoothed)')
-    ax.fill_between(periods, hist_p_low_s, hist_p_high_s,
-                    alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
-                    zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 98% IQR (smoothed)')
+    ax.plot(periods, hist_p_low_s,
+            color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+            zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 98% IQR lower (smoothed)')
+    ax.plot(periods, hist_p_high_s,
+            color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+            zorder=2, label=f'{RECONSTRUCTED_HIST_LABEL} 98% IQR upper (smoothed)')
     ax.plot(periods, syn_median,
             color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
             zorder=5, label=f'{synthetic_label} (median)')
@@ -325,7 +328,8 @@ def _build_ensemble_figure_rev1(
     dataset_handles = [
         IQRBandHandle(color=synthetic_color, show_inner_band=False),
         IQRBandHandle(color=HISTORIC_COLOR, linestyle='--',
-                      linewidth=LINEWIDTH_THICK, show_inner_band=False),
+                      linewidth=LINEWIDTH_THICK, show_inner_band=False,
+                      outline_only=True, outline_linewidth=LINEWIDTH_THIN),
     ]
     dataset_labels = [
         f'{synthetic_label} Ensemble',

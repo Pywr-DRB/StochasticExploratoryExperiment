@@ -17,7 +17,7 @@ from .styles import (
     HISTORIC_COLOR, HISTORIC_LABEL,
     DATASET_COLORS, DATASET_LABELS,
     ALPHA_FILL, ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
-    LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
+    LINEWIDTH_THIN, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
     DPI_PRINT, apply_publication_style
 )
 
@@ -121,6 +121,21 @@ def _vectorized_autocorr(series: np.ndarray, max_lag: int) -> np.ndarray:
         else:
             autocorr[lag - 1] = np.nan
     return autocorr
+
+
+def _compute_annual_acfs(flow_series: pd.Series, max_lag: int,
+                        min_days: int = 300) -> np.ndarray:
+    """Compute one ACF per calendar year. Returns (n_years, max_lag)."""
+    s = flow_series.dropna()
+    years = s.index.year.values
+    vals = s.values
+    out = []
+    for y in np.unique(years):
+        yv = vals[years == y]
+        if len(yv) < min_days:
+            continue
+        out.append(_vectorized_autocorr(yv, max_lag))
+    return np.asarray(out) if out else np.empty((0, max_lag))
 
 
 def plot_fdc_percentile_comparison(
@@ -240,10 +255,15 @@ def plot_fdc_percentile_comparison(
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
         zorder=1, label=f'{synthetic_label} 99% IQR'
     )
-    ax.fill_between(
-        exceedance_probs, hist_p_low, hist_p_high,
-        alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
-        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
+    ax.plot(
+        exceedance_probs, hist_p_low,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (lower)'
+    )
+    ax.plot(
+        exceedance_probs, hist_p_high,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (upper)'
     )
     if show_inner_band:
         ax.fill_between(
@@ -344,45 +364,64 @@ def plot_autocorrelation_comparison(
 
     lag_range = np.arange(1, max_lag + 1)
 
-    # Vectorized autocorrelation for historic data
-    hist_series = _hist_agg.dropna().values
-    hist_autocorr = _vectorized_autocorr(hist_series, max_lag)
+    # Per-year ACFs for historic
+    hist_acfs = _compute_annual_acfs(_hist_agg, max_lag)
+    hist_median = np.nanmedian(hist_acfs, axis=0)
+    hist_p_low  = np.nanpercentile(hist_acfs, percentiles[0], axis=0)
+    hist_p_high = np.nanpercentile(hist_acfs, percentiles[1], axis=0)
+    hist_iq_low  = np.nanpercentile(hist_acfs, inner_percentiles[0], axis=0)
+    hist_iq_high = np.nanpercentile(hist_acfs, inner_percentiles[1], axis=0)
 
-    # Vectorized autocorrelation for each synthetic realization
-    n_realizations = len(_syn_agg)
-    syn_autocorr = np.zeros((n_realizations, max_lag))
+    # Per-year ACFs pooled across synthetic realizations
+    all_syn_acfs = []
+    for real_id, flow_series in _syn_agg.items():
+        acfs = _compute_annual_acfs(flow_series, max_lag)
+        if len(acfs) > 0:
+            all_syn_acfs.append(acfs)
+    all_syn_acfs = np.vstack(all_syn_acfs)
 
-    for i, (real_id, flow_series) in enumerate(_syn_agg.items()):
-        series = flow_series.dropna().values
-        syn_autocorr[i, :] = _vectorized_autocorr(series, max_lag)
+    syn_median = np.nanmedian(all_syn_acfs, axis=0)
+    syn_p_low  = np.nanpercentile(all_syn_acfs, percentiles[0], axis=0)
+    syn_p_high = np.nanpercentile(all_syn_acfs, percentiles[1], axis=0)
+    syn_iq_low  = np.nanpercentile(all_syn_acfs, inner_percentiles[0], axis=0)
+    syn_iq_high = np.nanpercentile(all_syn_acfs, inner_percentiles[1], axis=0)
 
-    # Plot synthetic: outer band → inner band → median
+    # Layered: syn outer → hist outer → [syn inner] → [hist inner] → syn median → hist median
     ax.fill_between(
-        lag_range,
-        np.nanpercentile(syn_autocorr, percentiles[0], axis=0),
-        np.nanpercentile(syn_autocorr, percentiles[1], axis=0),
+        lag_range, syn_p_low, syn_p_high,
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
-        label=f'{synthetic_label} 99% IQR'
+        zorder=1, label=f'{synthetic_label} 99% IQR'
+    )
+    ax.plot(
+        lag_range, hist_p_low,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (lower)'
+    )
+    ax.plot(
+        lag_range, hist_p_high,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (upper)'
     )
     if show_inner_band:
         ax.fill_between(
-            lag_range,
-            np.nanpercentile(syn_autocorr, inner_percentiles[0], axis=0),
-            np.nanpercentile(syn_autocorr, inner_percentiles[1], axis=0),
+            lag_range, syn_iq_low, syn_iq_high,
             alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-            label=f'{synthetic_label} 50% IQR'
+            zorder=3, label=f'{synthetic_label} 50% IQR'
+        )
+        ax.fill_between(
+            lag_range, hist_iq_low, hist_iq_high,
+            alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
+            zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
         )
     ax.plot(
-        lag_range, np.nanmedian(syn_autocorr, axis=0),
+        lag_range, syn_median,
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        label=f'{synthetic_label} (median)'
+        zorder=5, label=f'{synthetic_label} (median)'
     )
-
-    # Historic: single line (only one series — no uncertainty band)
     ax.plot(
-        lag_range, hist_autocorr,
+        lag_range, hist_median,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
-        label=f'{HISTORIC_LABEL}'
+        zorder=6, label=f'{HISTORIC_LABEL} (median)'
     )
 
     ax.set_xlabel(xlabel)
@@ -597,10 +636,15 @@ def plot_weekly_streamflow_percentiles(
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
         zorder=1, label=f'{synthetic_label} 99% IQR'
     )
-    ax.fill_between(
-        periods, hist_p_low, hist_p_high,
-        alpha=ALPHA_BAND_OUTER, color=HISTORIC_COLOR, linewidth=0,
-        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR'
+    ax.plot(
+        periods, hist_p_low,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (lower)'
+    )
+    ax.plot(
+        periods, hist_p_high,
+        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
+        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (upper)'
     )
     if show_inner_band:
         ax.fill_between(

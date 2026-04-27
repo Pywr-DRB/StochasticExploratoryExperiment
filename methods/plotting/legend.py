@@ -19,7 +19,7 @@ from matplotlib.legend_handler import HandlerBase
 from matplotlib.patches import Rectangle
 from matplotlib.lines import Line2D
 
-from methods.plotting.styles import ALPHA_BAND_OUTER, LINEWIDTH_MEDIUM
+from methods.plotting.styles import ALPHA_BAND_OUTER, LINEWIDTH_THIN, LINEWIDTH_MEDIUM
 
 # Legend-only: inner-band alpha is bumped above the plot's ALPHA_BAND_INNER
 # so the three layers stay distinguishable at small legend-handle sizes.
@@ -45,6 +45,8 @@ class IQRBandHandle:
         linestyle='-',
         inner_height_frac=0.5,
         show_inner_band=True,
+        outline_only=False,
+        outline_linewidth=LINEWIDTH_THIN,
     ):
         self.color = color
         self.alpha_outer = alpha_outer
@@ -53,6 +55,8 @@ class IQRBandHandle:
         self.linestyle = linestyle
         self.inner_height_frac = inner_height_frac
         self.show_inner_band = show_inner_band
+        self.outline_only = outline_only
+        self.outline_linewidth = outline_linewidth
 
 
 class IQRBandHandler(HandlerBase):
@@ -63,14 +67,6 @@ class IQRBandHandler(HandlerBase):
         x0 = -xdescent
         y0 = -ydescent
 
-        outer = Rectangle(
-            (x0, y0), width, height,
-            facecolor=orig_handle.color,
-            alpha=orig_handle.alpha_outer,
-            edgecolor='none',
-            transform=trans,
-        )
-
         median_y = y0 + height / 2
         median = Line2D(
             [x0, x0 + width],
@@ -79,6 +75,29 @@ class IQRBandHandler(HandlerBase):
             linewidth=orig_handle.linewidth,
             linestyle=orig_handle.linestyle,
             solid_capstyle='butt',
+            transform=trans,
+        )
+
+        if getattr(orig_handle, 'outline_only', False):
+            top = Line2D(
+                [x0, x0 + width], [y0 + height, y0 + height],
+                color=orig_handle.color,
+                linewidth=orig_handle.outline_linewidth,
+                linestyle='-', solid_capstyle='butt', transform=trans,
+            )
+            bottom = Line2D(
+                [x0, x0 + width], [y0, y0],
+                color=orig_handle.color,
+                linewidth=orig_handle.outline_linewidth,
+                linestyle='-', solid_capstyle='butt', transform=trans,
+            )
+            return [top, bottom, median]
+
+        outer = Rectangle(
+            (x0, y0), width, height,
+            facecolor=orig_handle.color,
+            alpha=orig_handle.alpha_outer,
+            edgecolor='none',
             transform=trans,
         )
 
