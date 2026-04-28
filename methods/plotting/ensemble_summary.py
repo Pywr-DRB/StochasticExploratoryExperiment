@@ -34,6 +34,18 @@ MONTH_WEEK_STARTS = [1, 5, 9, 14, 18, 22, 27, 31, 35, 40, 44, 48]
 from methods.config import MGD_TO_MCM
 
 
+def _assign_usgs_water_year(dates: pd.DatetimeIndex) -> np.ndarray:
+    """Return array of USGS water years (Oct 1 - Sep 30) for a DatetimeIndex.
+
+    WY N spans Oct 1 of year N-1 through Sep 30 of year N (USGS convention),
+    i.e. months Oct/Nov/Dec belong to the next year's WY. This is distinct
+    from the FFMP June 1 water year used by methods.water_year.
+    """
+    months = dates.month.values
+    years = dates.year.values
+    return np.where(months >= 10, years + 1, years)
+
+
 def _get_aggregate_flow(df: pd.DataFrame, sites: list = None) -> pd.Series:
     """
     Get aggregate flow as sum of specified sites.
@@ -123,21 +135,6 @@ def _vectorized_autocorr(series: np.ndarray, max_lag: int) -> np.ndarray:
     return autocorr
 
 
-def _compute_annual_acfs(flow_series: pd.Series, max_lag: int,
-                        min_days: int = 300) -> np.ndarray:
-    """Compute one ACF per calendar year. Returns (n_years, max_lag)."""
-    s = flow_series.dropna()
-    years = s.index.year.values
-    vals = s.values
-    out = []
-    for y in np.unique(years):
-        yv = vals[years == y]
-        if len(yv) < min_days:
-            continue
-        out.append(_vectorized_autocorr(yv, max_lag))
-    return np.asarray(out) if out else np.empty((0, max_lag))
-
-
 def plot_fdc_percentile_comparison(
     Q_historic: pd.DataFrame,
     Q_synthetic: dict,
@@ -152,6 +149,7 @@ def plot_fdc_percentile_comparison(
     synthetic_label: str = 'Synthetic',
     log_scale: bool = True,
     show_inner_band: bool = True,
+    year_basis: str = 'calendar',
     _hist_agg: pd.Series = None,
     _syn_agg: dict = None,
 ):
@@ -180,6 +178,11 @@ def plot_fdc_percentile_comparison(
         Label for synthetic data in legend
     log_scale : bool
         Whether to use log scale for y-axis
+    year_basis : str
+        Year boundary for grouping daily flows into annual FDCs.
+        'calendar' (default): calendar year, Jan 1 - Dec 31.
+        'usgs_water_year': USGS hydrologic water year, Oct 1 - Sep 30.
+        Distinct from the FFMP June 1 water year in methods.water_year.
     _hist_agg : pd.Series, optional
         Pre-aggregated historic flow.
     _syn_agg : dict, optional
@@ -208,7 +211,10 @@ def plot_fdc_percentile_comparison(
     def compute_annual_fdcs(flow_series):
         """Compute FDCs for each year using vectorized operations."""
         values = flow_series.dropna().values
-        years = flow_series.dropna().index.year
+        if year_basis == 'usgs_water_year':
+            years = _assign_usgs_water_year(flow_series.dropna().index)
+        else:
+            years = flow_series.dropna().index.year.values
 
         annual_fdcs = []
         for year in np.unique(years):
@@ -364,64 +370,45 @@ def plot_autocorrelation_comparison(
 
     lag_range = np.arange(1, max_lag + 1)
 
-    # Per-year ACFs for historic
-    hist_acfs = _compute_annual_acfs(_hist_agg, max_lag)
-    hist_median = np.nanmedian(hist_acfs, axis=0)
-    hist_p_low  = np.nanpercentile(hist_acfs, percentiles[0], axis=0)
-    hist_p_high = np.nanpercentile(hist_acfs, percentiles[1], axis=0)
-    hist_iq_low  = np.nanpercentile(hist_acfs, inner_percentiles[0], axis=0)
-    hist_iq_high = np.nanpercentile(hist_acfs, inner_percentiles[1], axis=0)
+    # Vectorized autocorrelation for historic data
+    hist_series = _hist_agg.dropna().values
+    hist_autocorr = _vectorized_autocorr(hist_series, max_lag)
 
-    # Per-year ACFs pooled across synthetic realizations
-    all_syn_acfs = []
-    for real_id, flow_series in _syn_agg.items():
-        acfs = _compute_annual_acfs(flow_series, max_lag)
-        if len(acfs) > 0:
-            all_syn_acfs.append(acfs)
-    all_syn_acfs = np.vstack(all_syn_acfs)
+    # Vectorized autocorrelation for each synthetic realization
+    n_realizations = len(_syn_agg)
+    syn_autocorr = np.zeros((n_realizations, max_lag))
 
-    syn_median = np.nanmedian(all_syn_acfs, axis=0)
-    syn_p_low  = np.nanpercentile(all_syn_acfs, percentiles[0], axis=0)
-    syn_p_high = np.nanpercentile(all_syn_acfs, percentiles[1], axis=0)
-    syn_iq_low  = np.nanpercentile(all_syn_acfs, inner_percentiles[0], axis=0)
-    syn_iq_high = np.nanpercentile(all_syn_acfs, inner_percentiles[1], axis=0)
+    for i, (real_id, flow_series) in enumerate(_syn_agg.items()):
+        series = flow_series.dropna().values
+        syn_autocorr[i, :] = _vectorized_autocorr(series, max_lag)
 
-    # Layered: syn outer → hist outer → [syn inner] → [hist inner] → syn median → hist median
+    # Plot synthetic: outer band → inner band → median
     ax.fill_between(
-        lag_range, syn_p_low, syn_p_high,
+        lag_range,
+        np.nanpercentile(syn_autocorr, percentiles[0], axis=0),
+        np.nanpercentile(syn_autocorr, percentiles[1], axis=0),
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
-        zorder=1, label=f'{synthetic_label} 99% IQR'
-    )
-    ax.plot(
-        lag_range, hist_p_low,
-        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
-        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (lower)'
-    )
-    ax.plot(
-        lag_range, hist_p_high,
-        color=HISTORIC_COLOR, linewidth=LINEWIDTH_THIN, linestyle='-',
-        zorder=2, label=f'{HISTORIC_LABEL} 99% IQR (upper)'
+        label=f'{synthetic_label} 99% IQR'
     )
     if show_inner_band:
         ax.fill_between(
-            lag_range, syn_iq_low, syn_iq_high,
+            lag_range,
+            np.nanpercentile(syn_autocorr, inner_percentiles[0], axis=0),
+            np.nanpercentile(syn_autocorr, inner_percentiles[1], axis=0),
             alpha=ALPHA_BAND_INNER, color=synthetic_color, linewidth=0,
-            zorder=3, label=f'{synthetic_label} 50% IQR'
-        )
-        ax.fill_between(
-            lag_range, hist_iq_low, hist_iq_high,
-            alpha=ALPHA_BAND_INNER, color=HISTORIC_COLOR, linewidth=0,
-            zorder=4, label=f'{HISTORIC_LABEL} 50% IQR'
+            label=f'{synthetic_label} 50% IQR'
         )
     ax.plot(
-        lag_range, syn_median,
+        lag_range, np.nanmedian(syn_autocorr, axis=0),
         color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        zorder=5, label=f'{synthetic_label} (median)'
+        label=f'{synthetic_label} (median)'
     )
+
+    # Historic: single line (only one series — no uncertainty band)
     ax.plot(
-        lag_range, hist_median,
+        lag_range, hist_autocorr,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
-        zorder=6, label=f'{HISTORIC_LABEL} (median)'
+        label=f'{HISTORIC_LABEL}'
     )
 
     ax.set_xlabel(xlabel)

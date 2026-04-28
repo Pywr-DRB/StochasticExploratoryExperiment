@@ -267,6 +267,8 @@ def _build_ensemble_figure_rev1(
         synthetic_color=synthetic_color, synthetic_label=synthetic_label,
         show_legend=False, show_inner_band=False,
         _hist_agg=hist_agg, _syn_agg=syn_agg,
+        year_basis='usgs_water_year',
+        ylabel='Combined NYC Reservoir Inflow\nWater-Year FDCs (MCM/day)',
     )
     label_panel(ax_fdc, 'b')
 
