@@ -1,13 +1,21 @@
 """
 Fig9: Drought Satisficing Heatmaps (3 rows x 2 columns).
 
-Row 1 shows the Stationary Baseline in absolute units (drought event
-return period and percent of droughts reaching Drought Emergency). Rows
-2-3 show the two climate-adjusted scenarios as absolute change versus
-the Stationary Baseline. Rate ↔ return-period inversion (RP = 1/λ) is
-standard practice in hydrology, climate extremes assessment, and
-flood-frequency analysis (e.g. FEMA flood mapping, IPCC AR6 extremes
-framing, USGS Bulletin 17C).
+Row 1 shows the Stationary Baseline in absolute units (drought-free
+interval between events ``T_W`` and percent of droughts reaching
+Drought Emergency). Rows 2-3 show the two climate-adjusted scenarios as
+absolute change versus the Stationary Baseline.
+
+The drought-free interval ``T_W = T_R − E[D|bin]`` is the
+Bonaccorso-Shiau interarrival time minus the mean event duration in
+the cell — i.e. the expected non-drought waiting interval between
+events of the cell's severity-magnitude class. This is the metric
+established for drought recurrence analysis in
+Bonaccorso, Cancelliere & Rossi (2003), Shiau & Shen (2001),
+Fernández & Salas (1999), and Salas & Obeysekera (2014); for
+multi-year droughts it is the relevant quantity for water-management
+planning and avoids inflating the "return period" with the drought
+event itself.
 
 Usage:
     python Fig9_plot_drought_satisficing_heatmap_2col.py [ssi_window]
@@ -26,16 +34,20 @@ from matplotlib.patches import Rectangle
 import warnings
 warnings.filterwarnings("ignore")
 
-from methods.config import FIG_DIR, N_YEARS
+from methods.config import (
+    FIG_DIR, N_YEARS,
+    GRID_N_BINS, FOCAL_WORST_STORAGE_THRESH,
+    FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
+)
 from methods.load import load_event_metrics
+from methods.return_period import compute_return_period_grid
 from methods.plotting.styles import (
     DATASET_LABELS, DPI_HIGH, apply_publication_style, label_panel,
     MANUSCRIPT_CMAPS,
 )
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
-    compute_exceedance_rate_grid, identify_focal_region, draw_focal_boundary,
-    GRID_N_BINS, WORST_STORAGE_THRESH, FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH,
+    identify_focal_region, draw_focal_boundary,
 )
 
 # -- configuration -----------------------------------------------------------
@@ -46,7 +58,7 @@ SSI_WINDOW_DEFAULT = 3
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
 PANEL_LETTERS = list('abcdef')
 
-SHOW_CHANGE = True
+SHOW_CHANGE = False
 
 DOR_SEV = 2.8
 DOR_MAG = 48.0
@@ -106,15 +118,6 @@ def _draw_insufficient_hatch(ax, sev_edges, mag_edges, count_grid):
                     facecolor='none', hatch='///',
                     edgecolor=HATCH_EDGECOLOR, linewidth=0, zorder=2,
                 ))
-
-
-def _rate_to_return_period(rate_grid):
-    """RP = 1/rate, with NaN preserved and zero-rate cells masked."""
-    with np.errstate(divide='ignore', invalid='ignore'):
-        rp = np.where((rate_grid > 0) & np.isfinite(rate_grid),
-                      1.0 / np.where(rate_grid > 0, rate_grid, np.nan),
-                      np.nan)
-    return rp
 
 
 def _absolute_change(scenario_grid, baseline_grid):
@@ -196,12 +199,19 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         all_data, DATASETS, n_bins=GRID_N_BINS)
 
     # -- compute grids ------------------------------------------------------
-    rate_grids, frac_grids, min_grids, count_grids = {}, {}, {}, {}
+    # Bonaccorso-Shiau return-period grids: T_R is the mean interarrival
+    # time per bin; T_W = T_R − E[D|bin] is the duration-adjusted
+    # drought-free interval (the displayed quantity and the focal-region
+    # threshold metric).
+    T_R_grids, dur_grids, T_W_grids = {}, {}, {}
+    frac_grids, min_grids, count_grids = {}, {}, {}
     for did in DATASETS:
-        rg, cg = compute_exceedance_rate_grid(
+        T_R, dur, T_W, cg = compute_return_period_grid(
             all_data[did], sev_edges, mag_edges, N_YEARS,
             min_count=MIN_COUNT_POPULATED)
-        rate_grids[did] = rg
+        T_R_grids[did] = T_R
+        dur_grids[did] = dur
+        T_W_grids[did] = T_W
         count_grids[did] = cg
         fg, _ = compute_emergency_grid(
             all_data[did], sev_edges, mag_edges, min_count=MIN_COUNT_POPULATED)
@@ -210,18 +220,24 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
             all_data[did], sev_edges, mag_edges, min_count=MIN_COUNT_POPULATED)
         min_grids[did] = mg
 
-    focal_cells = identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
+    focal_cells = identify_focal_region(T_W_grids, frac_grids, min_grids, DATASETS)
     focal_event_counts = {
         did: _count_events_in_focal_region(
             all_data[did], sev_edges, mag_edges, focal_cells)
         for did in DATASETS
     }
-    print(f"  Focal region: {len(focal_cells)} cells")
+    print(f"  Focal region (T_W ≤ {FOCAL_RP_THRESH_YEARS} yr): "
+          f"{len(focal_cells)} cells")
     for did in DATASETS:
+        cell_durs = [dur_grids[did][i, j]
+                     for (i, j) in focal_cells
+                     if not np.isnan(dur_grids[did][i, j])]
+        mean_dur = float(np.mean(cell_durs)) if cell_durs else float('nan')
         print(f"    {DATASET_LABELS[did]}: "
-              f"{focal_event_counts[did]:,} events in focal region")
+              f"{focal_event_counts[did]:,} events in focal region; "
+              f"mean E[D|focal] = {mean_dur:.2f} yr")
 
-    rp_grids = {did: _rate_to_return_period(rate_grids[did]) for did in DATASETS}
+    rp_grids = T_W_grids   # the displayed quantity in panels (a, c, e)
     pct_de_grids = {did: (1.0 - frac_grids[did]) * 100.0 for did in DATASETS}
 
     # -- colormaps & continuous norms ---------------------------------------
@@ -235,7 +251,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     cmap_diverging_pos_brown = MANUSCRIPT_CMAPS['diverging']  # BrBG_r
     cmap_diverging_neg_brown = cmap_diverging_pos_brown.reversed()  # BrBG
 
-    # Panel (a): return period (years), log-scaled 100 → 10,000.
+    # Panel (a): drought-free interval T_W (years), log-scaled 100 → 10,000.
     cmap_rp_abs = cmap_sequential
     norm_rp_abs = mcolors.LogNorm(vmin=100, vmax=10000)
     rp_abs_ticks = [100, 1000, 10000]
@@ -251,8 +267,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     pct_de_ticks = list(np.arange(0, pct_de_vmax + 0.01, 10, dtype=float))
     pct_de_tick_labels = [_fmt_pct(v) for v in pct_de_ticks]
 
-    # Panels (c, e): Δ return period (years), symmetric log around zero.
-    # Brown should mark the adverse side (negative Δ = RP shortened).
+    # Panels (c, e): Δ drought-free interval T_W (years), symmetric log around zero.
+    # Brown should mark the adverse side (negative Δ = T_W shortened).
     rp_diff_grids = {
         did: _absolute_change(rp_grids[did], rp_grids[baseline_id])
         for did in DATASETS[1:]
@@ -332,7 +348,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         min_grid = min_grids[did]
         for i, sc in enumerate(sev_centers):
             for j, mc in enumerate(mag_centers):
-                if not np.isnan(min_grid[i, j]) and min_grid[i, j] < WORST_STORAGE_THRESH:
+                if not np.isnan(min_grid[i, j]) and min_grid[i, j] < FOCAL_WORST_STORAGE_THRESH:
                     ax_pct.scatter(
                         sc, mc, marker='x', s=34, linewidths=1.1,
                         color='#202020', alpha=0.85, zorder=7,
@@ -459,7 +475,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     # the second line (units, direction).
     cbar_labels_top = [
         (cb_rp_abs, cbar_ax_rp_abs,
-         'Drought event return period\n(years; shorter = more frequent)'),
+         'Drought-free interval between events\n'
+         r'(years; $T_W = T_R - E[D|\,\mathrm{bin}]$, Bonaccorso-Shiau)'),
         (cb_pct_abs, cbar_ax_pct_abs,
          'Droughts reaching Drought Emergency\n(% of events in bin)'),
     ]
@@ -501,8 +518,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     cbar_labels_bot = [
         (cb_rp_rel, cbar_ax_rp_rel,
-         r'$\Delta$ Return period (years)'
-         '\nbrown = more frequent than baseline'),
+         r'$\Delta$ Drought-free interval $T_W$ (years)'
+         '\nbrown = shorter than baseline'),
         (cb_pct_rel, cbar_ax_pct_rel,
          r'$\Delta$ Droughts reaching DE (pp)'
          '\nbrown = more emergencies than baseline'),
@@ -548,7 +565,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
     fig.text(crit_indent_x, y_item_1,
-             r'(i)   Return period $\leq$ 10,000 yr in all ensembles',
+             rf'(i)   $T_W \leq$ {FOCAL_RP_THRESH_YEARS:,} yr in all ensembles',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
     fig.text(crit_indent_x, y_item_2,
@@ -579,8 +596,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     # -- save ----------------------------------------------------------------
     fname_base = (f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}"
-                  f"_rate{FOCAL_RATE_THRESH:.0e}_frac{FOCAL_FRAC_THRESH:.2f}"
-                  f"_sto{WORST_STORAGE_THRESH:.0f}")
+                  f"_rp{FOCAL_RP_THRESH_YEARS}_frac{FOCAL_FRAC_THRESH:.2f}"
+                  f"_sto{FOCAL_WORST_STORAGE_THRESH:.0f}")
     fname_png = fname_base + '.png'
     fname_svg = fname_base + '.svg'
     fig.savefig(fname_png, dpi=DPI_HIGH, bbox_inches='tight')

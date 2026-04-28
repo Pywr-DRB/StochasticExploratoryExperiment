@@ -236,6 +236,51 @@ MGD_TO_MCM = 3.785411784e-3
 MG_TO_MCM = MGD_TO_MCM
 
 # =============================================================================
+# DROUGHT EVENT ANALYSIS — SHARED GRID & FOCAL-REGION SPECIFICATIONS
+# =============================================================================
+# Constants used by the severity × magnitude heatmap pipeline (Fig9, Fig10alt,
+# count_focal_zone_events) and the duration-adjusted return-period helper in
+# methods/return_period.py. Centralized here so a single edit propagates to
+# every figure.
+
+# --- Severity × magnitude bin grid ---
+GRID_N_BINS         = 16        # bins per axis
+GRID_LOG_MAG        = True      # log-spaced magnitude axis
+GRID_TARGET_SEV_BIN = 7         # 0-indexed reference cell (severity)
+GRID_TARGET_MAG_BIN = 10        # 0-indexed reference cell (magnitude)
+SEV_MIN, SEV_MAX    = 1.0, 4.5  # severity (peak |SSI|) bin bounds
+MAG_MIN, MAG_MAX    = 1.0, 100.0  # magnitude (|SSI| deficit-months) bounds
+
+# --- Bin sample-size floor ---
+# Bins with fewer events are blanked (NaN) on the heatmaps and excluded from
+# focal-region selection.
+MIN_COUNT_PER_BIN = 5
+
+# --- Focal-region multi-metric criteria (Fig9 & Fig10alt) ---
+# All three must hold for a cell to enter the focal region.
+#
+# (i)   Drought-free interval T_W = T_R - E[D|bin]  ≤  FOCAL_RP_THRESH_YEARS
+#       in ALL ensembles. T_W is the Bonaccorso-Shiau interarrival time
+#       (Bonaccorso et al. 2003; Shiau & Shen 2001) less the mean event
+#       duration in the cell — i.e. the expected drought-free waiting time
+#       between events of the cell's severity-magnitude class.
+# (ii)  Fraction of events that AVOID Drought Emergency  <  FOCAL_FRAC_THRESH
+#       in ALL ensembles  (equivalently, ≥ 1 - FOCAL_FRAC_THRESH reach DE).
+# (iii) Worst-case minimum NYC storage  <  FOCAL_WORST_STORAGE_THRESH
+#       in AT LEAST ONE ensemble.
+FOCAL_RP_THRESH_YEARS    = 1000     # T_W ≤ 1,000 yr  (was 1e-3 yr⁻¹ rate)
+FOCAL_FRAC_THRESH        = 0.95     # ≥5% of droughts reach Drought Emergency
+FOCAL_WORST_STORAGE_THRESH = 15.0   # combined NYC storage <15% in ≥1 event
+
+# Legacy alias kept so unrelated callers (e.g. the marker overlay in Fig9)
+# need not all be touched at once. New code should import
+# FOCAL_WORST_STORAGE_THRESH.
+WORST_STORAGE_THRESH = FOCAL_WORST_STORAGE_THRESH
+
+# --- Misc satisficing constant (used by SI14 only; kept here for discoverability) ---
+SATISFICING_THRESHOLD = 0.90
+
+# =============================================================================
 # VALIDATION (runs at import time)
 # =============================================================================
 

@@ -4,31 +4,25 @@ Reusable helpers for severity × magnitude heatmap figures.
 Grid computation functions operate on the per-event-metrics DataFrames
 produced by ``08_calculate_event_metrics.py`` (loaded via
 ``methods.load.load_event_metrics``).
+
+Shared figure / focal-region specifications are defined once in
+``methods.config`` and re-exported here so existing imports keep
+working.
 """
 
 import numpy as np
 
+from methods.config import (
+    GRID_N_BINS, GRID_LOG_MAG, GRID_TARGET_SEV_BIN, GRID_TARGET_MAG_BIN,
+    SEV_MIN, SEV_MAX, MAG_MIN, MAG_MAX,
+    MIN_COUNT_PER_BIN,
+    FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS, FOCAL_WORST_STORAGE_THRESH,
+    WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
+)
 
-# ── default constants (importable, overridable) ─────────────────────
+# Backwards-compatible name (a few callers still import the legacy alias)
 N_HEAT_BINS = 10
-MIN_COUNT = 5
-SEV_MIN = 1.0
-SEV_MAX = 4.5
-MAG_MIN = 1.0
-MAG_MAX = 100.0
-WORST_STORAGE_THRESH = 15.0
-SATISFICING_THRESHOLD = 0.90
-
-# ── Shared grid configuration for Fig9 / Fig10 ──────────────────────
-# Central location so heatmap and dynamics figures use identical bins.
-GRID_N_BINS = 16
-GRID_LOG_MAG = True
-GRID_TARGET_SEV_BIN = 7   # 0-indexed severity bin for focal cell
-GRID_TARGET_MAG_BIN = 10   # 0-indexed magnitude bin for focal cell
-
-# ── Focal-region thresholds (shared by Fig9 & Fig10) ──────────────────
-FOCAL_FRAC_THRESH = 0.95       # fraction avoiding emergency must be < this (ALL datasets)
-FOCAL_RATE_THRESH = 10e-5      # exceedance rate must exceed this (ALL datasets)
+MIN_COUNT = MIN_COUNT_PER_BIN
 
 
 def make_shared_edges(all_data, datasets, n_bins=N_HEAT_BINS,
@@ -162,53 +156,6 @@ def compute_min_storage_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
             min_grid[i, j] = sto[mask].min()
 
     return min_grid, count_grid
-
-
-def compute_exceedance_rate_grid(df, sev_edges, mag_edges, n_years,
-                                 min_count=MIN_COUNT):
-    """2-D grid of empirical exceedance rate (events/year) per bin.
-
-    For each bin, rate = count / (n_realizations * n_years).
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Event metrics with ``severity``, ``magnitude``, ``realization_id``.
-    sev_edges, mag_edges : np.ndarray
-    n_years : int
-        Simulation years per realization.
-    min_count : int
-        Bins with fewer events are NaN.
-
-    Returns
-    -------
-    rate_grid : np.ndarray (ns x nm), NaN where count < min_count
-    count_grid : np.ndarray (ns x nm)
-    """
-    sev = df['severity'].values
-    mag = df['magnitude'].values
-    n_realizations = df['realization_id'].nunique()
-    total_years = n_realizations * n_years
-
-    sev_idx = np.digitize(sev, sev_edges) - 1
-    mag_idx = np.digitize(mag, mag_edges) - 1
-
-    ns = len(sev_edges) - 1
-    nm = len(mag_edges) - 1
-
-    rate_grid = np.full((ns, nm), np.nan)
-    count_grid = np.zeros((ns, nm), dtype=int)
-
-    for i in range(ns):
-        for j in range(nm):
-            mask = (sev_idx == i) & (mag_idx == j)
-            cnt = mask.sum()
-            count_grid[i, j] = cnt
-            if cnt < min_count:
-                continue
-            rate_grid[i, j] = cnt / total_years
-
-    return rate_grid, count_grid
 
 
 def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
@@ -352,30 +299,36 @@ def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
                                linewidth=linewidth, zorder=zorder))
 
 
-def identify_focal_region(rate_grids, frac_grids, min_grids, datasets,
+def identify_focal_region(T_W_grids, frac_grids, min_grids, datasets,
                           frac_thresh=FOCAL_FRAC_THRESH,
-                          rate_thresh=FOCAL_RATE_THRESH,
-                          storage_thresh=WORST_STORAGE_THRESH):
+                          rp_thresh_years=FOCAL_RP_THRESH_YEARS,
+                          storage_thresh=FOCAL_WORST_STORAGE_THRESH):
     """Identify grid cells meeting multi-metric focal-region criteria.
+
+    Thresholding is on the duration-adjusted return period
+    ``T_W = T_R - E[D|bin]`` (Bonaccorso-Shiau interarrival time minus
+    mean event duration), so cells with long-duration drought events
+    are evaluated on the *drought-free* waiting interval rather than
+    the raw recurrence interval.
 
     Criteria
     --------
     1. Fraction avoiding emergency < *frac_thresh* in ALL datasets
-    2. Exceedance rate >= *rate_thresh* in ALL datasets
+    2. T_W ≤ *rp_thresh_years* in ALL datasets
     3. Worst-case storage < *storage_thresh* in at least 1 dataset
 
     Returns
     -------
     focal_cells : set of (i, j) tuples
     """
-    ns, nm = rate_grids[datasets[0]].shape
+    ns, nm = T_W_grids[datasets[0]].shape
     focal_cells = set()
 
     for i in range(ns):
         for j in range(nm):
             if not all(
-                not np.isnan(rate_grids[d][i, j]) and
-                rate_grids[d][i, j] >= rate_thresh
+                not np.isnan(T_W_grids[d][i, j]) and
+                T_W_grids[d][i, j] <= rp_thresh_years
                 for d in datasets
             ):
                 continue

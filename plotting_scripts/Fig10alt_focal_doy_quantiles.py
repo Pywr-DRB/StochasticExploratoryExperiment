@@ -40,6 +40,8 @@ from methods.config import (
     FIG_DIR, OUTPUT_DIR, N_YEARS, NYC_RESERVOIRS, NYC_TOTAL_CAPACITY,
     RECONSTRUCTION_OUTPUT_FNAME, RECONSTRUCTION_START_DATE,
     RECONSTRUCTION_END_DATE, DATASET_CONFIGS,
+    GRID_N_BINS, FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
+    FOCAL_WORST_STORAGE_THRESH,
 )
 from methods.water_year import (
     MONTH_STARTS_WY, vectorized_water_year_doy,
@@ -47,12 +49,11 @@ from methods.water_year import (
 from methods.load import (
     load_event_metrics, load_rank_subset_from_export, load_ffmp_boundaries,
 )
+from methods.return_period import compute_return_period_grid
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, assign_grid_bins,
-    compute_exceedance_rate_grid, compute_emergency_grid,
-    compute_min_storage_grid, identify_focal_region,
-    select_events_from_focal_region,
-    GRID_N_BINS, FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH, WORST_STORAGE_THRESH,
+    compute_emergency_grid, compute_min_storage_grid,
+    identify_focal_region, select_events_from_focal_region,
 )
 from methods.plotting.drought_dynamics import compute_fixed_extraction_window
 from methods.plotting.percentile_bands import format_xaxis_water_year
@@ -69,7 +70,7 @@ from methods.plotting.doy_quantile_gradient import (
 
 # ── Configuration ────────────────────────────────────────────────────────
 
-SSI_WINDOW = 12
+SSI_WINDOW = 3
 MIN_COUNT = 1
 
 DATASETS = list(DATASET_CONFIGS.keys())
@@ -82,14 +83,14 @@ RESULTS_SETS = ['res_storage', 'contribution', 'major_flow']
 TEST_MODE = False
 
 STRICT_THRESHOLDS = dict(
-    rate_thresh=FOCAL_RATE_THRESH,
+    rp_thresh_years=FOCAL_RP_THRESH_YEARS,
     frac_thresh=FOCAL_FRAC_THRESH,
-    storage_thresh=WORST_STORAGE_THRESH,
+    storage_thresh=FOCAL_WORST_STORAGE_THRESH,
 )
 RELAXED_THRESHOLDS = dict(
-    rate_thresh=0.0,
-    frac_thresh=2.0,        # accept any non-NaN frac (>1 always true)
-    storage_thresh=200.0,   # accept any non-NaN min storage
+    rp_thresh_years=np.inf,  # accept any finite T_W
+    frac_thresh=2.0,         # accept any non-NaN frac (>1 always true)
+    storage_thresh=200.0,    # accept any non-NaN min storage
 )
 
 REFERENCE_WY_START = pd.Timestamp('2000-06-01')
@@ -267,10 +268,12 @@ def main():
         all_data, DATASETS, n_bins=GRID_N_BINS,
     )
 
-    # 3. Build per-dataset grids and identify focal cells
-    rate_grids, frac_grids, min_grids = {}, {}, {}
+    # 3. Build per-dataset grids and identify focal cells.
+    # Focal-region thresholding is on T_W (Bonaccorso-Shiau interarrival
+    # time minus mean event duration); see methods/return_period.py.
+    T_W_grids, frac_grids, min_grids = {}, {}, {}
     for ds in DATASETS:
-        rate_grids[ds], _ = compute_exceedance_rate_grid(
+        _, _, T_W_grids[ds], _ = compute_return_period_grid(
             all_data[ds], sev_edges, mag_edges, N_YEARS, min_count=MIN_COUNT)
         frac_grids[ds], _ = compute_emergency_grid(
             all_data[ds], sev_edges, mag_edges, min_count=MIN_COUNT)
@@ -279,13 +282,13 @@ def main():
 
     thresholds = STRICT_THRESHOLDS
     focal_cells = identify_focal_region(
-        rate_grids, frac_grids, min_grids, DATASETS, **thresholds)
+        T_W_grids, frac_grids, min_grids, DATASETS, **thresholds)
     print(f"  Strict focal region: {len(focal_cells)} cells")
 
     if len(focal_cells) == 0 and TEST_MODE:
         thresholds = RELAXED_THRESHOLDS
         focal_cells = identify_focal_region(
-            rate_grids, frac_grids, min_grids, DATASETS, **thresholds)
+            T_W_grids, frac_grids, min_grids, DATASETS, **thresholds)
         print(f"  TEST_MODE relaxed focal region: {len(focal_cells)} cells")
 
     if len(focal_cells) == 0:

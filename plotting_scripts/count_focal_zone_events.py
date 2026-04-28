@@ -9,14 +9,17 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from methods.config import N_YEARS
+from methods.config import (
+    N_YEARS,
+    GRID_N_BINS, FOCAL_WORST_STORAGE_THRESH,
+    FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
+)
 from methods.load import load_event_metrics
+from methods.return_period import compute_return_period_grid
 from methods.plotting.styles import DATASET_LABELS
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
-    compute_exceedance_rate_grid, identify_focal_region, assign_grid_bins,
-    GRID_N_BINS, WORST_STORAGE_THRESH,
-    FOCAL_FRAC_THRESH, FOCAL_RATE_THRESH,
+    identify_focal_region, assign_grid_bins,
 )
 
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
@@ -37,20 +40,20 @@ def main():
     sev_edges, mag_edges, _, _ = make_shared_edges_logmag(
         all_data, DATASETS, n_bins=GRID_N_BINS)
 
-    rate_grids, frac_grids, min_grids = {}, {}, {}
+    T_W_grids, frac_grids, min_grids = {}, {}, {}
     for did in DATASETS:
-        rate_grids[did], _ = compute_exceedance_rate_grid(
+        _, _, T_W_grids[did], _ = compute_return_period_grid(
             all_data[did], sev_edges, mag_edges, N_YEARS, min_count=MIN_COUNT)
         frac_grids[did], _ = compute_emergency_grid(
             all_data[did], sev_edges, mag_edges, min_count=MIN_COUNT)
         min_grids[did], _ = compute_min_storage_grid(
             all_data[did], sev_edges, mag_edges, min_count=MIN_COUNT)
 
-    focal_cells = identify_focal_region(rate_grids, frac_grids, min_grids, DATASETS)
+    focal_cells = identify_focal_region(T_W_grids, frac_grids, min_grids, DATASETS)
     print(f"\nFocal region: {len(focal_cells)} cells")
-    print(f"  thresholds: rate >= {FOCAL_RATE_THRESH:.0e} (all), "
+    print(f"  thresholds: T_W <= {FOCAL_RP_THRESH_YEARS} yr (all), "
           f"frac < {FOCAL_FRAC_THRESH:.2f} (all), "
-          f"min sto < {WORST_STORAGE_THRESH:.0f}% (any)")
+          f"min sto < {FOCAL_WORST_STORAGE_THRESH:.0f}% (any)")
     print(f"  cells (sev_bin, mag_bin): {sorted(focal_cells)}\n")
 
     if not focal_cells:
