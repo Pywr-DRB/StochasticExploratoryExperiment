@@ -15,7 +15,7 @@ from methods.config import (
     FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
 )
 from methods.load import load_event_metrics
-from methods.return_period import compute_return_period_grid
+from methods.return_period import compute_return_period_grid_exceedance as compute_return_period_grid
 from methods.plotting.styles import DATASET_LABELS
 from methods.plotting.heatmap import (
     make_shared_edges_logmag, compute_min_storage_grid, compute_emergency_grid,
@@ -51,7 +51,7 @@ def main():
 
     focal_cells = identify_focal_region(T_W_grids, frac_grids, min_grids, DATASETS)
     print(f"\nFocal region: {len(focal_cells)} cells")
-    print(f"  thresholds: T_W <= {FOCAL_RP_THRESH_YEARS} yr (all), "
+    print(f"  thresholds: T_W (joint exc.) <= {FOCAL_RP_THRESH_YEARS} yr (all), "
           f"frac < {FOCAL_FRAC_THRESH:.2f} (all), "
           f"min sto < {FOCAL_WORST_STORAGE_THRESH:.0f}% (any)")
     print(f"  cells (sev_bin, mag_bin): {sorted(focal_cells)}\n")

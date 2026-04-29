@@ -6,16 +6,17 @@ interval between events ``T_W`` and percent of droughts reaching
 Drought Emergency). Rows 2-3 show the two climate-adjusted scenarios as
 absolute change versus the Stationary Baseline.
 
-The drought-free interval ``T_W = T_R − E[D|bin]`` is the
-Bonaccorso-Shiau interarrival time minus the mean event duration in
-the cell — i.e. the expected non-drought waiting interval between
-events of the cell's severity-magnitude class. This is the metric
-established for drought recurrence analysis in
-Bonaccorso, Cancelliere & Rossi (2003), Shiau & Shen (2001),
-Fernández & Salas (1999), and Salas & Obeysekera (2014); for
-multi-year droughts it is the relevant quantity for water-management
-planning and avoids inflating the "return period" with the drought
-event itself.
+The drought-free interval ``T_W = T_R − E[D|exc]`` is the
+Bonaccorso-Shiau interarrival time minus the mean event duration over
+the joint exceedance region. Each cell's value is evaluated at its
+lower-left corner, giving the recurrence interval for events
+*at least as severe and as long* as that point — the bivariate "AND"
+return period (Shiau & Shen 2001; Bonaccorso, Cancelliere & Rossi 2003;
+Shiau 2006; Salvadori & De Michele 2004, 2010), with the empirical
+copula (Deheuvels 1979; Nelsen 2006) used to estimate the joint
+distribution. For multi-year droughts the duration adjustment avoids
+inflating the recurrence interval with the drought event itself
+(Loaiciga & Mariño 1991; Fernández & Salas 1999; Salas & Obeysekera 2014).
 
 Usage:
     python Fig9_plot_drought_satisficing_heatmap_2col.py [ssi_window]
@@ -40,7 +41,7 @@ from methods.config import (
     FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
 )
 from methods.load import load_event_metrics
-from methods.return_period import compute_return_period_grid
+from methods.return_period import compute_return_period_grid_exceedance as compute_return_period_grid
 from methods.plotting.styles import (
     DATASET_LABELS, DPI_HIGH, apply_publication_style, label_panel,
     MANUSCRIPT_CMAPS,
@@ -237,8 +238,23 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
               f"{focal_event_counts[did]:,} events in focal region; "
               f"mean E[D|focal] = {mean_dur:.2f} yr")
 
-    rp_grids = T_W_grids   # the displayed quantity in panels (a, c, e)
-    pct_de_grids = {did: (1.0 - frac_grids[did]) * 100.0 for did in DATASETS}
+    # Apply a unified per-bin sample-size mask to BOTH columns so the
+    # displayed support is identical. The right-column emergency grid is
+    # already NaN where bin count < MIN_COUNT_POPULATED via
+    # compute_emergency_grid; mirror that on the left column. The joint-
+    # exceedance return period is mathematically defined for every cell
+    # (it pools events from the upper-right quadrant), but displaying it
+    # over bins the ensemble itself never produced is visually misleading.
+    rp_grids = {}
+    pct_de_grids = {}
+    for did in DATASETS:
+        insufficient = count_grids[did] < MIN_COUNT_POPULATED
+        rp_masked = T_W_grids[did].copy()
+        rp_masked[insufficient] = np.nan
+        rp_grids[did] = rp_masked
+        pct_masked = ((1.0 - frac_grids[did]) * 100.0)
+        pct_masked[insufficient] = np.nan
+        pct_de_grids[did] = pct_masked
 
     # -- colormaps & continuous norms ---------------------------------------
     # Manuscript-wide palette: sequential = viridis_r, diverging = BrBG_r.
@@ -251,43 +267,59 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     cmap_diverging_pos_brown = MANUSCRIPT_CMAPS['diverging']  # BrBG_r
     cmap_diverging_neg_brown = cmap_diverging_pos_brown.reversed()  # BrBG
 
-    # Panel (a): drought-free interval T_W (years), log-scaled 100 → 10,000.
-    cmap_rp_abs = cmap_sequential
-    norm_rp_abs = mcolors.LogNorm(vmin=100, vmax=10000)
-    rp_abs_ticks = [100, 1000, 10000]
+    # All four colormaps are discretized via BoundaryNorm so the heatmaps
+    # show distinct colour bands rather than continuous gradients. Each
+    # palette is the same as before; only the binning is new.
+
+    # Panel (a): joint-exceedance return period (years), discrete log bands
+    # from 10 → 10,000 yr using a 1-2-5 pattern (3 bands per decade).
+    rp_abs_boundaries = np.array(
+        [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000], dtype=float)
+    n_rp_bins = len(rp_abs_boundaries) - 1
+    cmap_rp_abs = cmap_sequential.resampled(n_rp_bins)
+    norm_rp_abs = mcolors.BoundaryNorm(rp_abs_boundaries, ncolors=n_rp_bins)
+    rp_abs_ticks = list(rp_abs_boundaries)
     rp_abs_tick_labels = [_fmt_years(v) for v in rp_abs_ticks]
 
-    # Panel (b): percent reaching DE, 0 → ceil-to-5pp of the observed max.
+    # Panel (b): percent reaching DE, discrete 10-pp bands from 0 → ceil-to-10pp
+    # of the observed max.
     pct_de_data_max = float(np.nanmax(
         [np.nanmax(pct_de_grids[did]) for did in DATASETS]
     ))
-    pct_de_vmax = _ceil_to_5pct(pct_de_data_max)
-    cmap_pct_de_abs = cmap_sequential
-    norm_pct_de_abs = mcolors.Normalize(vmin=0.0, vmax=pct_de_vmax)
-    pct_de_ticks = list(np.arange(0, pct_de_vmax + 0.01, 10, dtype=float))
-    pct_de_tick_labels = [_fmt_pct(v) for v in pct_de_ticks]
+    pct_de_vmax = max(10.0, math.ceil(pct_de_data_max / 10.0) * 10.0)
+    pct_de_boundaries = np.arange(0.0, pct_de_vmax + 0.01, 10.0)
+    n_pct_bins = len(pct_de_boundaries) - 1
+    cmap_pct_de_abs = cmap_sequential.resampled(n_pct_bins)
+    norm_pct_de_abs = mcolors.BoundaryNorm(pct_de_boundaries, ncolors=n_pct_bins)
+    pct_de_ticks = list(pct_de_boundaries)
+    pct_de_tick_labels = [f'{int(round(v))}' for v in pct_de_ticks]
 
-    # Panels (c, e): Δ drought-free interval T_W (years), symmetric log around zero.
+    # Panels (c, e): Δ return period (years), discrete sym-log bands.
     # Brown should mark the adverse side (negative Δ = T_W shortened).
+    # Central bin [-10, 10] is the "no significant change" band (≈ white).
     rp_diff_grids = {
         did: _absolute_change(rp_grids[did], rp_grids[baseline_id])
         for did in DATASETS[1:]
     }
-    cmap_rp_rel = cmap_diverging_neg_brown  # brown on negative (adverse)
-    norm_rp_rel = mcolors.SymLogNorm(
-        linthresh=10, linscale=0.5, vmin=-1000, vmax=1000, base=10)
+    rp_diff_boundaries = np.array(
+        [-1000, -300, -100, -30, -10, 10, 30, 100, 300, 1000], dtype=float)
+    n_rp_diff_bins = len(rp_diff_boundaries) - 1
+    cmap_rp_rel = cmap_diverging_neg_brown.resampled(n_rp_diff_bins)
+    norm_rp_rel = mcolors.BoundaryNorm(rp_diff_boundaries, ncolors=n_rp_diff_bins)
     rp_diff_ticks = [-1000, -100, -10, 10, 100, 1000]
     rp_diff_tick_labels = [_fmt_signed_years(v) for v in rp_diff_ticks]
 
-    # Panels (d, f): Δ percent reaching DE (percentage points), linear
-    # two-slope around zero. Brown should mark the adverse side (positive
-    # Δ = more droughts reach Drought Emergency).
+    # Panels (d, f): Δ percent reaching DE (percentage points), discrete 10-pp
+    # bands from -50 to +50. Brown marks the adverse side (positive Δ).
     pct_de_diff_grids = {
         did: _absolute_change(pct_de_grids[did], pct_de_grids[baseline_id])
         for did in DATASETS[1:]
     }
-    cmap_pct_de_rel = cmap_diverging_pos_brown  # brown on positive (adverse)
-    norm_pct_de_rel = mcolors.TwoSlopeNorm(vcenter=0.0, vmin=-50, vmax=50)
+    pct_de_diff_boundaries = np.arange(-50.0, 50.0 + 0.01, 10.0)
+    n_pct_diff_bins = len(pct_de_diff_boundaries) - 1
+    cmap_pct_de_rel = cmap_diverging_pos_brown.resampled(n_pct_diff_bins)
+    norm_pct_de_rel = mcolors.BoundaryNorm(
+        pct_de_diff_boundaries, ncolors=n_pct_diff_bins)
     pct_de_diff_ticks = [-50, -25, 0, 25, 50]
     pct_de_diff_tick_labels = [_fmt_signed_pct(v) for v in pct_de_diff_ticks]
 
@@ -406,10 +438,11 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         label_panel(ax_pct, PANEL_LETTERS[row_idx * 2 + 1],
                     fontsize=FONTSIZE_LABEL, fontweight='normal')
 
-    # 1960s drought-of-record star + annotation on panel (a) only.
+    # 1960s drought-of-record marker + annotation on panel (a) only.
+    # Red triangle to match Fig5's drought-of-record marker style.
     axes_rp[0].scatter(
-        DOR_SEV, DOR_MAG, marker='*', s=220,
-        facecolor='white', edgecolor='#000000', linewidths=1.2,
+        DOR_SEV, DOR_MAG, marker='^', s=100,
+        color='red', edgecolors='white', linewidths=1.0,
         zorder=10,
     )
     axes_rp[0].annotate(
@@ -436,16 +469,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
                  rotation=270, ha='center', va='center',
                  fontsize=FONTSIZE_LABEL)
 
-    # Column headers (super-titles for each column).
+    # Column geometry, reused below for colorbar placement.
     bb_top_left = axes_rp[0].get_position()
     bb_top_right = axes_pct[0].get_position()
-    x_left_center = bb_top_left.x0 + bb_top_left.width / 2
-    x_right_center = bb_top_right.x0 + bb_top_right.width / 2
-
-    fig.text(x_left_center, 0.965, 'Drought Event Frequency',
-             ha='center', va='bottom', fontsize=FONTSIZE_TITLE)
-    fig.text(x_right_center, 0.965, 'Drought Emergency Risk',
-             ha='center', va='bottom', fontsize=FONTSIZE_TITLE)
 
     # -- top colorbars: absolute scales for row 1 ---------------------------
     cbar_top_h = 0.010
@@ -475,10 +501,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     # the second line (units, direction).
     cbar_labels_top = [
         (cb_rp_abs, cbar_ax_rp_abs,
-         'Drought-free interval between events\n'
-         r'(years; $T_W = T_R - E[D|\,\mathrm{bin}]$, Bonaccorso-Shiau)'),
+         'Return Period, joint exceedance (years)'),
         (cb_pct_abs, cbar_ax_pct_abs,
-         'Droughts reaching Drought Emergency\n(% of events in bin)'),
+         'Droughts reaching DE\n(% of events at this severity & magnitude)'),
     ]
     # Label above each bar, tick labels below — applied consistently to all
     # four colorbars (top absolute and bottom Δ).
@@ -486,7 +511,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cax.xaxis.set_ticks_position('bottom')
         cax.xaxis.set_label_position('top')
         cb.set_label(label, fontsize=FONTSIZE_SMALL, linespacing=1.35)
-        cb.ax.tick_params(labelsize=FONTSIZE_SMALL)
+        cb.ax.tick_params(labelsize=10)
         cb.outline.set_edgecolor(AXIS_FRAME_COLOR)
         cb.outline.set_linewidth(0.8)
 
@@ -518,8 +543,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     cbar_labels_bot = [
         (cb_rp_rel, cbar_ax_rp_rel,
-         r'$\Delta$ Drought-free interval $T_W$ (years)'
-         '\nbrown = shorter than baseline'),
+         'Δ Return Period, joint exceedance (years)'
+         '\nbrown = more frequent than baseline'),
         (cb_pct_rel, cbar_ax_pct_rel,
          r'$\Delta$ Droughts reaching DE (pp)'
          '\nbrown = more emergencies than baseline'),
@@ -565,15 +590,15 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
     fig.text(crit_indent_x, y_item_1,
-             rf'(i)   $T_W \leq$ {FOCAL_RP_THRESH_YEARS:,} yr in all ensembles',
+             rf'(i)   Return Period (joint exc.) $\leq$ {FOCAL_RP_THRESH_YEARS:,} yr in all 3 scenarios',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
     fig.text(crit_indent_x, y_item_2,
-             r'(ii)  $\geq$5% of droughts reach DE in all ensembles',
+             r'(ii)  $\geq$5% of droughts reach DE in all 3 scenarios',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
     fig.text(crit_indent_x, y_item_3,
-             r'(iii) NYC storage <15% in $\geq$1 event of any ensemble',
+             r'(iii) NYC storage <15% in $\geq$1 event in at least 1 of the 3 scenarios',
              ha='left', va='center',
              fontsize=FONTSIZE_SMALL, color='#333333')
 

@@ -7,7 +7,7 @@
 #   S3  (postprocess all 3 datasets)
 #   S4  (SSI drought metrics)
 #   S5  (performance metrics, all 3 datasets in parallel)
-#   S6 & S7  (figures + SI figures, in parallel)
+#   S6 & S7 & S8  (figures, SI figures, manuscript value extraction — in parallel)
 #
 # Usage: bash S99_run_entire_workflow.sh
 
@@ -56,9 +56,12 @@ echo "S6 figures:          job $S6 (after S5)"
 S7=$(sbatch --parsable --dependency=afterok:$S5_DEP S7_run_SI_scripts.sh)
 echo "S7 SI figures:       job $S7 (after S5)"
 
+S8=$(sbatch --parsable --dependency=afterok:$S5_DEP S8_extract_manuscript_values.sh)
+echo "S8 manuscript vals:  job $S8 (after S5)"
+
 echo ""
 echo "============================================================"
 echo "ALL JOBS SUBMITTED"
 echo "============================================================"
 echo "Monitor with: squeue -u \$USER"
-echo "Cancel all:   scancel $S0 $S1 $S2 $S3 $S4 $S5 $S6 $S7"
+echo "Cancel all:   scancel $S0 $S1 $S2 $S3 $S4 $S5 $S6 $S7 $S8"
