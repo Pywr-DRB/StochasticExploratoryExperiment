@@ -2,13 +2,23 @@
 Fig10: Focal-event dynamics + distributions (3x3 grid).
 
 Two trajectory columns (WWDS, WWSS) show day-of-water-year quantile gradients
-of focal-zone drought water-years with four reference trajectories overlaid
-(worst, 10th-percentile, median minimum-storage focal events plus the
-DOY-wise mean); the right column shows CDFs of per-event scalars across all
-three ensembles. Together the figure contrasts what is invariant (the
-operational signature of focal droughts, panels a-b, d-e, g-h) with what
-differs across climate scenarios (event distributions and tails, panels c,
-f, i).
+of focal-zone drought water-years with two reference trajectories overlaid
+(10th-percentile and median minimum-storage focal events) plus optional
+historical-drought overlays (1964 drought of record, 1980 drought) drawn
+from a reconstructed-streamflow Pywr-DRB simulation. The right column shows
+empirical CDFs of per-event scalars across all three ensembles, with
+percentile callouts and (when enabled) horizontal anchors marking where the
+historical droughts sit in each distribution.
+
+The narrative argument: focal-region drought operational dynamics are
+climate-invariant across WWDS and WWSS — the same operational signature
+(rapid summer-fall drawdown, sustained low through winter, partial spring
+recovery) emerges in both. Stationary-baseline trajectories are visually
+indistinguishable from WWDS and are not shown in the trajectory columns,
+but SSB stays in the right-column CDFs as a reference distribution. The
+focal-region event set is therefore proposed as a stress-testing portfolio
+for DRB operations — each scenario is known to be possible in each
+climate trajectory.
 
 Rows (top -> bottom):
   Storage  : NYC total storage (% of capacity)
@@ -108,6 +118,24 @@ REFERENCE_WY_START = pd.Timestamp('2000-06-01')
 REFERENCE_WY_END = pd.Timestamp('2001-05-31')
 N_QUANTILE_LEVELS = 21    # 0, 5, 10, ..., 100 %
 
+# Historical-drought overlays drawn from the reconstructed-streamflow
+# Pywr-DRB simulation (RECONSTRUCTION_OUTPUT_FNAME). Each toggleable; set
+# either flag to False to drop the corresponding overlay from both the
+# trajectory columns and the CDF column. The water year is the FFMP-
+# convention WY (Jun 1 – May 31) containing the storage minimum:
+#   1964 drought of record  -> WY Jun 1964 – May 1965 (Feb-1965 storage low)
+#   1980 drought            -> WY Jun 1980 – May 1981
+SHOW_1964_OVERLAY = True
+SHOW_1980_OVERLAY = True
+HISTORICAL_OVERLAYS_CONFIG = {
+    'h1964': dict(label='1964', wy_start=pd.Timestamp('1964-06-01'),
+                  enabled=SHOW_1964_OVERLAY),
+    'h1980': dict(label='1980', wy_start=pd.Timestamp('1980-06-01'),
+                  enabled=SHOW_1980_OVERLAY),
+}
+HISTORICAL_OVERLAY_KEYS = [k for k, c in HISTORICAL_OVERLAYS_CONFIG.items()
+                           if c['enabled']]
+
 CMAP_N_BINS = 10          # discrete viridis bands (matches Fig9 %DE 10-pp ticks)
 CMAP = plt.get_cmap(CMAP_SEQUENTIAL, CMAP_N_BINS)
 
@@ -159,37 +187,37 @@ CACHE_DIR = os.path.join(OUTPUT_DIR, 'cache')
 CACHE_VERSION = 'v3'
 REBUILD_CACHE = False
 
-# Bootstrap-band rendering for the CDF column. Each ensemble's per-event
-# scalars are resampled with replacement N_BOOT times; we plot the median
-# quantile function plus a 5–95% band across bootstrap samples.
-P_GRID = np.linspace(0.005, 0.995, 200)
-N_BOOT = 500
-BOOTSTRAP_SEED = 42
+# CDF column percentile callouts: small filled circles + value labels at
+# these nonexceedance probabilities, drawn on each ensemble's empirical CDF
+# curve to make typical-event vs. bad-tail readouts directly legible.
+CDF_PCT_CALLOUTS = (0.10, 0.50, 0.90)
 
 # Reference trajectories overlaid on the trajectory columns. Events are
 # sorted ascending by event_min_storage_pct (worst first), so:
-#   worst  -> rank 0            (lowest min storage in the focal region)
 #   p10    -> rank ~0.1*(n-1)   (10th-percentile min-storage value: severe
 #                                 but not worst — characterizes the bad
 #                                 tail without being the single extreme)
 #   median -> rank n/2          (event at the median min-storage value)
-# 'mean' is computed as the day-of-water-year mean across all focal events
-# (not tied to any single event).
-REF_KEYS = ['worst', 'p10', 'median', 'mean']
+# The worst-case event was dropped because it is too extreme to drive a
+# stress-testing-portfolio narrative; the typical-but-bad-tail behavior
+# (p10 + median) is what planners should design against. The DOY-wise
+# mean was dropped because the 21-band gradient already conveys
+# within-ensemble central tendency.
+REF_KEYS = ['p10', 'median']
 # Distinguishable from each other AND from the dashed FFMP zone lines.
-# Mean uses a saturated blue (not black/grey/orange) so it doesn't blend
-# with FFMP threshold dashes or the median/p10 lines.
+# Historical-drought overlays use saturated colors that do not collide
+# with p10 (orange) or median (black) or FFMP threshold dashes.
 REF_STYLES = {
-    'worst':  dict(color='#c0392b', linewidth=2.5, linestyle='-',  alpha=0.98, zorder=8),
     'p10':    dict(color='#e67e22', linewidth=1.7, linestyle='--', alpha=0.95, zorder=7),
     'median': dict(color='#000000', linewidth=1.7, linestyle='-',  alpha=0.95, zorder=7),
-    'mean':   dict(color='#1f77b4', linewidth=1.7, linestyle=(0, (1, 1)), alpha=0.95, zorder=7),
+    'h1964':  dict(color='#8e1c5c', linewidth=1.5, linestyle='-',  alpha=0.95, zorder=7.5),
+    'h1980':  dict(color='#107070', linewidth=1.5, linestyle='-',  alpha=0.95, zorder=7.5),
 }
 REF_LABELS = {
-    'worst':  'Worst-case focal event (lowest minimum NYC storage)',
     'p10':    '10th-percentile minimum-storage focal event (severe tail)',
     'median': 'Median minimum-storage focal event',
-    'mean':   'Mean focal-event trajectory (DOY-wise across all events)',
+    'h1964':  '1964 drought of record (reconstructed historical)',
+    'h1980':  '1980 drought (reconstructed historical)',
 }
 
 
@@ -244,29 +272,20 @@ def _build_realization_cache(data, dataset_id, realization_ids):
     return cache
 
 
-def _bootstrap_quantile_band(values, p_grid=P_GRID, n_boot=N_BOOT,
-                              ci=(5, 95), seed=BOOTSTRAP_SEED):
-    """Median quantile function + 5-95% bootstrap band.
+def _empirical_cdf(values):
+    """Sorted values + midpoint plotting positions.
 
-    For each of `n_boot` bootstrap resamples (with replacement, same size as
-    the input), compute the empirical quantile at every probability in
-    `p_grid`. Returns three 1D arrays of length `len(p_grid)`: the median
-    quantile, the lower CI, and the upper CI. Used for plotting the CDF
-    column with axes swapped (x = nonexceedance probability, y = value).
+    Returns (sorted_values, p) where p[i] = (i + 0.5) / n is the
+    nonexceedance probability for sorted_values[i]. n >= 2 events required.
     """
     arr = np.asarray(values, dtype=float)
     arr = arr[~np.isnan(arr)]
     if arr.size < 2:
-        return None, None, None
-    rng = np.random.default_rng(seed)
-    n = arr.size
-    boot_q = np.empty((n_boot, len(p_grid)))
-    for i in range(n_boot):
-        sample = rng.choice(arr, size=n, replace=True)
-        boot_q[i] = np.quantile(sample, p_grid)
-    return (np.median(boot_q, axis=0),
-            np.percentile(boot_q, ci[0], axis=0),
-            np.percentile(boot_q, ci[1], axis=0))
+        return None, None
+    sorted_v = np.sort(arr)
+    n = sorted_v.size
+    p = (np.arange(1, n + 1) - 0.5) / n
+    return sorted_v, p
 
 
 def _cache_key(thresholds):
@@ -319,6 +338,112 @@ def load_historical_median_annual_release_mcm():
     counts = daily_release_mcm.groupby(wy).count()
     annual_totals = annual_totals[counts >= 300]
     return float(annual_totals.median())
+
+
+def load_historical_drought_overlays():
+    """Per-water-year traces and event scalars for the configured historical
+    droughts (1964, 1980), drawn from the reconstructed-streamflow
+    Pywr-DRB simulation at RECONSTRUCTION_OUTPUT_FNAME.
+
+    Returns a dict keyed by HISTORICAL_OVERLAYS_CONFIG key (e.g. 'h1964')
+    mapping to:
+      - traces[var_name] -> DOY-indexed pd.Series (same DOY convention as
+        focal-event traces; rolling-mean smoothing applied per VARIABLES).
+      - scalars[scalar_key] -> float (same semantics as the focal-event
+        scalars: drawdown amplitude, total release MCM, min 7-day Montague).
+
+    Disabled overlays and any year whose WY does not fall inside the
+    reconstruction date range are silently omitted; missing reconstruction
+    file returns an empty dict (caller treats overlays as unavailable).
+    """
+    enabled_keys = [k for k, c in HISTORICAL_OVERLAYS_CONFIG.items()
+                    if c['enabled']]
+    if not enabled_keys:
+        return {}
+    if not os.path.exists(RECONSTRUCTION_OUTPUT_FNAME):
+        print(f"  Warning: reconstruction file missing at "
+              f"{RECONSTRUCTION_OUTPUT_FNAME}; "
+              f"historical-drought overlays disabled.")
+        return {}
+
+    # Reconstruction outputs use 'nyc_release_components' (per-reservoir
+    # mrf_montagueTrenton_{res}) rather than the post-processed
+    # 'contribution' result set used by the focal-event simulation
+    # ensembles. We sum across NYC reservoirs to recover the same total
+    # mandated NYC release to the Montague target.
+    data = pywrdrb.Data()
+    data.load_output(
+        output_filenames=[RECONSTRUCTION_OUTPUT_FNAME],
+        results_sets=['res_storage', 'nyc_release_components', 'major_flow'],
+    )
+    ds = list(data.res_storage.keys())[0]
+    r = list(data.res_storage[ds].keys())[0]
+
+    storage_pct = (
+        100.0 * data.res_storage[ds][r][NYC_RESERVOIRS].sum(axis=1)
+        / NYC_TOTAL_CAPACITY
+    )
+    contrib_cols = [f'mrf_montagueTrenton_{res}' for res in NYC_RESERVOIRS]
+    nyc_release = (
+        data.nyc_release_components[ds][r][contrib_cols].sum(axis=1)
+        * MGD_TO_MCM
+    )
+    montague_flow = data.major_flow[ds][r]['delMontague'] * MGD_TO_MCM
+
+    full = pd.DataFrame({
+        'nyc_storage_pct': storage_pct,
+        'nyc_release': nyc_release,
+        'montague_flow': montague_flow,
+    })
+
+    overlays = {}
+    for key in enabled_keys:
+        cfg = HISTORICAL_OVERLAYS_CONFIG[key]
+        wy_start = cfg['wy_start']
+        wy_end = wy_start + pd.DateOffset(years=1) - pd.Timedelta(days=1)
+        window = full.loc[wy_start:wy_end]
+        if window.empty or window['nyc_storage_pct'].dropna().empty:
+            print(f"  Warning: WY {wy_start.date()} for {key} has no "
+                  f"reconstruction data; overlay omitted.")
+            continue
+
+        # Per-event scalars (same definitions as the focal-event extraction
+        # loop in _compute_focal_dynamics).
+        drawdown = float(
+            window['nyc_storage_pct'].max() - window['nyc_storage_pct'].min()
+        )
+        total_release = float(window['nyc_release'].sum())
+        mont_smooth = window['montague_flow'].rolling(
+            7, center=True, min_periods=1).mean()
+        min_montague = float(mont_smooth.min())
+
+        # Project to DOY + apply same rolling-mean smoothing as the focal-
+        # event traces so the historical overlay shares units and visual
+        # smoothing with the gradient + p10 / median lines.
+        var_traces = {}
+        for var_name, _, _, smooth, _, _, _ in VARIABLES:
+            s = window[var_name]
+            if smooth and smooth > 1:
+                s = s.rolling(smooth, center=True, min_periods=1).mean()
+            doy = vectorized_water_year_doy(s.index)
+            var_traces[var_name] = pd.Series(
+                s.values, index=doy).sort_index()
+
+        overlays[key] = dict(
+            traces=var_traces,
+            scalars=dict(
+                event_storage_drawdown_pct=drawdown,
+                event_total_release_mcm=total_release,
+                event_min_montague_mcm=min_montague,
+            ),
+            label=cfg['label'],
+            wy_start=wy_start,
+        )
+        print(f"  Loaded {cfg['label']} historical overlay "
+              f"(drawdown={drawdown:.1f}%, "
+              f"total release={total_release:.0f} MCM, "
+              f"min Montague={min_montague:.2f} MCM/d).")
+    return overlays
 
 
 def build_ffmp_by_wy_doy():
@@ -648,10 +773,16 @@ def main():
     print(f"    historical median annual NYC release = "
           f"{hist_median_release_mcm:.1f} MCM")
 
+    # Historical-drought overlays (1964, 1980): per-WY traces + scalars
+    # drawn from the same reconstruction simulation. Empty dict if the
+    # reconstruction is missing or every overlay is disabled.
+    print("\n  Loading historical-drought overlays...")
+    historical_overlays = load_historical_drought_overlays()
+
     sm_for_colorbar = None
-    ref_handles = {}           # ref_key -> Line2D (worst / p10 / median / mean)
+    ref_handles = {}           # ref_key -> Line2D (p10 / median / h1964 / h1980)
     ffmp_handles = {}
-    ensemble_handles = {}      # ds -> Line2D from CDF column (median line)
+    ensemble_handles = {}      # ds -> Line2D from CDF column (CDF line)
     cdf_ref_handle = None      # any horizontal CDF reference line
 
     for row_idx, var_def in enumerate(VARIABLES):
@@ -696,7 +827,8 @@ def main():
                                 zorder=4.5,
                             )
 
-            # Reference trajectories: worst / p10 / median / mean
+            # Reference trajectories from the focal-event distribution:
+            # p10 (severe-tail) and median (typical focal event).
             refs = dataset_refs[ds].get(var_name, {})
             for ref_key in REF_KEYS:
                 s = refs.get(ref_key)
@@ -707,6 +839,24 @@ def main():
                     s_sorted.index, s_sorted.values, **REF_STYLES[ref_key],
                 )
                 ref_handles.setdefault(ref_key, ln)
+
+            # Historical-drought overlays (1964 / 1980) — same DOY axis,
+            # drawn from the reconstructed-streamflow simulation. The same
+            # line is repeated on every trajectory column because the
+            # historical reference does not depend on the climate-adjusted
+            # ensemble; visual repetition reinforces it as a fixed anchor.
+            for hist_key in HISTORICAL_OVERLAY_KEYS:
+                if hist_key not in historical_overlays:
+                    continue
+                s = historical_overlays[hist_key]['traces'].get(var_name)
+                if s is None or s.dropna().size == 0:
+                    continue
+                s_sorted = s.sort_index()
+                ln, = ax.plot(
+                    s_sorted.index, s_sorted.values,
+                    **REF_STYLES[hist_key],
+                )
+                ref_handles.setdefault(hist_key, ln)
 
             if yscale == 'log':
                 ax.set_yscale('log')
@@ -740,12 +890,23 @@ def main():
             for spine in ax.spines.values():
                 spine.set_edgecolor('#333333')
 
-        # ── CDF column (col 2) — bootstrap quantile bands ─────────────
+        # ── CDF column (col 2) — empirical CDFs ───────────────────────
         # Axes: x = nonexceedance probability (0–1), y = metric value.
-        # For each ensemble we resample focal events with replacement
-        # N_BOOT times, compute the empirical quantile function on P_GRID
-        # for each sample, and render the median + 5–95% band.
+        # At N ≈ 5K–10K events per ensemble the empirical CDF is exact
+        # at the resolution that matters; bootstrap bands were dropped
+        # because they were imperceptible and added visual noise.
+        # Each ensemble gets one crisp CDF line; small filled circles mark
+        # the 10/50/90 percentiles for direct readout. Manuscript reference
+        # horizontals (75% drawdown; 2x/3x historical median release; FFMP
+        # Montague targets) stay; historical-drought anchors (1964, 1980)
+        # are added as colored dashed horizontals when the overlay flags
+        # are enabled.
         ax = axes[row_idx, 2]
+        # Track ensemble values (for historical-anchor nonexceedance lookup
+        # against the focal distribution rather than against any single
+        # ensemble — the historical scalar is one number; it sits at a
+        # different probability inside each ensemble's CDF).
+        ensemble_sorted_values = {}
         for ds in DATASETS:
             values = dataset_event_scalars.get(ds, {}).get(
                 scalar_key, None)
@@ -762,18 +923,28 @@ def main():
                     values = cum / hist_median_release_mcm
             if values is None or values.size < 5:
                 continue
-            median, lo, hi = _bootstrap_quantile_band(values)
-            if median is None:
+            sorted_v, p_emp = _empirical_cdf(values)
+            if sorted_v is None:
                 continue
+            ensemble_sorted_values[ds] = sorted_v
+
             color = DATASET_COLORS[ds]
-            ax.fill_between(
-                P_GRID, lo, hi, color=color, alpha=0.18, lw=0, zorder=4,
-            )
             ln, = ax.plot(
-                P_GRID, median, color=color, linewidth=1.9, alpha=0.95,
+                p_emp, sorted_v, color=color, linewidth=1.9, alpha=0.95,
                 zorder=5,
             )
             ensemble_handles.setdefault(ds, ln)
+
+            # Percentile callouts: filled circles + small inline labels at
+            # 10/50/90. Labels use the ensemble color so the eye binds
+            # them to the right curve when multiple curves overlap.
+            for p in CDF_PCT_CALLOUTS:
+                v = float(np.quantile(sorted_v, p))
+                ax.plot(
+                    [p], [v], marker='o', color=color,
+                    markersize=4.5, markeredgecolor='white',
+                    markeredgewidth=0.6, zorder=6, linestyle='None',
+                )
 
         # Horizontal reference thresholds — one per row; configured in
         # VARIABLES. These mirror the role of FFMP zone lines on the
@@ -781,7 +952,7 @@ def main():
         # variable axis).
         for tgt_y, tgt_lbl in cdf_ref_lines:
             ln = ax.axhline(
-                tgt_y, color='#444444', linestyle=':', linewidth=1.2,
+                tgt_y, color='#444444', linestyle=':', linewidth=1.4,
                 alpha=0.9, zorder=3,
             )
             if cdf_ref_handle is None:
@@ -802,7 +973,7 @@ def main():
                  'FFMP Drought Emergency target (1100 cfs)'),
             ]:
                 ln = ax.axhline(
-                    tgt, color='#444444', linestyle=':', linewidth=1.2,
+                    tgt, color='#444444', linestyle=':', linewidth=1.4,
                     alpha=0.9, zorder=3,
                 )
                 if cdf_ref_handle is None:
@@ -812,6 +983,51 @@ def main():
                     fontsize=FONTSIZE_SMALL - 1, color='#444444',
                     va='bottom', ha='right',
                     transform=ax.get_yaxis_transform(), zorder=3.5,
+                )
+
+        # Historical-drought anchors (1964 / 1980) — colored dashed
+        # horizontals at the historical scalar value, plus per-ensemble
+        # triangle markers at the empirical nonexceedance probability of
+        # that value within each ensemble's distribution. The triangles
+        # let the reader see *where* the historical drought sits in each
+        # focal-region CDF without requiring tedious y-line tracing.
+        for hist_key in HISTORICAL_OVERLAY_KEYS:
+            if hist_key not in historical_overlays:
+                continue
+            h_scalars = historical_overlays[hist_key]['scalars']
+            label = historical_overlays[hist_key]['label']
+            if scalar_key == 'event_release_ratio_vs_historical':
+                if (np.isnan(hist_median_release_mcm)
+                        or hist_median_release_mcm <= 0):
+                    continue
+                hv = (h_scalars.get('event_total_release_mcm', float('nan'))
+                      / hist_median_release_mcm)
+            else:
+                hv = h_scalars.get(scalar_key, float('nan'))
+            if not np.isfinite(hv):
+                continue
+            color = REF_STYLES[hist_key]['color']
+            ax.axhline(
+                hv, color=color, linestyle='--', linewidth=1.2,
+                alpha=0.9, zorder=4,
+            )
+            ax.text(
+                0.01, hv, f' {label}',
+                fontsize=FONTSIZE_SMALL - 1, color=color,
+                va='bottom', ha='left',
+                transform=ax.get_yaxis_transform(), zorder=4.5,
+                fontweight='semibold',
+            )
+            for ds, sorted_v in ensemble_sorted_values.items():
+                n_ens = sorted_v.size
+                p_anchor = float(np.searchsorted(sorted_v, hv) / n_ens)
+                if not (0.0 <= p_anchor <= 1.0):
+                    continue
+                ax.plot(
+                    [p_anchor], [hv], marker='^',
+                    color=color, markeredgecolor='white',
+                    markeredgewidth=0.6, markersize=7, zorder=6,
+                    linestyle='None',
                 )
 
         ax.set_xlim(0, 1)
@@ -824,8 +1040,8 @@ def main():
         ax.set_ylabel(cdf_ylabel, fontsize=FONTSIZE_LABEL)
         if row_idx == 0:
             ax.set_title(
-                'Focal-event CDF distributions\n'
-                '(median + 5–95% bootstrap band)',
+                'Focal-event empirical CDFs\n'
+                '(◯ markers: 10 / 50 / 90 percentile)',
                 fontsize=FONTSIZE_TITLE,
             )
 
@@ -860,11 +1076,14 @@ def main():
 
     fig.align_ylabels(axes[:, 0])
 
-    # Bottom legend covers worst-case + FFMP zone thresholds + Montague target
-    # reference. Ensemble legend is in-panel (above) so it lives next to the
-    # lines it labels.
+    # Bottom legend covers focal-event reference trajectories (p10, median),
+    # optional historical-drought overlays (1964, 1980), FFMP zone thresholds
+    # on the storage row, and the dotted CDF-reference horizontal lines.
+    # Ensemble legend is in-panel (above) so it lives next to the lines it
+    # labels.
+    legend_order = list(REF_KEYS) + list(HISTORICAL_OVERLAY_KEYS)
     legend_handles, legend_labels = [], []
-    for ref_key in REF_KEYS:
+    for ref_key in legend_order:
         if ref_key in ref_handles:
             legend_handles.append(ref_handles[ref_key])
             legend_labels.append(REF_LABELS[ref_key])

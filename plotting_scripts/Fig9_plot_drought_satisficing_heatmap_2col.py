@@ -43,7 +43,8 @@ from methods.config import (
 from methods.load import load_event_metrics
 from methods.return_period import compute_return_period_grid_exceedance as compute_return_period_grid
 from methods.plotting.styles import (
-    DATASET_LABELS, DPI_HIGH, apply_publication_style, label_panel,
+    DATASET_LABELS, DATASET_LABELS_SHORT, DATASET_COLORS,
+    DPI_HIGH, apply_publication_style, label_panel,
     MANUSCRIPT_CMAPS,
 )
 from methods.plotting.heatmap import (
@@ -135,14 +136,9 @@ def _ceil_to_5pct(v):
     return float(math.ceil(v / 5.0) * 5.0)
 
 
-def _count_events_in_focal_region(df, sev_edges, mag_edges, focal_cells):
-    """Count events (rows of ``df``) whose (sev_bin, mag_bin) falls in
-    ``focal_cells``. Uses the same digitize logic as the grid builders in
-    ``methods.plotting.heatmap`` so the count is consistent with the
-    rendered heatmaps.
-    """
+def _focal_region_event_mask(df, sev_edges, mag_edges, focal_cells):
     if not focal_cells:
-        return 0
+        return np.zeros(len(df), dtype=bool)
     ns = len(sev_edges) - 1
     nm = len(mag_edges) - 1
     sev_idx = np.clip(np.digitize(df['severity'].values, sev_edges) - 1, 0, ns - 1)
@@ -150,7 +146,28 @@ def _count_events_in_focal_region(df, sev_edges, mag_edges, focal_cells):
     mask = np.zeros(len(df), dtype=bool)
     for i, j in focal_cells:
         mask |= (sev_idx == i) & (mag_idx == j)
-    return int(mask.sum())
+    return mask
+
+
+def _count_events_in_focal_region(df, sev_edges, mag_edges, focal_cells):
+    """Count events (rows of ``df``) whose (sev_bin, mag_bin) falls in
+    ``focal_cells``. Uses the same digitize logic as the grid builders in
+    ``methods.plotting.heatmap`` so the count is consistent with the
+    rendered heatmaps.
+    """
+    return int(_focal_region_event_mask(df, sev_edges, mag_edges, focal_cells).sum())
+
+
+def _sum_focal_region_event_years(df, sev_edges, mag_edges, focal_cells):
+    """Total drought-years inside the focal region: the sum of event
+    durations (converted from days to years) for events whose (sev, mag)
+    bin lies in ``focal_cells``. Counts every realization, so a 2-yr
+    event in each of 100 realizations contributes 200 yr.
+    """
+    mask = _focal_region_event_mask(df, sev_edges, mag_edges, focal_cells)
+    if not mask.any():
+        return 0.0
+    return float(df.loc[mask, 'duration_days'].sum() / 365.25)
 
 
 def _audit_text_overlaps(fig, extra_artists=()):
@@ -227,6 +244,11 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
             all_data[did], sev_edges, mag_edges, focal_cells)
         for did in DATASETS
     }
+    focal_overlap_years = {
+        did: _sum_focal_region_event_years(
+            all_data[did], sev_edges, mag_edges, focal_cells)
+        for did in DATASETS
+    }
     print(f"  Focal region (T_W ≤ {FOCAL_RP_THRESH_YEARS} yr): "
           f"{len(focal_cells)} cells")
     for did in DATASETS:
@@ -236,7 +258,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         mean_dur = float(np.mean(cell_durs)) if cell_durs else float('nan')
         print(f"    {DATASET_LABELS[did]}: "
               f"{focal_event_counts[did]:,} events in focal region; "
-              f"mean E[D|focal] = {mean_dur:.2f} yr")
+              f"mean E[D|focal] = {mean_dur:.2f} yr; "
+              f"total drought-years in focal region = "
+              f"{focal_overlap_years[did]:,.0f}")
 
     # Apply a unified per-bin sample-size mask to BOTH columns so the
     # displayed support is identical. The right-column emergency grid is
@@ -278,7 +302,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     n_rp_bins = len(rp_abs_boundaries) - 1
     cmap_rp_abs = cmap_sequential.resampled(n_rp_bins)
     norm_rp_abs = mcolors.BoundaryNorm(rp_abs_boundaries, ncolors=n_rp_bins)
-    rp_abs_ticks = list(rp_abs_boundaries)
+    # Label only the decade boundaries to prevent tick-label overlap on
+    # the discrete 1-2-5 colorbar; the underlying binning is unchanged.
+    rp_abs_ticks = [10, 100, 1000, 10000]
     rp_abs_tick_labels = [_fmt_years(v) for v in rp_abs_ticks]
 
     # Panel (b): percent reaching DE, discrete 10-pp bands from 0 → ceil-to-10pp
@@ -324,25 +350,28 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     pct_de_diff_tick_labels = [_fmt_signed_pct(v) for v in pct_de_diff_ticks]
 
     # -- figure layout ------------------------------------------------------
-    # Single 3×2 GridSpec: rows 1-3 are contiguous (no dedicated gap row).
-    # The Δ colorbars now live BELOW row 3, beneath the row-3 x-axis labels,
-    # so they don't consume mid-figure vertical space. The enlarged bottom
-    # margin accommodates: row-3 x-label, two Δ colorbars with 2-line
-    # labels, a symbol strap, and the 4-line focal-region key.
-    fig = plt.figure(figsize=(10.0, 16.5))
-    GS_LEFT = 0.12
-    GS_RIGHT = 0.88
-    GS_TOP = 0.88
-    GS_BOT = 0.26
+    # 3×3 GridSpec. Columns 0-1 hold the heatmap matrix; column 2 holds the
+    # focal-region summary block: the bar chart of total drought-years inside
+    # the focal region (top cell) and the focal-region criteria text (bottom
+    # two cells, merged). Top/bottom colorbars span only cols 0-1 (their
+    # geometry pulls bb of axes_rp[0]/axes_pct[0] / [2]).
+    fig = plt.figure(figsize=(13.0, 14.5))
+    GS_LEFT = 0.085
+    GS_RIGHT = 0.97
+    GS_TOP = 0.86
+    GS_BOT = 0.18
 
     gs = gridspec.GridSpec(
-        3, 2,
+        3, 3,
         left=GS_LEFT, right=GS_RIGHT,
         top=GS_TOP, bottom=GS_BOT,
-        wspace=0.08, hspace=0.12,
+        wspace=0.10, hspace=0.12,
+        width_ratios=[1.0, 1.0, 0.95],
     )
 
     axes_rp, axes_pct = [], []
+    ax_bar = fig.add_subplot(gs[0, 2])
+    ax_criteria = fig.add_subplot(gs[1:3, 2])
 
     def _add_panels(row_idx, did):
         is_change_row = row_idx > 0
@@ -416,14 +445,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     for row_idx in range(3):
         ax_rp = axes_rp[row_idx]
         ax_pct = axes_pct[row_idx]
+        # Major tick labels on every subplot (both columns, all rows).
         ax_rp.set_yticklabels(['1', '10', '100'])
-        ax_pct.set_yticklabels([])
-
-        # Rows share a severity axis and panels e/f carry the tick labels;
-        # suppress them on the upper two rows so the numbers appear once.
-        if row_idx != 2:
-            ax_rp.set_xticklabels([])
-            ax_pct.set_xticklabels([])
+        ax_pct.set_yticklabels(['1', '10', '100'])
 
         # Per-subplot magnitude label on every left-column panel (a, c, e).
         ax_rp.set_ylabel(yaxis_label_text, fontsize=FONTSIZE_LABEL, labelpad=6)
@@ -453,15 +477,89 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         zorder=10,
     )
 
-    # -- scenario labels on right ------------------------------------------
-    # Per-subplot axis labels are now drawn by matplotlib; no figure-level
-    # axis labels are needed.
-    fig.canvas.draw()
+    # -- focal-region bar chart (top right cell) ---------------------------
+    # Total drought-years within the focal region per scenario. "Drought-
+    # years" = sum of event durations across all realizations for events
+    # whose (severity, magnitude) bin falls inside the focal region.
+    bar_xs = np.arange(len(DATASETS))
+    bar_values = [focal_overlap_years[did] for did in DATASETS]
+    bar_colors = [DATASET_COLORS[did] for did in DATASETS]
+    ax_bar.bar(bar_xs, bar_values, color=bar_colors,
+               edgecolor=AXIS_FRAME_COLOR, linewidth=0.8, zorder=3)
+    ax_bar.set_xticks(bar_xs)
+    ax_bar.set_xticklabels(
+        [DATASET_LABELS_SHORT[did] for did in DATASETS],
+        fontsize=FONTSIZE_SMALL, rotation=0,
+    )
+    bar_max = max(bar_values) if bar_values else 0.0
+    ax_bar.set_ylim(0.0, bar_max * 1.18 if bar_max > 0 else 1.0)
+    for x, v in zip(bar_xs, bar_values):
+        ax_bar.text(x, v + bar_max * 0.02, f'{v:,.0f}',
+                    ha='center', va='bottom',
+                    fontsize=FONTSIZE_SMALL, color='#222222')
+    # Clean bar-chart left side so the scenario row labels (in the gap
+    # between heatmaps and this column) have unobstructed space.
+    ax_bar.set_yticks([])
+    ax_bar.set_ylabel('')
+    _style_axis_frame(ax_bar)
+    for side in ('top', 'right', 'left'):
+        ax_bar.spines[side].set_visible(False)
+    ax_bar.tick_params(axis='y', length=0)
+    ax_bar.set_title('Drought-years in\nfocal region',
+                     fontsize=FONTSIZE_LABEL, pad=8)
+    label_panel(ax_bar, 'g', fontsize=FONTSIZE_LABEL, fontweight='normal')
 
-    # Scenario labels on the right-hand side of each row, using each right-
-    # column axis's rendered box centre so the label aligns with the row
-    # and with the left-column y-tick "10" at the panel's vertical midpoint.
-    scenario_label_x = 0.935
+    # -- focal-region criteria text (bottom-right merged cell) -------------
+    ax_criteria.set_axis_off()
+    crit_lines = [
+        ('header', 'Focal Region (white outline)'),
+        ('sub',    'All three criteria must hold:'),
+        ('item',   rf'(i)   Return Period (joint exc.) $\leq$ '
+                   rf'{FOCAL_RP_THRESH_YEARS:,} yr'
+                   '\n        in all 3 scenarios'),
+        ('item',   r'(ii)  $\geq$5% of droughts reach DE'
+                   '\n        in all 3 scenarios'),
+        ('item',   r'(iii) NYC storage <15% in $\geq$1 event'
+                   '\n        in at least 1 of the 3 scenarios'),
+        ('symbol', r'$\times$  bin where $\geq$1 event drove combined NYC'
+                   '\n     storage <15% of capacity'),
+        ('symbol', r'$/\!/\!/$  insufficient sample (<5 events in bin)'),
+        ('symbol', r'gray  bin with no drought events'),
+    ]
+    y_cursor = 0.96
+    line_pitch = {'header': 0.085, 'sub': 0.080, 'item': 0.115,
+                  'symbol': 0.090}
+    for kind, text in crit_lines:
+        if kind == 'header':
+            ax_criteria.text(0.02, y_cursor, text,
+                             ha='left', va='top',
+                             fontsize=FONTSIZE_LABEL, color='#222222',
+                             transform=ax_criteria.transAxes)
+        elif kind == 'sub':
+            ax_criteria.text(0.02, y_cursor, text,
+                             ha='left', va='top',
+                             fontsize=FONTSIZE_SMALL, color='#333333',
+                             transform=ax_criteria.transAxes)
+        elif kind == 'item':
+            ax_criteria.text(0.02, y_cursor, text,
+                             ha='left', va='top',
+                             fontsize=FONTSIZE_SMALL, color='#222222',
+                             transform=ax_criteria.transAxes)
+        elif kind == 'symbol':
+            ax_criteria.text(0.02, y_cursor, text,
+                             ha='left', va='top',
+                             fontsize=FONTSIZE_SMALL, color='#333333',
+                             transform=ax_criteria.transAxes,
+                             linespacing=1.25)
+        y_cursor -= line_pitch[kind]
+
+    # -- scenario labels between col 1 and col 2 ---------------------------
+    # Place each row's scenario label vertically in the gap between the
+    # right heatmap (axes_pct) and the right-column summary panel.
+    fig.canvas.draw()
+    bb_pct_top = axes_pct[0].get_position()
+    bb_bar = ax_bar.get_position()
+    scenario_label_x = (bb_pct_top.x1 + bb_bar.x0) / 2
     for row_idx, did in enumerate(DATASETS):
         bb = axes_pct[row_idx].get_position()
         y_center = bb.y0 + bb.height / 2
@@ -516,8 +614,10 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cb.outline.set_linewidth(0.8)
 
     # -- bottom colorbars: Δ scales, positioned below row 3's x-axis label --
+    # Sits below GS_BOT with room above for panel x-tick labels, panel
+    # x-axis label, and the cbar's own 2-line top label.
     cbar_bot_h = 0.010
-    cbar_bot_y = 0.185
+    cbar_bot_y = 0.10
     bb_bot_left = axes_rp[2].get_position()
     bb_bot_right = axes_pct[2].get_position()
     cbar_ax_rp_rel = fig.add_axes(
@@ -557,61 +657,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cb.outline.set_edgecolor(AXIS_FRAME_COLOR)
         cb.outline.set_linewidth(0.8)
 
-    # -- bottom annotations: symbols + 2-column key -------------------------
-    # Symbol strap stays centred.
-    # Below it, a two-column block: the left column lists the three
-    # focal-region satisficing criteria; the right column lists the number
-    # of drought events in the focal region within each ensemble.
-    symbol_line = (
-        r'$\times$ = bin where $\geq$1 event drove combined NYC storage '
-        '<15% of capacity    |    '
-        r'$/\!/\!/$ insufficient sample (<5 events in bin)    |    '
-        'gray = bin with no drought events'
-    )
-    fig.text(0.5, 0.115, symbol_line, ha='center', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-
-    # Two columns. The criteria (left) use the full left half of the figure
-    # and are kept terse so none exceed the column width; the event-count
-    # list (right) starts at x=0.62, clear of the longest criterion line.
-    crit_x = 0.06
-    crit_indent_x = crit_x + 0.02
-    counts_x = 0.62
-    counts_indent_x = counts_x + 0.02
-
-    y_header = 0.088
-    y_item_1 = 0.064
-    y_item_2 = 0.040
-    y_item_3 = 0.016
-
-    # Left column — satisficing criteria (abbreviated to fit half width).
-    fig.text(crit_x, y_header,
-             'Focal region (white outline) — all three must hold:',
-             ha='left', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(crit_indent_x, y_item_1,
-             rf'(i)   Return Period (joint exc.) $\leq$ {FOCAL_RP_THRESH_YEARS:,} yr in all 3 scenarios',
-             ha='left', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(crit_indent_x, y_item_2,
-             r'(ii)  $\geq$5% of droughts reach DE in all 3 scenarios',
-             ha='left', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-    fig.text(crit_indent_x, y_item_3,
-             r'(iii) NYC storage <15% in $\geq$1 event in at least 1 of the 3 scenarios',
-             ha='left', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-
-    # Right column — drought-event counts in the focal region per ensemble.
-    fig.text(counts_x, y_header,
-             'Drought events in focal region:',
-             ha='left', va='center',
-             fontsize=FONTSIZE_SMALL, color='#333333')
-    for did, y in zip(DATASETS, (y_item_1, y_item_2, y_item_3)):
-        fig.text(counts_indent_x, y,
-                 f'{DATASET_LABELS[did]}: {focal_event_counts[did]:,}',
-                 ha='left', va='center',
-                 fontsize=FONTSIZE_SMALL, color='#333333')
+    # Focal-region criteria, drought-years bar chart, and the symbol legend
+    # all live in column 2 of the GridSpec — see the bar/criteria block above.
 
     cbar_label_artists = [
         cb.ax.xaxis.label for cb in
