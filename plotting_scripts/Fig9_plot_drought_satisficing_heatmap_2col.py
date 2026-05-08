@@ -28,6 +28,7 @@ import math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
@@ -40,11 +41,11 @@ from methods.config import (
     GRID_N_BINS, FOCAL_WORST_STORAGE_THRESH,
     FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS,
 )
-from methods.load import load_event_metrics
+from methods.load import load_event_metrics, load_drought_events
 from methods.return_period import compute_return_period_grid_exceedance as compute_return_period_grid
 from methods.plotting.styles import (
     DATASET_LABELS, DATASET_LABELS_SHORT, DATASET_COLORS,
-    DPI_HIGH, apply_publication_style, label_panel,
+    DPI_HIGH, apply_publication_style,
     MANUSCRIPT_CMAPS,
 )
 from methods.plotting.heatmap import (
@@ -58,12 +59,30 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 SSI_WINDOW_DEFAULT = 3
 DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_high']
-PANEL_LETTERS = list('abcdef')
+# Reading order: a-c top heatmap row, d-f middle heatmap row,
+# g-i bottom summary row (bar / criteria / legend).
+PANEL_LETTERS = list('abcdefghi')
 
 SHOW_CHANGE = False
 
-DOR_SEV = 2.8
-DOR_MAG = 48.0
+# Override FOCAL_WORST_STORAGE_THRESH for ad-hoc sensitivity figures (e.g.
+# regenerate the same plot with the × marker / criterion (iii) threshold
+# at 25 % instead of the manuscript default 15 %). Set to None to use the
+# value from methods.config; the output filename's `_stoNN` suffix tracks
+# whichever threshold was used, so 15 % and 25 % versions don't overwrite.
+STORAGE_THRESH_OVERRIDE = None
+
+# Grey dividing lines that separate the absolute (col 0) from Δ (cols 1-2)
+# heatmaps and the metric rows from each other. Toggle off if these will be
+# added in postprocessing of the SVG.
+SHOW_DIVIDERS = True
+DIVIDER_COLOR = '#bfbfbf'
+DIVIDER_LW = 1.0
+
+# Date used to pick the 1960s drought-of-record from the observed-event
+# table. The historic event active during this date is highlighted in red;
+# its (severity, magnitude) is read from the data rather than hardcoded.
+DOR_TARGET_DATE = pd.Timestamp('1964-12-01')
 
 AXIS_FRAME_COLOR = '#333333'
 EMPTY_CELL_COLOR = '#ededed'
@@ -213,6 +232,15 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     baseline_id = DATASETS[0]
 
+    # Resolve the worst-case-storage threshold once. Propagated to:
+    # (i) identify_focal_region's `storage_thresh` argument so criterion
+    #     (iii) of the focal-region selection uses the override, (ii) the
+    # × marker draw loop, (iii) the criteria + legend text, and
+    # (iv) the output filename suffix.
+    storage_thresh = (FOCAL_WORST_STORAGE_THRESH
+                      if STORAGE_THRESH_OVERRIDE is None
+                      else float(STORAGE_THRESH_OVERRIDE))
+
     sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges_logmag(
         all_data, DATASETS, n_bins=GRID_N_BINS)
 
@@ -238,7 +266,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
             all_data[did], sev_edges, mag_edges, min_count=MIN_COUNT_POPULATED)
         min_grids[did] = mg
 
-    focal_cells = identify_focal_region(T_W_grids, frac_grids, min_grids, DATASETS)
+    focal_cells = identify_focal_region(
+        T_W_grids, frac_grids, min_grids, DATASETS,
+        storage_thresh=storage_thresh)
     focal_event_counts = {
         did: _count_events_in_focal_region(
             all_data[did], sev_edges, mag_edges, focal_cells)
@@ -281,15 +311,24 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         pct_de_grids[did] = pct_masked
 
     # -- colormaps & continuous norms ---------------------------------------
-    # Manuscript-wide palette: sequential = viridis_r, diverging = BrBG_r.
-    # For the two Δ panels we want "brown = adverse in each metric", so
-    # the diverging palette is used as-is where *positive* Δ is adverse
-    # (%DE increases → more emergencies), and reversed where *negative* Δ
-    # is adverse (RP shortens → more frequent droughts). Reversing BrBG_r
-    # yields BrBG (brown on the low / negative end).
+    # Three palettes total. The two Δ-panel pairs share a single
+    # brown-green diverging family — brown always marks the adverse side,
+    # which lives on the *negative* axis for ΔRP (shorter return period =
+    # more frequent droughts) and on the *positive* axis for Δ%DE (more
+    # emergencies). The shared palette signals "these four panels show
+    # the same kind of thing — change vs. baseline".
+    #
+    # Row 0 — Drought Return Period
+    #   abs (a)        viridis_r — manuscript sequential
+    #   Δ   (b, c)     BrBG — brown on negative side = more frequent
+    #
+    # Row 1 — Droughts reaching DE
+    #   abs (d)        Reds — red intensity = more droughts hit DE
+    #   Δ   (e, f)     BrBG_r — brown on positive side = more emergencies
     cmap_sequential = MANUSCRIPT_CMAPS['sequential']         # viridis_r
     cmap_diverging_pos_brown = MANUSCRIPT_CMAPS['diverging']  # BrBG_r
     cmap_diverging_neg_brown = cmap_diverging_pos_brown.reversed()  # BrBG
+    cmap_pct_abs_base = plt.get_cmap('Reds')
 
     # All four colormaps are discretized via BoundaryNorm so the heatmaps
     # show distinct colour bands rather than continuous gradients. Each
@@ -315,7 +354,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     pct_de_vmax = max(10.0, math.ceil(pct_de_data_max / 10.0) * 10.0)
     pct_de_boundaries = np.arange(0.0, pct_de_vmax + 0.01, 10.0)
     n_pct_bins = len(pct_de_boundaries) - 1
-    cmap_pct_de_abs = cmap_sequential.resampled(n_pct_bins)
+    cmap_pct_de_abs = cmap_pct_abs_base.resampled(n_pct_bins)
     norm_pct_de_abs = mcolors.BoundaryNorm(pct_de_boundaries, ncolors=n_pct_bins)
     pct_de_ticks = list(pct_de_boundaries)
     pct_de_tick_labels = [f'{int(round(v))}' for v in pct_de_ticks]
@@ -350,78 +389,102 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     pct_de_diff_tick_labels = [_fmt_signed_pct(v) for v in pct_de_diff_ticks]
 
     # -- figure layout ------------------------------------------------------
-    # 3×3 GridSpec. Columns 0-1 hold the heatmap matrix; column 2 holds the
-    # focal-region summary block: the bar chart of total drought-years inside
-    # the focal region (top cell) and the focal-region criteria text (bottom
-    # two cells, merged). Top/bottom colorbars span only cols 0-1 (their
-    # geometry pulls bb of axes_rp[0]/axes_pct[0] / [2]).
-    fig = plt.figure(figsize=(13.0, 14.5))
+    # Two GridSpecs share the figure so the gap between the heatmap region
+    # and the summary footer is controlled explicitly (rather than emerging
+    # from a uniform hspace). The bottom colorbars sit in that gap.
+    #
+    #   gs_heat  — 2 rows × 3 cols of heatmaps (top ~70% of figure)
+    #     row 0   joint-exceedance return period (RP)
+    #     row 1   % droughts reaching Drought Emergency (%DE)
+    #   gs_summary — 1 row × 3 cols of summary panels (bottom ~15%)
+    #     col 0   bar chart (drought-years per scenario)
+    #     col 1   focal-region criteria text
+    #     col 2   symbol legend
+    #
+    # Column meaning (heatmap rows):
+    #   col 0   Stationary Baseline (absolute units)
+    #   col 1   Δ vs. baseline, Wetter Winter / Drier Summer
+    #   col 2   Δ vs. baseline, Wetter Winter / Similar Summer
+    fig = plt.figure(figsize=(14.0, 13.5))
     GS_LEFT = 0.085
     GS_RIGHT = 0.97
-    GS_TOP = 0.86
-    GS_BOT = 0.18
 
-    gs = gridspec.GridSpec(
-        3, 3,
+    HEAT_TOP = 0.86
+    HEAT_BOT = 0.32
+    SUM_TOP = 0.18
+    SUM_BOT = 0.04
+
+    gs_heat = gridspec.GridSpec(
+        2, 3,
         left=GS_LEFT, right=GS_RIGHT,
-        top=GS_TOP, bottom=GS_BOT,
-        wspace=0.10, hspace=0.12,
-        width_ratios=[1.0, 1.0, 0.95],
+        top=HEAT_TOP, bottom=HEAT_BOT,
+        wspace=0.10, hspace=0.35,
+        width_ratios=[1.0, 1.0, 1.0],
     )
+    # Match gs_heat's column geometry (left/right margins, wspace, and
+    # width_ratios) so that g/h/i align vertically with a/d, b/e, c/f.
+    gs_summary = gridspec.GridSpec(
+        1, 3,
+        left=GS_LEFT, right=GS_RIGHT,
+        top=SUM_TOP, bottom=SUM_BOT,
+        wspace=0.10,
+        width_ratios=[1.0, 1.0, 1.0],
+    )
+    gs = gs_heat  # alias used by _add_heatmap below
 
-    axes_rp, axes_pct = [], []
-    ax_bar = fig.add_subplot(gs[0, 2])
-    ax_criteria = fig.add_subplot(gs[1:3, 2])
+    # axes_heat[metric_row][scenario_col]
+    axes_heat = [[None, None, None], [None, None, None]]
 
-    def _add_panels(row_idx, did):
-        is_change_row = row_idx > 0
-        ax_rp = fig.add_subplot(gs[row_idx, 0])
-        if is_change_row:
-            grid_r = rp_diff_grids[did]
-            cmap_r, norm_r = cmap_rp_rel, norm_rp_rel
-        else:
-            grid_r = rp_grids[did]
-            cmap_r, norm_r = cmap_rp_abs, norm_rp_abs
-        ax_rp.set_facecolor(EMPTY_CELL_COLOR)
-        ax_rp.pcolormesh(
-            sev_edges, mag_edges, np.ma.masked_invalid(grid_r.T),
-            cmap=cmap_r, norm=norm_r, rasterized=True, zorder=3,
+    # Per-(metric, col) selection of grid + cmap + norm. Col 0 always uses the
+    # absolute scale; cols 1-2 use the Δ scale. Hatching uses the *displayed*
+    # dataset's count grid: stationary for col 0 (so 1-4-event bins of the
+    # baseline are flagged on panel a/d) and the climate-adjusted dataset
+    # for cols 1-2 (where insufficiency reflects the scenario, not baseline).
+    rp_panel_specs = [
+        ('stationary_ensemble',    rp_grids,      cmap_rp_abs,     norm_rp_abs),
+        ('climate_adjusted_low',   rp_diff_grids, cmap_rp_rel,     norm_rp_rel),
+        ('climate_adjusted_high',  rp_diff_grids, cmap_rp_rel,     norm_rp_rel),
+    ]
+    pct_panel_specs = [
+        ('stationary_ensemble',    pct_de_grids,      cmap_pct_de_abs, norm_pct_de_abs),
+        ('climate_adjusted_low',   pct_de_diff_grids, cmap_pct_de_rel, norm_pct_de_rel),
+        ('climate_adjusted_high',  pct_de_diff_grids, cmap_pct_de_rel, norm_pct_de_rel),
+    ]
+
+    def _add_heatmap(metric_row, scenario_col, did, grid_dict, cmap, norm,
+                     overlay_min_storage):
+        ax = fig.add_subplot(gs[metric_row, scenario_col])
+        ax.set_facecolor(EMPTY_CELL_COLOR)
+        ax.pcolormesh(
+            sev_edges, mag_edges, np.ma.masked_invalid(grid_dict[did].T),
+            cmap=cmap, norm=norm, rasterized=True, zorder=3,
         )
-        _draw_insufficient_hatch(ax_rp, sev_edges, mag_edges, count_grids[did])
-        draw_focal_boundary(ax_rp, sev_edges, mag_edges, focal_cells)
-        axes_rp.append(ax_rp)
+        _draw_insufficient_hatch(ax, sev_edges, mag_edges, count_grids[did])
+        draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells)
+        if overlay_min_storage:
+            mg = min_grids[did]
+            for i, sc in enumerate(sev_centers):
+                for j, mc in enumerate(mag_centers):
+                    if not np.isnan(mg[i, j]) and mg[i, j] < storage_thresh:
+                        ax.scatter(
+                            sc, mc, marker='x', s=34, linewidths=1.1,
+                            color='#202020', alpha=0.85, zorder=7,
+                        )
+        axes_heat[metric_row][scenario_col] = ax
+        return ax
 
-        ax_pct = fig.add_subplot(gs[row_idx, 1])
-        if is_change_row:
-            grid_p = pct_de_diff_grids[did]
-            cmap_p, norm_p = cmap_pct_de_rel, norm_pct_de_rel
-        else:
-            grid_p = pct_de_grids[did]
-            cmap_p, norm_p = cmap_pct_de_abs, norm_pct_de_abs
-        ax_pct.set_facecolor(EMPTY_CELL_COLOR)
-        ax_pct.pcolormesh(
-            sev_edges, mag_edges, np.ma.masked_invalid(grid_p.T),
-            cmap=cmap_p, norm=norm_p, rasterized=True, zorder=3,
-        )
-        _draw_insufficient_hatch(ax_pct, sev_edges, mag_edges, count_grids[did])
-        draw_focal_boundary(ax_pct, sev_edges, mag_edges, focal_cells)
+    for col_idx, (did, gd, cm, nm) in enumerate(rp_panel_specs):
+        _add_heatmap(0, col_idx, did, gd, cm, nm, overlay_min_storage=False)
+    for col_idx, (did, gd, cm, nm) in enumerate(pct_panel_specs):
+        _add_heatmap(1, col_idx, did, gd, cm, nm, overlay_min_storage=True)
 
-        min_grid = min_grids[did]
-        for i, sc in enumerate(sev_centers):
-            for j, mc in enumerate(mag_centers):
-                if not np.isnan(min_grid[i, j]) and min_grid[i, j] < FOCAL_WORST_STORAGE_THRESH:
-                    ax_pct.scatter(
-                        sc, mc, marker='x', s=34, linewidths=1.1,
-                        color='#202020', alpha=0.85, zorder=7,
-                    )
-        axes_pct.append(ax_pct)
-
-    for row_idx, did in enumerate(DATASETS):
-        _add_panels(row_idx, did)
+    ax_bar = fig.add_subplot(gs_summary[0, 0])
+    ax_criteria = fig.add_subplot(gs_summary[0, 1])
+    ax_legend = fig.add_subplot(gs_summary[0, 2])
 
     # -- shared axis styling -------------------------------------------------
-    all_axes = axes_rp + axes_pct
-    for ax in all_axes:
+    all_heatmap_axes = [ax for row in axes_heat for ax in row]
+    for ax in all_heatmap_axes:
         ax.set_xlim(1.0, 4.5)
         ax.set_xticks(SEV_TICKS)
         ax.set_yscale('log')
@@ -436,46 +499,91 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         ax.set_xlabel('')
         ax.set_box_aspect(1.0)
 
-    # Keep each line short enough that, after rotation, the two-line
-    # y-label height (≈ 2 × font size) does not exceed the axis height,
-    # and the one-line x-label width fits within the column.
     xaxis_label_text = 'Drought Severity (peak |SSI-3|)'
     yaxis_label_text = 'Drought Magnitude\n(|SSI-3| deficit-months)'
 
-    for row_idx in range(3):
-        ax_rp = axes_rp[row_idx]
-        ax_pct = axes_pct[row_idx]
-        # Major tick labels on every subplot (both columns, all rows).
-        ax_rp.set_yticklabels(['1', '10', '100'])
-        ax_pct.set_yticklabels(['1', '10', '100'])
+    # Subpanel descriptive titles (panel letter + metric/scenario phrase).
+    # The column titles supply the scenario; the title here disambiguates
+    # absolute vs. Δ within each row.
+    panel_titles = [
+        [  # row 0 — joint-exceedance return period
+            '(a) Joint-exc. return period',
+            '(b) Δ Return period vs. Stationary',
+            '(c) Δ Return period vs. Stationary',
+        ],
+        [  # row 1 — % droughts reaching DE
+            '(d) % Droughts reaching DE',
+            '(e) Δ % reaching DE vs. Stationary',
+            '(f) Δ % reaching DE vs. Stationary',
+        ],
+    ]
 
-        # Per-subplot magnitude label on every left-column panel (a, c, e).
-        ax_rp.set_ylabel(yaxis_label_text, fontsize=FONTSIZE_LABEL, labelpad=6)
+    for metric_row in range(2):
+        for col_idx in range(3):
+            ax = axes_heat[metric_row][col_idx]
+            ax.set_yticklabels(['1', '10', '100'])
+            # y-axis label only on col 0 (panels a, d).
+            if col_idx == 0:
+                ax.set_ylabel(yaxis_label_text,
+                              fontsize=FONTSIZE_LABEL, labelpad=6)
+            # x-axis label only on the bottom heatmap row (panels d, e, f).
+            if metric_row == 1:
+                ax.set_xlabel(xaxis_label_text,
+                              fontsize=FONTSIZE_LABEL, labelpad=6)
+            ax.set_title(panel_titles[metric_row][col_idx],
+                         fontsize=FONTSIZE_SMALL, loc='left', pad=4)
 
-        # Per-subplot severity label on both bottom-row panels (e, f).
-        if row_idx == 2:
-            ax_rp.set_xlabel(xaxis_label_text, fontsize=FONTSIZE_LABEL, labelpad=6)
-            ax_pct.set_xlabel(xaxis_label_text, fontsize=FONTSIZE_LABEL, labelpad=6)
+    # Historic-drought markers on panel (a) only. All observed droughts
+    # whose (severity, magnitude) bin falls inside the focal region get a
+    # black triangle; the 1960s drought-of-record (the historic event
+    # active at DOR_TARGET_DATE) is highlighted in red on top.
+    obs_droughts = load_drought_events(
+        baseline_id, ssi_window, observed=True)
+    obs_in_focal_mask = _focal_region_event_mask(
+        obs_droughts, sev_edges, mag_edges, focal_cells)
 
-        label_panel(ax_rp, PANEL_LETTERS[row_idx * 2],
-                    fontsize=FONTSIZE_LABEL, fontweight='normal')
-        label_panel(ax_pct, PANEL_LETTERS[row_idx * 2 + 1],
-                    fontsize=FONTSIZE_LABEL, fontweight='normal')
+    obs_start = pd.to_datetime(obs_droughts['start'])
+    obs_end = pd.to_datetime(obs_droughts['end'])
+    is_1960s = (obs_start <= DOR_TARGET_DATE) & (obs_end >= DOR_TARGET_DATE)
 
-    # 1960s drought-of-record marker + annotation on panel (a) only.
-    # Red triangle to match Fig5's drought-of-record marker style.
-    axes_rp[0].scatter(
-        DOR_SEV, DOR_MAG, marker='^', s=100,
-        color='red', edgecolors='white', linewidths=1.0,
-        zorder=10,
-    )
-    axes_rp[0].annotate(
-        '1960s drought\nof record',
-        xy=(DOR_SEV, DOR_MAG), xytext=(3.3, 70),
-        fontsize=FONTSIZE_SMALL, ha='left', va='center',
-        arrowprops=dict(arrowstyle='-', color='#000000', lw=0.6),
-        zorder=10,
-    )
+    # Black triangles: any historic event inside focal region except the
+    # 1960s drought-of-record.
+    other_focal_obs = obs_droughts[obs_in_focal_mask & ~is_1960s.values]
+    if len(other_focal_obs):
+        axes_heat[0][0].scatter(
+            other_focal_obs['severity'].values,
+            other_focal_obs['magnitude'].values,
+            marker='^', s=70, color='#000000', edgecolors='white',
+            linewidths=0.8, zorder=10,
+        )
+        for _, row in other_focal_obs.iterrows():
+            yr = pd.to_datetime(row['start']).year
+            axes_heat[0][0].annotate(
+                str(yr),
+                xy=(row['severity'], row['magnitude']),
+                xytext=(4, 4), textcoords='offset points',
+                fontsize=FONTSIZE_SMALL - 2, color='#000000',
+                ha='left', va='bottom', zorder=11,
+            )
+
+    # Red triangle for the 1960s drought-of-record (drawn last, on top).
+    drought_1960s = obs_droughts[is_1960s.values]
+    if len(drought_1960s):
+        row_dor = drought_1960s.iloc[0]
+        dor_sev = float(row_dor['severity'])
+        dor_mag = float(row_dor['magnitude'])
+        axes_heat[0][0].scatter(
+            dor_sev, dor_mag, marker='^', s=100,
+            color='red', edgecolors='white', linewidths=1.0,
+            zorder=12,
+        )
+        axes_heat[0][0].annotate(
+            '1960s drought\nof record',
+            xy=(dor_sev, dor_mag), xytext=(3.3, 70),
+            fontsize=FONTSIZE_SMALL, ha='left', va='center',
+            arrowprops=dict(arrowstyle='-', color='#000000', lw=0.6),
+            zorder=12,
+        )
 
     # -- focal-region bar chart (top right cell) ---------------------------
     # Total drought-years within the focal region per scenario. "Drought-
@@ -497,38 +605,42 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         ax_bar.text(x, v + bar_max * 0.02, f'{v:,.0f}',
                     ha='center', va='bottom',
                     fontsize=FONTSIZE_SMALL, color='#222222')
-    # Clean bar-chart left side so the scenario row labels (in the gap
-    # between heatmaps and this column) have unobstructed space.
-    ax_bar.set_yticks([])
-    ax_bar.set_ylabel('')
+    ax_bar.set_ylabel('Drought-years', fontsize=FONTSIZE_SMALL, labelpad=4)
     _style_axis_frame(ax_bar)
-    for side in ('top', 'right', 'left'):
+    for side in ('top', 'right'):
         ax_bar.spines[side].set_visible(False)
-    ax_bar.tick_params(axis='y', length=0)
-    ax_bar.set_title('Drought-years in\nfocal region',
-                     fontsize=FONTSIZE_LABEL, pad=8)
-    label_panel(ax_bar, 'g', fontsize=FONTSIZE_LABEL, fontweight='normal')
+    ax_bar.tick_params(axis='y', labelsize=FONTSIZE_SMALL - 1)
+    # Panel letter + description as a single in-panel label so the title
+    # does not collide with the bottom colorbar above the summary row.
+    ax_bar.text(0.02, 1.04, '(g) Drought-years in focal region',
+                transform=ax_bar.transAxes,
+                fontsize=FONTSIZE_LABEL, ha='left', va='bottom')
 
-    # -- focal-region criteria text (bottom-right merged cell) -------------
-    ax_criteria.set_axis_off()
+    # -- focal-region criteria text (bottom row, middle cell) -------------
+    # Header + sub + 3 numbered items live here; the symbol legend goes in
+    # the adjacent ax_legend cell so each summary panel is one self-contained
+    # text block. Spines stay visible so the criteria block reads as a
+    # boxed callout.
+    ax_criteria.set_xticks([])
+    ax_criteria.set_yticks([])
+    for spine in ax_criteria.spines.values():
+        spine.set_visible(True)
+        spine.set_color('#000000')
+        spine.set_linewidth(0.8)
     crit_lines = [
-        ('header', 'Focal Region (white outline)'),
+        ('header', '(h) Focal Region (white outline)'),
         ('sub',    'All three criteria must hold:'),
         ('item',   rf'(i)   Return Period (joint exc.) $\leq$ '
                    rf'{FOCAL_RP_THRESH_YEARS:,} yr'
                    '\n        in all 3 scenarios'),
         ('item',   r'(ii)  $\geq$5% of droughts reach DE'
                    '\n        in all 3 scenarios'),
-        ('item',   r'(iii) NYC storage <15% in $\geq$1 event'
+        ('item',   rf'(iii) NYC storage <{int(round(storage_thresh))}% in $\geq$1 event'
                    '\n        in at least 1 of the 3 scenarios'),
-        ('symbol', r'$\times$  bin where $\geq$1 event drove combined NYC'
-                   '\n     storage <15% of capacity'),
-        ('symbol', r'$/\!/\!/$  insufficient sample (<5 events in bin)'),
-        ('symbol', r'gray  bin with no drought events'),
     ]
     y_cursor = 0.96
-    line_pitch = {'header': 0.085, 'sub': 0.080, 'item': 0.115,
-                  'symbol': 0.090}
+    line_pitch = {'header': 0.10, 'sub': 0.10, 'item': 0.20,
+                  'symbol': 0.20}
     for kind, text in crit_lines:
         if kind == 'header':
             ax_criteria.text(0.02, y_cursor, text,
@@ -545,39 +657,118 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
                              ha='left', va='top',
                              fontsize=FONTSIZE_SMALL, color='#222222',
                              transform=ax_criteria.transAxes)
-        elif kind == 'symbol':
-            ax_criteria.text(0.02, y_cursor, text,
-                             ha='left', va='top',
-                             fontsize=FONTSIZE_SMALL, color='#333333',
-                             transform=ax_criteria.transAxes,
-                             linespacing=1.25)
         y_cursor -= line_pitch[kind]
 
-    # -- scenario labels between col 1 and col 2 ---------------------------
-    # Place each row's scenario label vertically in the gap between the
-    # right heatmap (axes_pct) and the right-column summary panel.
+    # -- symbol legend (bottom row, right cell) ----------------------------
+    ax_legend.set_axis_off()
+    legend_lines = [
+        ('header', '(i) Symbol legend'),
+        ('symbol', r'$\times$  bin where $\geq$1 event drove combined NYC'
+                   '\n     storage <' + f'{int(round(storage_thresh))}'
+                   '% of capacity'),
+        ('symbol', r'$/\!/\!/$  insufficient sample (<5 events in bin)'),
+        ('symbol', r'gray  bin with no drought events'),
+    ]
+    y_cursor = 0.96
+    for kind, text in legend_lines:
+        if kind == 'header':
+            ax_legend.text(0.02, y_cursor, text,
+                           ha='left', va='top',
+                           fontsize=FONTSIZE_LABEL, color='#222222',
+                           transform=ax_legend.transAxes)
+        elif kind == 'symbol':
+            ax_legend.text(0.02, y_cursor, text,
+                           ha='left', va='top',
+                           fontsize=FONTSIZE_SMALL, color='#333333',
+                           transform=ax_legend.transAxes,
+                           linespacing=1.25)
+        y_cursor -= line_pitch[kind]
+
+    # -- layout sync: real (post-box_aspect) heatmap positions -------------
+    # set_box_aspect(1.0) shrinks each heatmap inside its GridSpec column
+    # so the panels are square. Axes.get_position() returns the original
+    # GridSpec bbox (unaware of the shrink), so we query the renderer to
+    # get the actual on-screen extent, then propagate that geometry to
+    # column titles, colorbars, summary panels, and dividers — keeping
+    # all rows the same visual width.
     fig.canvas.draw()
-    bb_pct_top = axes_pct[0].get_position()
-    bb_bar = ax_bar.get_position()
-    scenario_label_x = (bb_pct_top.x1 + bb_bar.x0) / 2
-    for row_idx, did in enumerate(DATASETS):
-        bb = axes_pct[row_idx].get_position()
-        y_center = bb.y0 + bb.height / 2
-        fig.text(scenario_label_x, y_center, DATASET_LABELS[did],
-                 rotation=270, ha='center', va='center',
+    _renderer = fig.canvas.get_renderer()
+
+    def _rendered_bbox(ax):
+        return ax.get_window_extent(_renderer).transformed(
+            fig.transFigure.inverted())
+
+    bb_row0_col0 = _rendered_bbox(axes_heat[0][0])
+    bb_row0_col1 = _rendered_bbox(axes_heat[0][1])
+    bb_row0_col2 = _rendered_bbox(axes_heat[0][2])
+    bb_row1_col0 = _rendered_bbox(axes_heat[1][0])
+    bb_row1_col1 = _rendered_bbox(axes_heat[1][1])
+    bb_row1_col2 = _rendered_bbox(axes_heat[1][2])
+
+    # Move summary panels (g/h/i) so they share x-extent with the heatmap
+    # columns above. Their y-extent stays where gs_summary placed it.
+    for col_idx, ax_sum in enumerate((ax_bar, ax_criteria, ax_legend)):
+        target_x = bb_row0_col0.x0 if col_idx == 0 else (
+            bb_row0_col1.x0 if col_idx == 1 else bb_row0_col2.x0)
+        target_w = bb_row0_col0.width  # all heatmap cols are equal width
+        bb_sum = ax_sum.get_position()
+        ax_sum.set_position([target_x, bb_sum.y0, target_w, bb_sum.height])
+
+    # -- column titles & row metric labels ---------------------------------
+    # Column titles: scenario name above the top-row colorbars. Col 0 is
+    # the absolute baseline; cols 1-2 are Δ vs. baseline (the "Δ" prefix
+    # is added explicitly so a reader skimming column titles knows the
+    # column displays a difference, not absolute values).
+    column_titles = [
+        DATASET_LABELS['stationary_ensemble'],
+        f"Δ {DATASET_LABELS['climate_adjusted_low']}",
+        f"Δ {DATASET_LABELS['climate_adjusted_high']}",
+    ]
+    col_title_y = 0.965
+    col_bbs_top = [bb_row0_col0, bb_row0_col1, bb_row0_col2]
+    for col_idx, title in enumerate(column_titles):
+        bb = col_bbs_top[col_idx]
+        x_center = bb.x0 + bb.width / 2
+        fig.text(x_center, col_title_y, title,
+                 ha='center', va='top',
                  fontsize=FONTSIZE_LABEL)
 
-    # Column geometry, reused below for colorbar placement.
-    bb_top_left = axes_rp[0].get_position()
-    bb_top_right = axes_pct[0].get_position()
+    # Row metric labels on the left, rotated 270, anchored to each metric
+    # row's vertical centre. The figure-x position sits to the left of the
+    # heatmap y-axis labels (i.e. left of col 0).
+    row_metric_labels = [
+        'Drought Return Period\n(joint exceedance, years)',
+        'NYC Storage during droughts\n(% reaching Drought Emergency)',
+    ]
+    row_label_x = 0.012
+    row_bbs_col0 = [bb_row0_col0, bb_row1_col0]
+    for metric_row in range(2):
+        bb = row_bbs_col0[metric_row]
+        y_center = bb.y0 + bb.height / 2
+        fig.text(row_label_x, y_center, row_metric_labels[metric_row],
+                 rotation=90, ha='left', va='center',
+                 fontsize=FONTSIZE_LABEL)
 
-    # -- top colorbars: absolute scales for row 1 ---------------------------
-    cbar_top_h = 0.010
-    cbar_top_y = 0.905
+    # -- colorbar geometry: col 0 (abs) vs. cols 1-2 (Δ) -------------------
+
+    rel_top_x0 = bb_row0_col1.x0
+    rel_top_x1 = bb_row0_col2.x1
+    rel_bot_x0 = bb_row1_col1.x0
+    rel_bot_x1 = bb_row1_col2.x1
+
+    cbar_h = 0.010
+    cbar_top_y = bb_row0_col0.y1 + 0.045
+    # Position the bottom colorbar in the gap between the heatmap GridSpec
+    # bottom (HEAT_BOT) and the summary GridSpec top (SUM_TOP). Offset
+    # downward from HEAT_BOT to leave room for row 1's x-axis label and
+    # the colorbar's own top label.
+    cbar_bot_y = HEAT_BOT - 0.085
+
+    # -- top colorbars: above RP heatmap row -------------------------------
     cbar_ax_rp_abs = fig.add_axes(
-        [bb_top_left.x0, cbar_top_y, bb_top_left.width, cbar_top_h])
-    cbar_ax_pct_abs = fig.add_axes(
-        [bb_top_right.x0, cbar_top_y, bb_top_right.width, cbar_top_h])
+        [bb_row0_col0.x0, cbar_top_y, bb_row0_col0.width, cbar_h])
+    cbar_ax_rp_rel = fig.add_axes(
+        [rel_top_x0, cbar_top_y, rel_top_x1 - rel_top_x0, cbar_h])
 
     cb_rp_abs = fig.colorbar(
         plt.cm.ScalarMappable(cmap=cmap_rp_abs, norm=norm_rp_abs),
@@ -587,44 +778,6 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     cb_rp_abs.set_ticks(rp_abs_ticks)
     cb_rp_abs.set_ticklabels(rp_abs_tick_labels)
 
-    cb_pct_abs = fig.colorbar(
-        plt.cm.ScalarMappable(cmap=cmap_pct_de_abs, norm=norm_pct_de_abs),
-        cax=cbar_ax_pct_abs, orientation='horizontal',
-        extend='max', spacing='uniform',
-    )
-    cb_pct_abs.set_ticks(pct_de_ticks)
-    cb_pct_abs.set_ticklabels(pct_de_tick_labels)
-
-    # 2-row colorbar labels. Metric name on top; quantitative detail on
-    # the second line (units, direction).
-    cbar_labels_top = [
-        (cb_rp_abs, cbar_ax_rp_abs,
-         'Return Period, joint exceedance (years)'),
-        (cb_pct_abs, cbar_ax_pct_abs,
-         'Droughts reaching DE\n(% of events at this severity & magnitude)'),
-    ]
-    # Label above each bar, tick labels below — applied consistently to all
-    # four colorbars (top absolute and bottom Δ).
-    for cb, cax, label in cbar_labels_top:
-        cax.xaxis.set_ticks_position('bottom')
-        cax.xaxis.set_label_position('top')
-        cb.set_label(label, fontsize=FONTSIZE_SMALL, linespacing=1.35)
-        cb.ax.tick_params(labelsize=10)
-        cb.outline.set_edgecolor(AXIS_FRAME_COLOR)
-        cb.outline.set_linewidth(0.8)
-
-    # -- bottom colorbars: Δ scales, positioned below row 3's x-axis label --
-    # Sits below GS_BOT with room above for panel x-tick labels, panel
-    # x-axis label, and the cbar's own 2-line top label.
-    cbar_bot_h = 0.010
-    cbar_bot_y = 0.10
-    bb_bot_left = axes_rp[2].get_position()
-    bb_bot_right = axes_pct[2].get_position()
-    cbar_ax_rp_rel = fig.add_axes(
-        [bb_bot_left.x0, cbar_bot_y, bb_bot_left.width, cbar_bot_h])
-    cbar_ax_pct_rel = fig.add_axes(
-        [bb_bot_right.x0, cbar_bot_y, bb_bot_right.width, cbar_bot_h])
-
     cb_rp_rel = fig.colorbar(
         plt.cm.ScalarMappable(cmap=cmap_rp_rel, norm=norm_rp_rel),
         cax=cbar_ax_rp_rel, orientation='horizontal',
@@ -632,6 +785,20 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     )
     cb_rp_rel.set_ticks(rp_diff_ticks)
     cb_rp_rel.set_ticklabels(rp_diff_tick_labels)
+
+    # -- bottom colorbars: below %DE heatmap row ---------------------------
+    cbar_ax_pct_abs = fig.add_axes(
+        [bb_row1_col0.x0, cbar_bot_y, bb_row1_col0.width, cbar_h])
+    cbar_ax_pct_rel = fig.add_axes(
+        [rel_bot_x0, cbar_bot_y, rel_bot_x1 - rel_bot_x0, cbar_h])
+
+    cb_pct_abs = fig.colorbar(
+        plt.cm.ScalarMappable(cmap=cmap_pct_de_abs, norm=norm_pct_de_abs),
+        cax=cbar_ax_pct_abs, orientation='horizontal',
+        extend='max', spacing='uniform',
+    )
+    cb_pct_abs.set_ticks(pct_de_ticks)
+    cb_pct_abs.set_ticklabels(pct_de_tick_labels)
 
     cb_pct_rel = fig.colorbar(
         plt.cm.ScalarMappable(cmap=cmap_pct_de_rel, norm=norm_pct_de_rel),
@@ -641,15 +808,21 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     cb_pct_rel.set_ticks(pct_de_diff_ticks)
     cb_pct_rel.set_ticklabels(pct_de_diff_tick_labels)
 
-    cbar_labels_bot = [
+    # 2-row colorbar labels. Metric name on top; quantitative detail on
+    # the second line (units, direction). Tick labels below.
+    cbar_labels = [
+        (cb_rp_abs, cbar_ax_rp_abs,
+         'Return Period, joint exceedance (years)'),
         (cb_rp_rel, cbar_ax_rp_rel,
          'Δ Return Period, joint exceedance (years)'
          '\nbrown = more frequent than baseline'),
+        (cb_pct_abs, cbar_ax_pct_abs,
+         'Droughts reaching DE\n(% of events at this severity & magnitude)'),
         (cb_pct_rel, cbar_ax_pct_rel,
          r'$\Delta$ Droughts reaching DE (pp)'
          '\nbrown = more emergencies than baseline'),
     ]
-    for cb, cax, label in cbar_labels_bot:
+    for cb, cax, label in cbar_labels:
         cax.xaxis.set_ticks_position('bottom')
         cax.xaxis.set_label_position('top')
         cb.set_label(label, fontsize=FONTSIZE_SMALL, linespacing=1.35)
@@ -657,19 +830,67 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cb.outline.set_edgecolor(AXIS_FRAME_COLOR)
         cb.outline.set_linewidth(0.8)
 
-    # Focal-region criteria, drought-years bar chart, and the symbol legend
-    # all live in column 2 of the GridSpec — see the bar/criteria block above.
+    # -- optional grey dividing lines --------------------------------------
+    # Three dividers: vertical between col 0 (absolute) and col 1 (Δ), and
+    # horizontal between metric rows + between heatmap rows and the summary
+    # row. Drawn in figure coords and gated by SHOW_DIVIDERS so the user
+    # can switch them off and add cleaner versions to the SVG by hand.
+    if SHOW_DIVIDERS:
+        from matplotlib.lines import Line2D
+
+        # Refresh bboxes after colorbars/text were placed; re-use the
+        # renderer-based positions so dividers align with what's drawn.
+        fig.canvas.draw()
+        bb_row0_col0 = _rendered_bbox(axes_heat[0][0])
+        bb_row0_col1 = _rendered_bbox(axes_heat[0][1])
+        bb_row1_col0 = _rendered_bbox(axes_heat[1][0])
+        bb_row1_col2 = _rendered_bbox(axes_heat[1][2])
+        bb_summary = ax_bar.get_position()
+
+        # Vertical: midway between col 0 right edge and col 1 left edge,
+        # spanning from just above the top colorbar down to just below the
+        # bottom colorbar so the divider visually brackets the entire
+        # absolute-vs-Δ split for both metric rows.
+        vx = (bb_row0_col0.x1 + bb_row0_col1.x0) / 2
+        vy_top = cbar_top_y + cbar_h + 0.020
+        vy_bot = cbar_bot_y - 0.020
+        fig.add_artist(Line2D(
+            [vx, vx], [vy_bot, vy_top],
+            transform=fig.transFigure,
+            color=DIVIDER_COLOR, linewidth=DIVIDER_LW, zorder=0.5,
+        ))
+
+        # Horizontal between metric rows: midway between row 0 bottom and
+        # row 1 top, spanning the heatmap region.
+        hx_left = bb_row0_col0.x0
+        hx_right = bb_row1_col2.x1
+        hy_between = (bb_row0_col0.y0 + bb_row1_col0.y1) / 2
+        fig.add_artist(Line2D(
+            [hx_left, hx_right], [hy_between, hy_between],
+            transform=fig.transFigure,
+            color=DIVIDER_COLOR, linewidth=DIVIDER_LW, zorder=0.5,
+        ))
+
+        # Horizontal between heatmaps + colorbars and summary row: just
+        # above the bar/criteria/legend strip, spanning only the heatmap
+        # region (matches the divider between metric rows).
+        hy_summary = (cbar_bot_y - 0.020 + bb_summary.y1) / 2
+        fig.add_artist(Line2D(
+            [hx_left, hx_right], [hy_summary, hy_summary],
+            transform=fig.transFigure,
+            color=DIVIDER_COLOR, linewidth=DIVIDER_LW, zorder=0.5,
+        ))
 
     cbar_label_artists = [
         cb.ax.xaxis.label for cb in
-        (cb_rp_abs, cb_pct_abs, cb_rp_rel, cb_pct_rel)
+        (cb_rp_abs, cb_rp_rel, cb_pct_abs, cb_pct_rel)
     ]
     _audit_text_overlaps(fig, extra_artists=cbar_label_artists)
 
     # -- save ----------------------------------------------------------------
     fname_base = (f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}"
                   f"_rp{FOCAL_RP_THRESH_YEARS}_frac{FOCAL_FRAC_THRESH:.2f}"
-                  f"_sto{FOCAL_WORST_STORAGE_THRESH:.0f}")
+                  f"_sto{storage_thresh:.0f}")
     fname_png = fname_base + '.png'
     fname_svg = fname_base + '.svg'
     fig.savefig(fname_png, dpi=DPI_HIGH, bbox_inches='tight')
