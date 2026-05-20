@@ -72,7 +72,7 @@ from methods.plotting.heatmap import (
 )
 from methods.plotting.drought_dynamics import compute_fixed_extraction_window
 from methods.plotting.percentile_bands import (
-    format_xaxis_water_year, plot_three_quantile_lines,
+    format_xaxis_water_year, plot_quantile_lines,
 )
 from methods.plotting.styles import (
     DATASET_LABELS_SHORT, DATASET_COLORS,
@@ -215,6 +215,16 @@ VARIABLES = [
      'Event-min 7-day\nMontague flow (MCM/day)',
      []),
 ]
+
+# The dashed outer trajectory line shows the "stressful" 2% tail, whose
+# direction is variable-specific: low NYC storage and low Montague flow are
+# the adverse outcomes (2nd percentile), whereas a high NYC release to the
+# Montague target is the adverse outcome (98th percentile).
+STRESSFUL_OUTER_QUANTILE = {
+    'nyc_storage_pct': 0.02,
+    'nyc_release': 0.98,
+    'montague_flow': 0.02,
+}
 
 PANEL_LETTERS = list('abcdef')   # 3 rows x 2 cols
 XAXIS_SUFFIX_LABEL = 'Water Year (Jun 1 - May 31, FFMP convention)'
@@ -820,11 +830,17 @@ def main():
                 continue
             traces_df = traces_df.reindex(range(1, 367))
             color = DATASET_COLORS[ds]
-            _, ln_med, _ = plot_three_quantile_lines(
+            # 50th (solid) + the variable-specific stressful 2% tail (thick
+            # dashed): 2nd %ile for storage/Montague (low = adverse), 98th
+            # %ile for NYC release (high = adverse). The 10th-percentile
+            # line was dropped to declutter the left column; the outer line
+            # is drawn thicker for visibility against the median.
+            outer_q = STRESSFUL_OUTER_QUANTILE.get(var_name, 0.98)
+            ln_med, _ = plot_quantile_lines(
                 ax_traj, traces_df, color=color,
-                quantiles=(0.10, 0.50, 0.90),
-                linewidth_med=1.8, linewidth_outer=0.7,
-                alpha_med=0.95, alpha_outer=0.40,
+                median_q=0.50, outer_qs=(outer_q,),
+                linewidth_med=1.8, linewidth_outer=1.7,
+                alpha_med=0.95, alpha_outer=0.70,
                 linestyle_outer='--',
             )
             if ln_med is not None:
@@ -864,7 +880,7 @@ def main():
         if row_idx == 0:
             ax_traj.set_title(
                 'Focal-event drought-year trajectories\n'
-                '(per-ensemble 10/50/90 quantiles)',
+                '(per-ensemble median + stressful 2nd/98th %ile)',
                 fontsize=FONTSIZE_TITLE,
             )
 
@@ -1001,7 +1017,8 @@ def main():
             legend_handles.append(ensemble_handles[ds])
             legend_labels.append(
                 f"{DATASET_LABELS_SHORT.get(ds, ds)} focal events "
-                f"(n={dataset_n_events[ds]}; median solid, 10/90 dashed)"
+                f"(n={dataset_n_events[ds]}; median solid, "
+                f"stressful 2nd/98th %ile dashed)"
             )
     for hist_key in active_hist_keys:
         if hist_key in hist_handles:

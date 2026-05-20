@@ -5,6 +5,8 @@ This module provides functions for creating publication-quality summary
 figures comparing synthetic ensemble and historical streamflow data.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -1042,141 +1044,377 @@ def plot_ensemble_summary_figure(
     return fig
 
 
-def plot_ensemble_convergence(
+def plot_low_flow_convergence(
     Q_syn_site: pd.DataFrame,
     realization_ids: list,
-    site: str = 'delMontague',
-    axes=None,
-    n_bootstrap_samples: int = 50,
-    step_size: int = None,
-    n_steps: int = 40,
+    site_label: str,
+    Q_obs: pd.Series = None,
+    n_bootstrap_samples: int = 200,
+    n_steps: int = 30,
     synthetic_color: str = None,
     fname: str = None,
-    figsize: tuple = (12, 5),
+    figsize: tuple = (14, 6),
 ):
     """
-    Plot convergence diagnostics for ensemble mean and variance of annual flow.
+    Plot ensemble convergence of LOW-FLOW EXTREMES.
 
-    Uses bootstrap resampling to show how the range of ensemble statistics
-    narrows as the number of realizations increases.
+    The diagnostic answers: "Does adding more realizations still reveal more
+    extreme low-flow events, or has the ensemble's low-flow tail been
+    characterized?" For each subset size n, the ensemble extreme (MIN over
+    realizations and water years) is computed across many bootstrap subsamples.
+    The bootstrap median is expected to MONOTONICALLY DECREASE with n and
+    plateau when the tail is well-sampled. There is no averaging across
+    realizations -- only min and bootstrap percentiles.
+
+    Two panels:
+
+    1. Minimum 7-day mean flow (acute drought extreme).
+       For each realization, the 7-day moving-average daily flow is computed;
+       the per-realization minimum is taken across all water years; the
+       ensemble extreme is the smallest of these per-realization minima
+       across the subset of n realizations.
+
+    2. Minimum annual Q95 (chronic-low-flow-year extreme).
+       Q95 = flow exceeded 95% of days within a water year (i.e., the 5th
+       percentile of daily flow within that water year). For each
+       (realization, water year) pair we have one annual Q95. The ensemble
+       extreme is the smallest annual Q95 across the n realizations x all
+       water years.
 
     Parameters
     ----------
     Q_syn_site : pd.DataFrame
-        Synthetic flow data for a single site, with columns as realization IDs
-        and a DatetimeIndex.
+        Daily synthetic flow (MGD), columns = realization IDs, DatetimeIndex.
     realization_ids : list
-        List of realization IDs (must match columns in Q_syn_site).
-    site : str
-        Site name (used for axis labels).
-    axes : tuple of (ax_mean, ax_var), optional
-        Two matplotlib axes to plot on.
+        Realization IDs to include.
+    site_label : str
+        Site name shown in titles.
+    Q_obs : pd.Series, optional
+        Historical daily flow at the same site. When provided, a horizontal
+        dashed line marks the historical-record value of each metric.
     n_bootstrap_samples : int
-        Number of bootstrap resamples per subset size (default 50).
-    step_size : int, optional
-        Step size for the number-of-realizations sequence.
-        If None, automatically computed from n_steps.
+        Bootstrap subsamples per subset size (default 200).
     n_steps : int
-        Approximate number of evaluation points along the x-axis (default 40).
-        Ignored if step_size is provided.
+        Number of subset sizes along the x-axis (default 30).
     synthetic_color : str, optional
-        Color for the fill and line.
+        Color for the ensemble band/line.
     fname : str, optional
-        If provided, save figure to this path.
+        If provided, save the figure to this path.
     figsize : tuple
-        Figure size if creating new axes (default (12, 5)).
+        Figure size (default (14, 6)).
 
     Returns
     -------
-    fig : matplotlib.figure.Figure or None
-        The figure object (only if axes were not provided).
+    fig : matplotlib.figure.Figure
     """
     if synthetic_color is None:
         synthetic_color = DATASET_COLORS['stationary_ensemble']
 
     n_realizations = len(realization_ids)
+    Q_syn_site = Q_syn_site[realization_ids]
 
-    # Auto-compute step_size to get ~n_steps evaluation points
-    if step_size is None:
-        step_size = max(1, n_realizations // n_steps)
+    # Per-realization extrema (compute once; bootstrap then just min over subset)
+    rolling7 = Q_syn_site.rolling(window=7, min_periods=7).mean()
+    min_7day_per_real = np.nanmin(rolling7.values, axis=0)  # (N,)
 
-    # Pre-compute annual sums once
-    annual_sums = Q_syn_site[realization_ids].resample('YE').sum()
-    realization_means = annual_sums.mean(axis=0).values
-    realization_vars = annual_sums.var(axis=0).values
+    wy = _assign_usgs_water_year(Q_syn_site.index)
+    annual_q95 = Q_syn_site.groupby(wy).quantile(0.05)  # (n_years, N)
+    min_q95_per_real = np.nanmin(annual_q95.values, axis=0)  # (N,)
 
-    # Subset sizes to evaluate
-    n_subset_sizes = list(range(1, n_realizations + 1, step_size))
-    if n_subset_sizes[-1] != n_realizations:
-        n_subset_sizes.append(n_realizations)
-    n_subset_sizes = np.array(n_subset_sizes)
+    n_subset_sizes = np.unique(
+        np.linspace(1, n_realizations, n_steps).round().astype(int)
+    )
 
-    # Bootstrap resampling using integer indices
-    mean_ranges = np.empty((len(n_subset_sizes), 2))
-    var_ranges = np.empty((len(n_subset_sizes), 2))
+    am7_bands = np.empty((len(n_subset_sizes), 3))
+    q95_bands = np.empty((len(n_subset_sizes), 3))
 
     rng = np.random.default_rng(42)
     indices = np.arange(n_realizations)
 
-    for i, n_real in enumerate(n_subset_sizes):
-        bootstrap_idx = np.array([
-            rng.choice(indices, size=n_real, replace=False)
-            for _ in range(n_bootstrap_samples)
-        ])
+    for i, n in enumerate(n_subset_sizes):
+        boot_am7 = np.empty(n_bootstrap_samples)
+        boot_q95 = np.empty(n_bootstrap_samples)
+        for b in range(n_bootstrap_samples):
+            idx = rng.choice(indices, size=n, replace=False)
+            boot_am7[b] = np.min(min_7day_per_real[idx])
+            boot_q95[b] = np.min(min_q95_per_real[idx])
+        am7_bands[i] = np.percentile(boot_am7, [5, 50, 95])
+        q95_bands[i] = np.percentile(boot_q95, [5, 50, 95])
 
-        boot_means = realization_means[bootstrap_idx].mean(axis=1)
-        boot_vars = realization_vars[bootstrap_idx].mean(axis=1)
+    obs_min_7day = obs_min_q95 = None
+    if Q_obs is not None:
+        obs_rolling7 = Q_obs.rolling(window=7, min_periods=7).mean()
+        obs_min_7day = float(np.nanmin(obs_rolling7.values))
 
-        mean_ranges[i] = [boot_means.min(), boot_means.max()]
-        var_ranges[i] = [boot_vars.min(), boot_vars.max()]
+        obs_wy = _assign_usgs_water_year(Q_obs.index)
+        obs_annual_q95 = Q_obs.groupby(obs_wy).quantile(0.05)
+        obs_min_q95 = float(np.nanmin(obs_annual_q95.values))
 
-    # Plotting
-    created_fig = False
-    if axes is None:
-        fig, (ax_mean, ax_var) = plt.subplots(1, 2, figsize=figsize)
-        created_fig = True
-    else:
-        ax_mean, ax_var = axes
-        fig = ax_mean.get_figure()
+    fig, (ax_am7, ax_q95) = plt.subplots(1, 2, figsize=figsize)
 
-    ax_mean.fill_between(
-        n_subset_sizes, mean_ranges[:, 0], mean_ranges[:, 1],
-        alpha=ALPHA_FILL, color=synthetic_color, label='Bootstrap range',
+    panel_specs = [
+        (
+            ax_am7, am7_bands, obs_min_7day,
+            f'Minimum 7-day mean flow — {site_label}',
+            'Ensemble min of 7-day mean flow (MGD)\n[over N realizations × all water years]',
+        ),
+        (
+            ax_q95, q95_bands, obs_min_q95,
+            f'Minimum annual Q95 — {site_label}',
+            'Ensemble min of annual Q95 (MGD)\n[over N realizations × all water years]',
+        ),
+    ]
+
+    for ax, bands, obs_val, title, ylabel in panel_specs:
+        ax.fill_between(
+            n_subset_sizes, bands[:, 0], bands[:, 2],
+            alpha=ALPHA_FILL, color=synthetic_color,
+            label=f'Synthetic: bootstrap 5–95% ({n_bootstrap_samples} subsamples)',
+        )
+        ax.plot(
+            n_subset_sizes, bands[:, 1],
+            color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
+            label='Synthetic: bootstrap median of ensemble min',
+        )
+        if obs_val is not None and np.isfinite(obs_val):
+            ax.axhline(
+                obs_val, color=HISTORIC_COLOR, linestyle='--',
+                linewidth=LINEWIDTH_MEDIUM,
+                label='Historical-record min',
+            )
+        ax.set_xlabel('Number of realizations N\n(subsampled without replacement)')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.set_xlim(0, n_realizations)
+        ax.legend(loc='upper right', frameon=True, fontsize='small')
+        ax.grid(False)
+
+    fig.text(
+        0.5, -0.04,
+        'Each panel shows the ENSEMBLE MINIMUM of a low-flow metric vs N — no averaging across realizations. '
+        'The median is expected to decrease monotonically with N and plateau once the low-flow tail is well sampled. '
+        '7-day mean = 7-day moving-average daily flow; annual Q95 = 5th percentile of daily flow within each USGS water year.',
+        ha='center', va='top', fontsize='small', wrap=True,
     )
-    ax_mean.plot(
-        n_subset_sizes, mean_ranges.mean(axis=1),
-        color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        label='Midpoint',
-    )
-    ax_mean.set_xlabel('Number of Realizations')
-    ax_mean.set_ylabel('Mean Annual Flow (MG)')
-    ax_mean.set_title(f'Mean Convergence ({site})')
-    ax_mean.set_xlim(0, n_realizations)
-    ax_mean.legend(loc='upper right', frameon=True)
-    ax_mean.grid(False)
+    plt.tight_layout()
+    if fname:
+        plt.savefig(fname, dpi=DPI_PRINT, bbox_inches='tight')
+        print(f"Saved low-flow convergence figure to {fname}")
+        plt.close(fig)
+    return fig
 
-    ax_var.fill_between(
-        n_subset_sizes, var_ranges[:, 0], var_ranges[:, 1],
-        alpha=ALPHA_FILL, color=synthetic_color, label='Bootstrap range',
-    )
-    ax_var.plot(
-        n_subset_sizes, var_ranges.mean(axis=1),
-        color=synthetic_color, linewidth=LINEWIDTH_MEDIUM, linestyle='-',
-        label='Midpoint',
-    )
-    ax_var.set_xlabel('Number of Realizations')
-    ax_var.set_ylabel('Variance of Annual Flow (MG$^2$)')
-    ax_var.set_title(f'Variance Convergence ({site})')
-    ax_var.set_xlim(0, n_realizations)
-    ax_var.legend(loc='upper right', frameon=True)
-    ax_var.grid(False)
 
-    if created_fig:
-        plt.tight_layout()
-        if fname:
-            plt.savefig(fname, dpi=DPI_PRINT, bbox_inches='tight')
-            print(f"Saved convergence figure to {fname}")
-            plt.close(fig)
-        return fig
+_DROUGHT_METRIC_DEFAULTS = {
+    'duration':        ('event duration',          'months'),
+    'magnitude':       ('event magnitude',         'SSI·months'),
+    'severity':        ('event severity (peak)',   'SSI std. dev.'),
+    'avg_severity':    ('event avg severity',      'SSI std. dev.'),
+    'recovery_period': ('recovery period',         'months'),
+}
 
-    return None
+
+def plot_drought_metric_convergence(
+    droughts: pd.DataFrame,
+    realization_ids: list,
+    ssi_window: int,
+    obs_droughts: pd.DataFrame = None,
+    metrics: list = None,
+    metric_labels: dict = None,
+    include_extremes: bool = True,
+    n_bootstrap_samples: int = 200,
+    n_steps: int = 30,
+    synthetic_color: str = None,
+    fname: str = None,
+    figsize: tuple = None,
+):
+    """
+    Convergence of drought-event metrics vs N realizations.
+
+    Two complementary views, stacked as rows in one figure:
+
+    1. POOLED MEAN (top row): for each subset of n realizations, pool all
+       drought events from those realizations and compute the equal-weight
+       mean of each metric:
+
+           pooled_mean = Σ metric / count(events)
+
+       Stability question: "Is the central tendency of drought events stable?"
+
+    2. ENSEMBLE MAX (bottom row, when include_extremes=True): for each
+       subset, the maximum across (realizations × events) of each metric.
+
+           ensemble_max = max(metric over events in n realizations)
+
+       Stability question: "Have we sampled the worst drought the generator
+       can produce?" Expected to monotonically increase with N and plateau.
+
+    For both, the 5–50–95 percentiles across n_bootstrap_samples without-
+    replacement subsamples define the band and median line. Horizontal
+    dashed lines mark the historical-record mean (top row) and max (bottom
+    row) when `obs_droughts` is provided.
+
+    Parameters
+    ----------
+    droughts : pd.DataFrame
+        Long-format drought events; must contain `realization_id` plus the
+        metric columns. Output of `load_drought_events(..., observed=False)`.
+    realization_ids : list
+        All N realization IDs in the ensemble (zero-event realizations are
+        included in N but contribute 0 to the pool and NaN to the max).
+    ssi_window : int
+        SSI window (3, 6, or 12) — used for titles and footer.
+    obs_droughts : pd.DataFrame, optional
+        Observed drought events for the same SSI window. Historical mean
+        and max of each metric are drawn as dashed reference lines.
+    metrics : list of str, optional
+        Columns to plot. Defaults to ['duration', 'magnitude', 'severity'].
+    metric_labels : dict, optional
+        Override the (display_label, units) tuple for any metric.
+    include_extremes : bool
+        If True (default), produce a second row of ensemble-max panels.
+    n_bootstrap_samples : int
+        Bootstrap subsamples per subset size (default 200).
+    n_steps : int
+        Number of subset sizes along the x-axis (default 30).
+    synthetic_color : str, optional
+        Color for ensemble bands and lines.
+    fname : str, optional
+        If provided, save the figure to this path.
+    figsize : tuple, optional
+        Defaults to (4.8 · n_metrics + 0.8, 5.5 · n_rows).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    """
+    if synthetic_color is None:
+        synthetic_color = DATASET_COLORS['stationary_ensemble']
+
+    if metrics is None:
+        metrics = ['duration', 'magnitude', 'severity']
+
+    labels = dict(_DROUGHT_METRIC_DEFAULTS)
+    if metric_labels:
+        labels.update(metric_labels)
+
+    n_realizations = len(realization_ids)
+    n_metrics = len(metrics)
+
+    # Per-realization aggregates (zero-event realizations: sum=0, count=0, max=NaN)
+    per_real_sum = (
+        droughts.groupby('realization_id')[metrics]
+        .sum()
+        .reindex(realization_ids, fill_value=0)
+    )
+    per_real_count = (
+        droughts.groupby('realization_id').size()
+        .reindex(realization_ids, fill_value=0)
+    )
+    per_real_max = (
+        droughts.groupby('realization_id')[metrics]
+        .max()
+        .reindex(realization_ids)
+    )
+    sums_arr = per_real_sum.values.astype(float)
+    counts_arr = per_real_count.values.astype(float)
+    maxes_arr = per_real_max.values.astype(float)
+
+    n_subset_sizes = np.unique(
+        np.linspace(1, n_realizations, n_steps).round().astype(int)
+    )
+
+    mean_bands = np.full((len(n_subset_sizes), 3, n_metrics), np.nan)
+    max_bands = np.full((len(n_subset_sizes), 3, n_metrics), np.nan)
+
+    rng = np.random.default_rng(42)
+    indices = np.arange(n_realizations)
+
+    for i, n in enumerate(n_subset_sizes):
+        boot_mean = np.full((n_bootstrap_samples, n_metrics), np.nan)
+        boot_max = np.full((n_bootstrap_samples, n_metrics), np.nan)
+        for b in range(n_bootstrap_samples):
+            idx = rng.choice(indices, size=n, replace=False)
+            total_count = counts_arr[idx].sum()
+            if total_count > 0:
+                boot_mean[b] = sums_arr[idx].sum(axis=0) / total_count
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', RuntimeWarning)
+                boot_max[b] = np.nanmax(maxes_arr[idx], axis=0)
+        mean_bands[i] = np.nanpercentile(boot_mean, [5, 50, 95], axis=0)
+        max_bands[i] = np.nanpercentile(boot_max, [5, 50, 95], axis=0)
+
+    obs_means = {}
+    obs_maxes = {}
+    if obs_droughts is not None and len(obs_droughts) > 0:
+        for m in metrics:
+            if m in obs_droughts.columns:
+                obs_means[m] = float(obs_droughts[m].mean())
+                obs_maxes[m] = float(obs_droughts[m].max())
+
+    n_rows = 2 if include_extremes else 1
+    if figsize is None:
+        figsize = (4.8 * n_metrics + 0.8, 5.5 * n_rows)
+
+    fig, axes = plt.subplots(n_rows, n_metrics, figsize=figsize, squeeze=False)
+
+    row_specs = [
+        ('Pooled mean', 'Mean', mean_bands, obs_means,
+         'Synthetic: bootstrap median of pooled mean'),
+    ]
+    if include_extremes:
+        row_specs.append(
+            ('Ensemble max', 'Max', max_bands, obs_maxes,
+             'Synthetic: bootstrap median of ensemble max')
+        )
+
+    for r, (row_name, stat_prefix, bands, obs_vals, median_label) in enumerate(row_specs):
+        for k, metric in enumerate(metrics):
+            ax = axes[r, k]
+            display_label, units = labels.get(metric, (metric, ''))
+
+            ax.fill_between(
+                n_subset_sizes, bands[:, 0, k], bands[:, 2, k],
+                alpha=ALPHA_FILL, color=synthetic_color,
+                label=f'Synthetic: bootstrap 5–95% ({n_bootstrap_samples} subsamples)',
+            )
+            ax.plot(
+                n_subset_sizes, bands[:, 1, k],
+                color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
+                label=median_label,
+            )
+            if metric in obs_vals and np.isfinite(obs_vals[metric]):
+                ax.axhline(
+                    obs_vals[metric], color=HISTORIC_COLOR, linestyle='--',
+                    linewidth=LINEWIDTH_MEDIUM,
+                    label=f'Historical {stat_prefix.lower()}',
+                )
+            ax.set_xlabel('Number of realizations N\n(subsampled without replacement)')
+            ax.set_ylabel(f'{stat_prefix} {display_label} ({units})')
+            ax.set_title(f'{row_name} — {display_label}')
+            ax.set_xlim(0, n_realizations)
+            ax.legend(loc='best', frameon=True, fontsize='small')
+            ax.grid(False)
+
+    fig.suptitle(
+        f'Drought event metric convergence — SSI-{ssi_window} '
+        f'(NYC aggregate inflow, {n_realizations} realizations)',
+        fontsize='medium', y=1.0,
+    )
+
+    footer = (
+        'Top row: pooled mean = Σ metric ÷ count(events) over the subsampled events; each event has equal weight. '
+        + (
+            'Bottom row: ensemble max = max metric over all events in the subsample; expected to increase monotonically and plateau as N grows. '
+            if include_extremes else ''
+        )
+        + f'SSI-{ssi_window} = standardized streamflow index on a {ssi_window}-month window over NYC aggregate inflow. '
+        + 'magnitude = Σ monthly SSI deficits over the event; severity = peak (most negative) SSI value, absolute.'
+    )
+    fig.text(0.5, -0.03, footer, ha='center', va='top', fontsize='small', wrap=True)
+
+    plt.tight_layout()
+    if fname:
+        plt.savefig(fname, dpi=DPI_PRINT, bbox_inches='tight')
+        print(f"Saved drought metric convergence figure to {fname}")
+        plt.close(fig)
+    return fig

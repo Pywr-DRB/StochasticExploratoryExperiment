@@ -81,60 +81,64 @@ def plot_bands(ax, percentiles, color, alpha_outer=0.15, alpha_inner=0.35,
                 linestyle='--', alpha=0.8, label=f'Rep. Year ({year})')
 
 
-def plot_three_quantile_lines(
+def plot_quantile_lines(
     ax, traces_df, color,
-    quantiles=(0.10, 0.50, 0.90),
-    linewidth_med=1.7, linewidth_outer=0.85,
-    alpha_med=0.95, alpha_outer=0.55,
+    median_q=0.50, outer_qs=(0.99,),
+    linewidth_med=1.7, linewidth_outer=1.4,
+    alpha_med=0.95, alpha_outer=0.75,
     linestyle_outer='--', zorder_med=6, zorder_outer=5,
     min_periods=20, label=None,
 ):
-    """Plot 10/50/90 (or other) quantile lines for a DOY-indexed event ensemble.
+    """Plot a solid median line plus arbitrary dashed outer quantile lines.
 
-    No fill between bands. The median is solid + bold; outer quantiles are
-    thinner and dashed in the same color. DOYs with fewer than `min_periods`
-    non-NaN events are masked to suppress noisy edges.
+    For a DOY-indexed event ensemble (no fill). The median is solid + bold;
+    each outer quantile is dashed in the same color. DOYs with fewer than
+    `min_periods` non-NaN events are masked to suppress noisy edges.
 
     Parameters
     ----------
     traces_df : pd.DataFrame
         Rows = DOY (1-366), cols = events. NaN-tolerant.
     color : matplotlib color
-        Used for all three lines.
+        Used for the median and all outer lines.
+    median_q : float
+        Quantile drawn as the solid bold line (default 0.50).
+    outer_qs : iterable of float
+        Quantiles drawn as dashed outer lines (default (0.99,)).
     label : str or None
         If provided, attached to the median line for legend purposes.
 
     Returns
     -------
-    (q_low_line, q_med_line, q_high_line)
+    (median_line, [outer_lines])
     """
     if traces_df is None or traces_df.shape[1] == 0:
-        return None, None, None
+        return None, []
 
+    all_qs = [median_q] + list(outer_qs)
     arr = traces_df.values.astype(float)
     n_per_doy = np.sum(~np.isnan(arr), axis=1)
-    quantile_arr = np.full((len(quantiles), arr.shape[0]), np.nan)
+    quantile_arr = np.full((len(all_qs), arr.shape[0]), np.nan)
     valid_mask = n_per_doy >= min_periods
     if valid_mask.any():
         quantile_arr[:, valid_mask] = np.nanquantile(
-            arr[valid_mask, :], quantiles, axis=1
+            arr[valid_mask, :], all_qs, axis=1
         )
 
     doy = traces_df.index.values
-    ln_low, = ax.plot(
-        doy, quantile_arr[0], color=color, linewidth=linewidth_outer,
-        alpha=alpha_outer, linestyle=linestyle_outer, zorder=zorder_outer,
-    )
     ln_med, = ax.plot(
-        doy, quantile_arr[1], color=color, linewidth=linewidth_med,
-        alpha=alpha_med, linestyle='-', zorder=zorder_med,
-        label=label,
+        doy, quantile_arr[0], color=color, linewidth=linewidth_med,
+        alpha=alpha_med, linestyle='-', zorder=zorder_med, label=label,
     )
-    ln_high, = ax.plot(
-        doy, quantile_arr[2], color=color, linewidth=linewidth_outer,
-        alpha=alpha_outer, linestyle=linestyle_outer, zorder=zorder_outer,
-    )
-    return ln_low, ln_med, ln_high
+    outer_lines = []
+    for i in range(1, len(all_qs)):
+        ln, = ax.plot(
+            doy, quantile_arr[i], color=color, linewidth=linewidth_outer,
+            alpha=alpha_outer, linestyle=linestyle_outer,
+            zorder=zorder_outer,
+        )
+        outer_lines.append(ln)
+    return ln_med, outer_lines
 
 
 def plot_difference_bands(ax, diff_percentiles, color, alpha_outer=0.15,
