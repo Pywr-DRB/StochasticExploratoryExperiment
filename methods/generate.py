@@ -13,7 +13,7 @@ from pywrdrb.pre.flows import _subtract_upstream_catchment_inflows
 from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from pywrdrb.pywr_drb_node_data import downstream_node_lags
 
-from synhydro.methods.generation.nonparametric.kirsch import KirschGenerator
+from synhydro.methods.generation.hybrid.kirsch import KirschGenerator
 from synhydro.methods.disaggregation.temporal.nowak import NowakDisaggregator
 from synhydro.core.ensemble import Ensemble
 
@@ -169,7 +169,19 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     nowak_disagg.preprocessing(Q)
     nowak_disagg.fit()
 
-    # Apply climate adjustments if needed
+    # Apply climate adjustments if needed.
+    #
+    # Kirsch et al. (2013), eqs 6-11. Given the baseline log-space monthly
+    # stats (Ȳ_j, σ_j), the real-space monthly mean and std are
+    #   m_j = exp(Ȳ_j + σ_j² / 2)                                   (eq 6)
+    #   s_j = m_j · sqrt(exp(σ_j²) - 1)                              (eq 7)
+    # To scale the real-space mean by a_j and the real-space std by c_j, the
+    # new log-space params come from
+    #   Ȳ_new = ln(a_j) + Ȳ_j + σ_j²/2
+    #             - 0.5 · ln[(c_j/a_j)² · (exp(σ_j²) - 1) + 1]       (eq 10)
+    #   σ_new = sqrt(ln[(c_j/a_j)² · (exp(σ_j²) - 1) + 1])           (eq 11)
+    # We pick c_j = 1: preserve absolute real-space std under the climate
+    # shift (CV is NOT preserved). With c_j = 1, (c_j/a_j)² = 1/a_j².
     if dataset_config['type'] == 'climate_adjusted':
         if rank == 0:
             print(f'Set {set_id + 1}: Applying climate adjustments for {dataset_id}...')
@@ -178,25 +190,30 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         if monthly_prc_change is None or len(monthly_prc_change) != 12:
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
 
-        # Apply percentage changes to monthly means
-        baseline_monthly_mean = kirsch_gen_baseline.mean_month
-        new_mean_month = baseline_monthly_mean.copy() * pd.NA
+        Y_bar = kirsch_gen_baseline.mean_period          # Ȳ_j (12 × n_sites)
+        sigma = kirsch_gen_baseline.std_period           # σ_j (12 × n_sites)
+        sigma2 = sigma.values ** 2
 
-        for i, site in enumerate(new_mean_month):
-            # Convert from log scale, apply percentage change, convert back
-            # The kirsch_gen stores means in log scale
-            new_mean_month.loc[:, site] = np.exp(baseline_monthly_mean.loc[:, site]) * (1 + np.array(monthly_prc_change) / 100.0)
+        a = (1.0 + np.asarray(monthly_prc_change, dtype=float) / 100.0).reshape(-1, 1)
+        inv_a2 = 1.0 / (a ** 2)                          # c_j = 1
+        arg = inv_a2 * (np.exp(sigma2) - 1.0) + 1.0      # inner term of eqs 10, 11
 
-        # Convert back to log scale
-        new_mean_month = np.log(new_mean_month.astype(float))
+        Y_bar_new = pd.DataFrame(
+            np.log(a) + Y_bar.values + sigma2 / 2.0 - 0.5 * np.log(arg),
+            index=Y_bar.index, columns=Y_bar.columns,
+        )
+        sigma_new = pd.DataFrame(
+            np.sqrt(np.log(arg)),
+            index=sigma.index, columns=sigma.columns,
+        )
 
-        # Pass back to generator, overwriting the prior means
-        kirsch_gen.mean_month = new_mean_month
+        kirsch_gen.mean_period = Y_bar_new
+        kirsch_gen.std_period = sigma_new
     else:
-        # Use baseline (1980-2019) monthly means for baseline ensemble (no climate adjustment)
         if rank == 0:
-            print(f'Set {set_id + 1}: No climate adjustments for {dataset_id} (using baseline monthly means)')
-            kirsch_gen.mean_month = kirsch_gen_baseline.mean_month
+            print(f'Set {set_id + 1}: No climate adjustments for {dataset_id} (using baseline monthly params)')
+        kirsch_gen.mean_period = kirsch_gen_baseline.mean_period
+        kirsch_gen.std_period = kirsch_gen_baseline.std_period
 
     # DISTRIBUTE REALIZATION GENERATION ACROSS RANKS
     # Each rank generates a subset of realizations

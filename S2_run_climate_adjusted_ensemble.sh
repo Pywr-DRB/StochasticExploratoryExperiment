@@ -11,8 +11,16 @@ module load python/3.11.5
 source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
-# MPI transport: force libfabric TCP provider instead of RDMA verbs
-export FI_PROVIDER=tcp
+# MPI transport: pin TCP traffic to the InfiniBand fabric (ib0).
+#   - btl_tcp_if_include: rank-to-rank TCP data channel
+#   - oob_tcp_if_include: out-of-band launch/wireup channel
+# Prevents OpenMPI from advertising the public NIC (eno1np0) or iDRAC mgmt
+# interface and stalling connect() at scale.
+export OMPI_MCA_btl_tcp_if_include=ib0
+export OMPI_MCA_oob_tcp_if_include=ib0
+
+# Disable the openib/verbs BTL so OpenMPI does not probe RDMA paths.
+export OMPI_MCA_btl=^openib
 
 # OpenMPI TCP tuning — reduce connection failures at scale
 export OMPI_MCA_btl_tcp_links=1

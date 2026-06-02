@@ -10,7 +10,8 @@ from pywrdrb.utils.hdf5 import get_hdf5_realization_numbers
 from pywrdrb.pre import (
     PredictedInflowEnsemblePreprocessor,
     ExtrapolatedDiversionEnsemblePreprocessor,
-    PredictedDiversionEnsemblePreprocessor
+    PredictedDiversionEnsemblePreprocessor,
+    STARFITReleaseEnsemblePreprocessor,
 )
 
 from methods.ensemble_utils import get_ensemble_set_spec
@@ -83,6 +84,18 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
         # Broadcast realization IDs (only needed in MPI mode)
         if use_mpi and comm:
             realization_ids = comm.bcast(realization_ids, root=0)
+
+        # =====================================================================
+        # Step 0: Pre-simulate STARFIT releases (required by perfect_foresight)
+        # =====================================================================
+        starfit_preprocessor = STARFITReleaseEnsemblePreprocessor(
+            inflow_type=f"{dataset_id}_set{set_id + 1}",
+            realization_ids=realization_ids,
+            use_mpi=use_mpi,
+            comm=comm,
+        )
+        starfit_preprocessor.run()
+        del starfit_preprocessor
 
         # =====================================================================
         # Step 1: Process predicted inflows

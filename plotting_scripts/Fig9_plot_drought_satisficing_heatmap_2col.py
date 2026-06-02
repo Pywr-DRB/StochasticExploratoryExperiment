@@ -335,15 +335,16 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     # palette is the same as before; only the binning is new.
 
     # Panel (a): joint-exceedance return period (years), discrete log bands
-    # from 10 → 10,000 yr using a 1-2-5 pattern (3 bands per decade).
+    # from 10 → 1,000 yr using a 1-2-5 pattern (3 bands per decade). Values
+    # above 1,000 yr saturate to the over-range colour via extend='both'.
     rp_abs_boundaries = np.array(
-        [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000], dtype=float)
+        [10, 20, 50, 100, 200, 500, 1000], dtype=float)
     n_rp_bins = len(rp_abs_boundaries) - 1
     cmap_rp_abs = cmap_sequential.resampled(n_rp_bins)
     norm_rp_abs = mcolors.BoundaryNorm(rp_abs_boundaries, ncolors=n_rp_bins)
     # Label only the decade boundaries to prevent tick-label overlap on
     # the discrete 1-2-5 colorbar; the underlying binning is unchanged.
-    rp_abs_ticks = [10, 100, 1000, 10000]
+    rp_abs_ticks = [10, 100, 1000]
     rp_abs_tick_labels = [_fmt_years(v) for v in rp_abs_ticks]
 
     # Panel (b): percent reaching DE, discrete 10-pp bands from 0 → ceil-to-10pp

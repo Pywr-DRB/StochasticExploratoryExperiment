@@ -27,13 +27,16 @@ run() {
 ### SI0: Detailed stationary ensemble diagnostics
 run si_scripts/SI0_full_ensemble_diagnostics.py stationary_ensemble
 
+### SI0b: Low-flow ensemble convergence diagnostics (standalone)
+run si_scripts/SI0b_low_flow_convergence.py stationary_ensemble
+
 ### SI1: NYC, Montague, Trenton shortage occurrence by day of year
 run si_scripts/SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
 
 ### SI2: Diversion diagnostics/distributions
 run si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
-# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
-# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
 ### SI3 + SI4: Storage zone probabilities (calculate and plot)
 run si_scripts/SI3_calculate_storage_zone_probabilities.py --all
@@ -77,6 +80,17 @@ run si_scripts/SI15_plot_ssi_window_emergency_capture.py
 
 ### SI16: Performance outcomes (exceedance curves, ridgelines, quantile strips)
 run si_scripts/SI16_plot_performance_outcomes.py
+
+### SI18: Climate-adjusted ensemble monthly-flow validation
+run si_scripts/SI18_climate_adjustment_validation.py
+
+### SI19: Convergence of joint-exceedance drought return period (Fig9 metric)
+run si_scripts/SI19_drought_return_period_convergence.py stationary_ensemble 3
+run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_low 3
+run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_high 3
+
+## SI20: NYC aggregate inflow duration-severity curves (Gold Fig 5b style)
+run si_scripts/SI20_duration_severity_curves.py
 
 echo ""
 echo "========================================"
