@@ -422,6 +422,8 @@ def main():
         fig = create_figure(all_categorized_by_window, recon_data, col_zones=col_zones)
         fname = f"{FIG_OUTPUT_DIR}/{basename}"
         fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        fname_svg = fname.replace('.png', '.svg')
+        fig.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
         print(f"  Saved [{tag}]: {fname}")
         plt.close(fig)
 

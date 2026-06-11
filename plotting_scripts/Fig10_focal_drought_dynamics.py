@@ -477,7 +477,7 @@ def _panel_ssi3(ax, ssi3, daily_index, event):
     ax.set_xlim(daily_index.min(), daily_index.max())
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=4))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-    ax.tick_params(axis='x', labelsize=FONTSIZE_SMALL)
+    ax.tick_params(axis='both', labelsize=FONTSIZE_SMALL)
     _style_axis_frame(ax)
 
 
@@ -550,7 +550,7 @@ def _panel_storage(ax, window, event, ffmp_seasonal=None):
     ax.set_xlim(window.index.min(), window.index.max())
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=4))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-    ax.tick_params(axis='x', labelsize=FONTSIZE_SMALL)
+    ax.tick_params(axis='both', labelsize=FONTSIZE_SMALL)
     _style_axis_frame(ax)
 
 
@@ -579,7 +579,7 @@ def _panel_div_release(ax, window, event):
     ax.set_xlim(t.min(), t.max())
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=4))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-    ax.tick_params(axis='x', labelsize=FONTSIZE_SMALL)
+    ax.tick_params(axis='both', labelsize=FONTSIZE_SMALL)
     _style_axis_frame(ax)
 
 
@@ -611,7 +611,7 @@ def _panel_shortage(ax, window, event):
     ax.set_xlim(t.min(), t.max())
     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=4))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-    ax.tick_params(axis='x', labelsize=FONTSIZE_SMALL)
+    ax.tick_params(axis='both', labelsize=FONTSIZE_SMALL)
     _style_axis_frame(ax)
 
 
@@ -861,15 +861,11 @@ def main():
     _panel_div_release(ax_h, event_windows['B']['daily'], selected_events['B'])
     ax_g.set_ylabel('NYC outflow (MCM/day)',
                     fontsize=YAX_LABEL_FONTSIZE, labelpad=6)
-    # Shared y across (g, h) using the max of either line over both events.
-    y_max = max(
-        float(event_windows['A']['daily']
-              [['nyc_diversion', 'nyc_release_montague']].max().max()),
-        float(event_windows['B']['daily']
-              [['nyc_diversion', 'nyc_release_montague']].max().max()),
-    ) * 1.08
-    ax_g.set_ylim(0, y_max)
-    ax_h.set_ylim(0, y_max)
+    # Shared, fixed y across (g, h) so the two columns are directly
+    # comparable; capped at 4.0 MCM/day to keep the priority crossover and
+    # the low-flow envelope legible (peaks above 4.0 are clipped).
+    ax_g.set_ylim(0, 4.0)
+    ax_h.set_ylim(0, 4.0)
     label_panel(ax_g, 'g', fontsize=FONTSIZE_LABEL)
     label_panel(ax_h, 'h', fontsize=FONTSIZE_LABEL)
 
