@@ -740,6 +740,9 @@ def plot_drought_manuscript_figure(
         fname = f"{FIG_OUTPUT_DIR}/Fig5_drought_distributions_ssi{ssi_window}{metric_suffix}{rc_suffix}.png"
 
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+        
+    fname_svg = fname.replace('.png', '.svg')
+    plt.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
 
     return fig, (ax_hex, cdf_axes)

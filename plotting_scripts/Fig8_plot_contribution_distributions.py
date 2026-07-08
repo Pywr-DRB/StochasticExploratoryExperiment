@@ -278,6 +278,8 @@ def plot_single_dataset(dataset_id):
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(FILTER_BY_ZONES, reverse=True))) if FILTER_BY_ZONES else ''
     fname = f"{FIG_OUTPUT_DIR}/Fig8_{dataset_id}_contribution{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    plt.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close()
 
@@ -326,6 +328,8 @@ def plot_comparison(baseline_id, comparison_id):
     zone_suffix = '_zones_' + '_'.join(map(str, sorted(FILTER_BY_ZONES, reverse=True))) if FILTER_BY_ZONES else ''
     fname = f"{FIG_OUTPUT_DIR}/Fig8_{comparison_id}_vs_{baseline_id}_comparison{zone_suffix}.png"
     plt.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    plt.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close()
 
@@ -372,6 +376,8 @@ def plot_montague_multipanel(zone_filter=None, layout='stacked'):
     layout_suffix = f'_{layout}' if layout != 'side_by_side' else ''
     fname = f"{FIG_OUTPUT_DIR}/Fig8_multipanel_contribution_comparison{layout_suffix}{zone_suffix}.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    fig.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
@@ -409,6 +415,8 @@ def plot_ratio_multipanel(window=None):
 
     fname = f"{FIG_OUTPUT_DIR}/Fig8_contribution_ratio_{window}d_stacked.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    fig.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
@@ -534,6 +542,8 @@ def plot_combined(window=None):
 
     fname = f"{FIG_OUTPUT_DIR}/Fig8_contribution_combined_{window}d.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    fig.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 

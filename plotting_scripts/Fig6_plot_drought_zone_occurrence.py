@@ -240,17 +240,19 @@ def main():
     print("F3 (alt): Drought zone occurrence figure")
     print("=" * 70)
 
-    # Version without historic data
-    fig = create_figure(show_historic=False)
-    fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence.png"
-    fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    print(f"Saved: {fname}")
-    plt.close(fig)
+    # # Version without historic data
+    # fig = create_figure(show_historic=False)
+    # fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence.png"
+    # fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    # print(f"Saved: {fname}")
+    # plt.close(fig)
 
     # Version with historic data
     fig = create_figure(show_historic=True)
     fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence_with_historic.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
+    fname_svg = fname.replace('.png', '.svg')
+    fig.savefig(fname_svg, dpi=DPI_HIGH, bbox_inches='tight')
     print(f"Saved: {fname}")
     plt.close(fig)
 
