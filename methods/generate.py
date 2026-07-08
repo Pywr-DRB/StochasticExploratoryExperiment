@@ -165,7 +165,14 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     kirsch_gen.preprocessing(Q)
     kirsch_gen.fit()
 
-    nowak_disagg = NowakDisaggregator(debug=False)
+    # boundary_blend_timesteps=2 preserves the pre-upgrade behavior
+    # (old blend_days=2 default); the new flexible-timescale API defaults it to 0.
+    nowak_disagg = NowakDisaggregator(
+        input_timestep='monthly',
+        output_timestep='daily',
+        boundary_blend_timesteps=2,
+        debug=False,
+    )
     nowak_disagg.preprocessing(Q)
     nowak_disagg.fit()
 
@@ -230,8 +237,9 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Generate local ensemble subset (monthly, then disaggregate to daily)
     # Seed strategy: deterministic per (set_id, rank) so results are reproducible
-    # and independent across ranks. Kirsch sets np.random.seed() internally,
-    # which also controls the Nowak disaggregator (uses global numpy state).
+    # and independent across ranks. SynHydro derives independent per-realization
+    # RNG streams from the master seed; Kirsch and Nowak each need it explicitly
+    # (global numpy state is no longer used).
     generation_seed = set_id * 10000 + rank
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
@@ -240,8 +248,9 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
                                                     seed=generation_seed)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak
-        # Nowak uses global numpy random state (set by Kirsch seed above)
-        daily_ensemble_obj = nowak_disagg.disaggregate(monthly_ensemble_obj)
+        # Without an explicit seed, Nowak draws fresh OS entropy (non-reproducible)
+        daily_ensemble_obj = nowak_disagg.disaggregate(monthly_ensemble_obj,
+                                                       seed=generation_seed)
 
         # Convert Ensemble object to dictionary of DataFrames (by realization)
         local_syn_ensemble = daily_ensemble_obj.data_by_realization
