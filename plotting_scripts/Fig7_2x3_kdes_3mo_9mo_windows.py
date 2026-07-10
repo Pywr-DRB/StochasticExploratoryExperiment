@@ -126,10 +126,11 @@ LAYOUT_2X2_COLS = {
     'emergency_only': ['other', 'emergency'],
 }
 
+# pywrdrb drought_level_agg_nyc index: 4=Watch, 5=Warning, 6=Emergency
 ZONE_CATEGORIES = {
     'emergency':    [6],
-    'watch':        [5],
-    'warning':      [4],
+    'watch':        [4],
+    'warning':      [5],
     'other':        [0, 1, 2, 3],
 }
 

@@ -65,7 +65,8 @@ def plot_frequency_boxplot(ax, panel_label='b)', show_historic=True,
         scenarios = DEFAULT_SCENARIOS
 
     # Drought zones and order (left to right on x-axis)
-    zone_values = [5, 4, 6]  # Watch=5, Warning=4, Emergency=6
+    # pywrdrb drought_level_agg_nyc index: 4=Watch, 5=Warning, 6=Emergency
+    zone_values = [4, 5, 6]  # Watch=4, Warning=5, Emergency=6
     zone_labels = ['Watch', 'Warning', 'Emergency']
 
     # Load annual metrics for all datasets and compute zone frequency per realization
@@ -185,8 +186,9 @@ def plot_duration_boxplot(ax, panel_label='c)', show_historic=True,
         scenarios = DEFAULT_SCENARIOS
 
     # Drought zones and order (left to right on x-axis)
-    zone_order = [5, 4, 6]  # Watch, Warning, Emergency
-    zone_labels_map = {4: 'Warning', 5: 'Watch', 6: 'Emergency'}
+    # pywrdrb drought_level_agg_nyc index: 4=Watch, 5=Warning, 6=Emergency
+    zone_order = [4, 5, 6]  # Watch, Warning, Emergency
+    zone_labels_map = {4: 'Watch', 5: 'Warning', 6: 'Emergency'}
 
     # Load pre-computed episode records for all datasets
     all_duration_data = {}

@@ -22,7 +22,7 @@ def calculate_zone_events(zone_series, zone_number, min_end_days=7):
     zone_series : pd.Series
         Timeseries of zone values with datetime index
     zone_number : int
-        Zone to identify events for (4=Warning, 5=Watch, 6=Emergency)
+        Zone to identify events for (4=Watch, 5=Warning, 6=Emergency)
     min_end_days : int
         Minimum number of consecutive days outside zone to end event
 
@@ -91,7 +91,7 @@ def calculate_drought_zone_events(zone_series, min_end_days=7):
     ----------
     zone_series : pd.Series
         Daily timeseries of NYC combined zone levels with a datetime index.
-        Zone definitions: 6=Emergency, 5=Watch, 4=Warning, 3=Normal, 1-2=Flood/Above.
+        Zone definitions: 6=Emergency, 5=Warning, 4=Watch, 3=Normal, 1-2=Flood/Above.
     min_end_days : int
         Minimum consecutive days below zone 4 required to end an episode (default: 7).
 
