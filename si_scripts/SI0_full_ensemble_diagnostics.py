@@ -4,7 +4,7 @@ Generate comprehensive diagnostic plots for ensemble validation (Supplemental).
 This script creates detailed diagnostic plots for synthetic ensemble validation:
 - Gridded FDC plots (daily/monthly, major/minor nodes)
 - Gridded autocorrelation plots (daily/monthly, major/minor nodes)
-- Statistical validation panels (selected sites)
+- Statistical verification panels (selected sites)
 - Spatial correlation plots (daily/monthly, major/minor nodes)
 
 Low-flow ensemble convergence diagnostics are produced separately by
@@ -25,7 +25,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from synhydro import Ensemble
-from synhydro.plotting import plot_validation_panel, plot_spatial_correlation
+from synhydro.plotting import plot_verification_panel, plot_spatial_correlation
 
 from methods.plotting.gridded import plot_fdc_gridded, plot_autocorrelation_gridded
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
@@ -150,11 +150,11 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
                 fname=fname
             )
 
-    ### Statistical validation plots
-    validate_nodes = ['delMontague', 'cannonsville', 'pepacton', 'delLordville']
+    ### Statistical verification plots
+    verify_nodes = ['delMontague', 'cannonsville', 'pepacton', 'delLordville']
 
-    for site in validate_nodes:
-        print(f"Plotting statistical validation for {site}...")
+    for site in verify_nodes:
+        print(f"Plotting statistical verification for {site}...")
 
         if site == 'delTrenton':
             continue
@@ -165,7 +165,7 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
         fname = f"{FIG_DIR}/statistical_validation/{fname}"
 
         # Check cache first
-        cache_key = f"validation_{site}"
+        cache_key = f"verification_{site}"
         if cache_key not in ensemble_cache:
             # Convert synthetic data to Ensemble object
             ensemble_dict = {}
@@ -180,13 +180,15 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
 
             ensemble_cache[cache_key] = Ensemble(ensemble_dict)
 
-        # Use SynHydro API
-        plot_validation_panel(
+        # Use SynHydro API. The seed fixes the bootstrap resampling of observed
+        # years underlying the mean/std panels, so reruns are reproducible.
+        plot_verification_panel(
             ensemble=ensemble_cache[cache_key],
             observed=Q.loc[:, site],
             site=site,
             timestep='monthly',
             log_space=logscale,
+            seed=42,
             filename=fname
         )
 
