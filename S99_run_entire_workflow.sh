@@ -26,12 +26,13 @@ echo "============================================================"
 S0=$(sbatch --parsable S0_run_baseline_historic.sh)
 echo "S0 baseline:         job $S0"
 
-# --- S1 & S2: Ensemble generation (parallel, after S0) ---
+# --- S1 & S2: Ensemble generation (serialized: S1 uses 8 nodes, S2 uses 5;
+#     running them concurrently would exceed the 8-node cap) ---
 S1=$(sbatch --parsable --dependency=afterok:$S0 S1_run_stationary_ensemble.sh)
 echo "S1 stationary:       job $S1 (after S0)"
 
-S2=$(sbatch --parsable --dependency=afterok:$S0 S2_run_climate_adjusted_ensemble.sh)
-echo "S2 climate-adjusted: job $S2 (after S0)"
+S2=$(sbatch --parsable --dependency=afterok:$S1 S2_run_climate_adjusted_ensemble.sh)
+echo "S2 climate-adjusted: job $S2 (after S1)"
 
 # --- S3: Postprocess each dataset (after S1 & S2) ---
 S3=$(sbatch --parsable --dependency=afterok:$S1:$S2 S3_postprocess_all.sh)

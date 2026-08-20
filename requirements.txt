@@ -2,5 +2,5 @@ numpy
 pandas
 matplotlib
 mpi4py
-pywrdrb @ git+https://github.com/Pywr-DRB/Pywr-DRB.git
-synhydro @ git+https://github.com/TrevorJA/SynHydro.git
+pywrdrb @ git+https://github.com/Pywr-DRB/Pywr-DRB.git@v2.2.0
+synhydro @ git+https://github.com/TrevorJA/SynHydro.git@275f178

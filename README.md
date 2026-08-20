@@ -6,8 +6,8 @@ Stochastic ensemble modeling framework for the Delaware River Basin (DRB), built
 
 Listed in `requirements.txt`. Key packages:
 
-- [Pywr-DRB](https://github.com/Pywr-DRB/Pywr-DRB) -- Water resources model for the DRB
-- [SynHydro](https://github.com/TrevorJA/SynHydro) -- Stochastic generation library (Kirsch-Nowak, SSI)
+- [Pywr-DRB](https://github.com/Pywr-DRB/Pywr-DRB) **v2.2.0** -- Water resources model for the DRB (cite the [v2.2.0 Zenodo release](https://doi.org/10.5281/zenodo.10720011)). v2.2 includes the `perfect_foresight` flow-prediction mode used by this experiment (`flow_prediction_mode` is set explicitly in `methods/config.py`, since the Pywr-DRB default is `regression_disagg`).
+- [SynHydro](https://github.com/TrevorJA/SynHydro) -- Stochastic generation library (Kirsch-Nowak, SSI); pinned to commit `275f178` in `requirements.txt`
 - [mpi4py](https://mpi4py.readthedocs.io/) -- MPI-based parallelization
 
 Install with:
@@ -105,24 +105,12 @@ All ensemble and experiment parameters are defined in `methods/config.py`, inclu
 
 ### Output isolation with CONFIG_NAME
 
-All simulation outputs and figures are written to a config-specific directory under `outputs/`. Set the `CONFIG_NAME` environment variable to isolate results from different experiment configurations:
+All simulation outputs and figures are written to a config-specific directory under `outputs/`. The active configuration name is set by `CONFIG_NAME` in `methods/config.py` (currently `perf_foresight_fullkirsch`); note that the `CONFIG_NAME` **environment variable is not read** — edit `methods/config.py` to change the output directory:
 
 ```bash
-# Default config
+# CONFIG_NAME = "perf_foresight_fullkirsch" in methods/config.py
 python 03_run_pywrdrb_simulations.py stationary_ensemble
-# → outputs/default/data/simulations/...
-
-# Named config
-CONFIG_NAME=perfect_foresight python 03_run_pywrdrb_simulations.py stationary_ensemble
-# → outputs/perfect_foresight/data/simulations/...
-
-# Set for entire session
-export CONFIG_NAME=regression_disagg
-python 03_run_pywrdrb_simulations.py stationary_ensemble
-# → outputs/regression_disagg/data/...
-
-# SLURM
-CONFIG_NAME=regression_disagg sbatch S6_run_figure_generation.sh
+# → outputs/perf_foresight_fullkirsch/data/simulations/...
 ```
 
 Each config directory contains a `config.json` recording the settings used.

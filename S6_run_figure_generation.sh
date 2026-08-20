@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=Figs
 #SBATCH --output=./logs/figs.out
-#SBATCH --error=./logs/fig.err
+#SBATCH --error=./logs/figs.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 
@@ -25,25 +25,27 @@ run() {
     fi
 }
 
-# # Fig4: Ensemble flow distribution and verification plots
-# run plotting_scripts/Fig4_plot_ensemble_diagnostics.py stationary_ensemble
+# Fig3: Selected CMIP6 climate scenarios (target vs achieved changes)
+run plotting_scripts/Fig3_selected_climate_scenarios.py
 
-# # Fig5: Drought metric distributions
-# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
-# run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
+# Fig4: Ensemble flow distribution and verification plots
+run plotting_scripts/Fig4_plot_ensemble_diagnostics.py stationary_ensemble
+
+# Fig5: Drought metric distributions
+run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
+run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
 run plotting_scripts/Fig5_plot_drought_metric_distribution.py 3
 
-# # Fig6: Drought zone occurrence (temporal probability + frequency/duration boxplots)
+# Fig6: Drought zone occurrence (temporal probability + frequency/duration boxplots)
 run plotting_scripts/Fig6_plot_drought_zone_occurrence.py
 
-
-# # Fig7: KDEs of NYC contribution / total inflow
+# Fig7: KDEs of NYC contribution / total inflow
 run plotting_scripts/Fig7_2x3_kdes_3mo_9mo_windows.py
 
-# # Fig8: NYC contribution distributions
+# Fig8: NYC contribution distributions
 run plotting_scripts/Fig8_plot_contribution_distributions.py --montague --layout stacked
 
-# # Fig9: Drought satisficing heatmaps (severity x magnitude)
+# Fig9: Drought satisficing heatmaps (severity x magnitude)
 run plotting_scripts/Fig9_plot_drought_satisficing_heatmap_2col.py 3
 
 # Fig10: Focal-region drought event landscape + two anchored droughts

@@ -243,9 +243,13 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     generation_seed = set_id * 10000 + rank
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
+        # start_year aligns the generated calendar (incl. leap days) with the
+        # simulation window starting at START_DATE (2030), so the downstream
+        # re-index to START_DATE preserves the leap-day pattern.
         monthly_ensemble_obj = kirsch_gen.generate(n_realizations=local_n_realizations,
                                                     n_years=N_YEARS_GENERATE,
-                                                    seed=generation_seed)
+                                                    seed=generation_seed,
+                                                    start_year=pd.Timestamp(START_DATE).year)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak
         # Without an explicit seed, Nowak draws fresh OS entropy (non-reproducible)

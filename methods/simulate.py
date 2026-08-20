@@ -173,8 +173,9 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             }
 
             # Add salinity LSTM options if enabled
+            # (Pywr-DRB v2.2 Options takes these as a single 'salinity_model' dict)
             if SALINITY_LSTM_PREDICTIONS:
-                model_options.update(SALINITY_LSTM_OPTIONS)
+                model_options["salinity_model"] = SALINITY_LSTM_OPTIONS
 
             # Build model
             mb = pywrdrb.ModelBuilder(

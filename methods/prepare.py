@@ -11,7 +11,6 @@ from pywrdrb.pre import (
     PredictedInflowEnsemblePreprocessor,
     ExtrapolatedDiversionEnsemblePreprocessor,
     PredictedDiversionEnsemblePreprocessor,
-    STARFITReleaseEnsemblePreprocessor,
 )
 
 from methods.ensemble_utils import get_ensemble_set_spec
@@ -86,19 +85,9 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
             realization_ids = comm.bcast(realization_ids, root=0)
 
         # =====================================================================
-        # Step 0: Pre-simulate STARFIT releases (required by perfect_foresight)
-        # =====================================================================
-        starfit_preprocessor = STARFITReleaseEnsemblePreprocessor(
-            inflow_type=f"{dataset_id}_set{set_id + 1}",
-            realization_ids=realization_ids,
-            use_mpi=use_mpi,
-            comm=comm,
-        )
-        starfit_preprocessor.run()
-        del starfit_preprocessor
-
-        # =====================================================================
         # Step 1: Process predicted inflows
+        # (Pywr-DRB v2.2 runs STARFIT offline simulation internally when
+        #  'perfect_foresight' is in modes; no separate pre-simulation step)
         # =====================================================================
         inflow_preprocessor = PredictedInflowEnsemblePreprocessor(
             flow_type=f"{dataset_id}_set{set_id + 1}",
