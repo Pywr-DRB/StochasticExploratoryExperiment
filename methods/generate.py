@@ -178,17 +178,15 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
 
     # Apply climate adjustments if needed.
     #
-    # Kirsch et al. (2013), eqs 6-11. Given the baseline log-space monthly
-    # stats (Ȳ_j, σ_j), the real-space monthly mean and std are
-    #   m_j = exp(Ȳ_j + σ_j² / 2)                                   (eq 6)
-    #   s_j = m_j · sqrt(exp(σ_j²) - 1)                              (eq 7)
-    # To scale the real-space mean by a_j and the real-space std by c_j, the
-    # new log-space params come from
-    #   Ȳ_new = ln(a_j) + Ȳ_j + σ_j²/2
-    #             - 0.5 · ln[(c_j/a_j)² · (exp(σ_j²) - 1) + 1]       (eq 10)
-    #   σ_new = sqrt(ln[(c_j/a_j)² · (exp(σ_j²) - 1) + 1])           (eq 11)
-    # We pick c_j = 1: preserve absolute real-space std under the climate
-    # shift (CV is NOT preserved). With c_j = 1, (c_j/a_j)² = 1/a_j².
+    # Multiplicative (delta-change) scenario perturbation, following the
+    # scenario approach of Kirsch et al. (2013) with the standard-deviation
+    # factor set equal to the mean factor. In log space this is simply
+    #   Ȳ_new = Ȳ_j + ln(1 + δ_j),   σ_new = σ_j
+    # so every synthetic monthly flow in calendar month j is scaled by
+    # (1 + δ_j): the real-space mean and standard deviation scale together,
+    # the coefficient of variation, the standardized anomaly structure, and
+    # the month-to-month persistence of the baseline are all preserved.
+    # (Only the projected seasonal redistribution of mean flow is imposed.)
     if dataset_config['type'] == 'climate_adjusted':
         if rank == 0:
             print(f'Set {set_id + 1}: Applying climate adjustments for {dataset_id}...')
@@ -197,25 +195,18 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         if monthly_prc_change is None or len(monthly_prc_change) != 12:
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
 
-        Y_bar = kirsch_gen_baseline.mean_period          # Ȳ_j (12 × n_sites)
-        sigma = kirsch_gen_baseline.std_period           # σ_j (12 × n_sites)
-        sigma2 = sigma.values ** 2
+        Y_bar = kirsch_gen_baseline.mean_period          # Ȳ_j (12 × n_sites), log space
+        sigma = kirsch_gen_baseline.std_period           # σ_j (12 × n_sites), log space
 
-        a = (1.0 + np.asarray(monthly_prc_change, dtype=float) / 100.0).reshape(-1, 1)
-        inv_a2 = 1.0 / (a ** 2)                          # c_j = 1
-        arg = inv_a2 * (np.exp(sigma2) - 1.0) + 1.0      # inner term of eqs 10, 11
+        log_a = np.log(1.0 + np.asarray(monthly_prc_change, dtype=float) / 100.0).reshape(-1, 1)
 
         Y_bar_new = pd.DataFrame(
-            np.log(a) + Y_bar.values + sigma2 / 2.0 - 0.5 * np.log(arg),
+            Y_bar.values + log_a,
             index=Y_bar.index, columns=Y_bar.columns,
-        )
-        sigma_new = pd.DataFrame(
-            np.sqrt(np.log(arg)),
-            index=sigma.index, columns=sigma.columns,
         )
 
         kirsch_gen.mean_period = Y_bar_new
-        kirsch_gen.std_period = sigma_new
+        kirsch_gen.std_period = sigma.copy()
     else:
         if rank == 0:
             print(f'Set {set_id + 1}: No climate adjustments for {dataset_id} (using baseline monthly params)')

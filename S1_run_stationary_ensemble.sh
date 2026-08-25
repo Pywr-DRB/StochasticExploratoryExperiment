@@ -5,7 +5,7 @@
 #SBATCH --nodes=8
 #SBATCH --ntasks-per-node=40
 #SBATCH --exclusive
-#SBATCH --time=4:00:00
+#SBATCH --time=24:00:00
 
 # Setup
 module load python/3.11.5

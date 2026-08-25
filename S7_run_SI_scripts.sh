@@ -4,6 +4,7 @@
 #SBATCH --error=./logs/SI.err
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
+#SBATCH --mem=0
 #SBATCH --time=48:00:00
 
 # Load modules and environment
