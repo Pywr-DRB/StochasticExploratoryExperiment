@@ -47,6 +47,7 @@ import matplotlib.dates as mdates
 from matplotlib.colors import ListedColormap
 from matplotlib.lines import Line2D
 from matplotlib.legend import Legend
+from matplotlib.patches import Rectangle
 
 from methods.config import (
     FIG_DIR, OUTPUT_DIR, N_YEARS,
@@ -81,11 +82,12 @@ from methods.plotting.ensemble_summary import MGD_TO_MCM
 
 SSI_WINDOW = 3
 DATASETS = list(DATASET_CONFIGS.keys())
-MIN_COUNT = 1  # presence threshold for the support grid (1 = any event)
+MIN_COUNT = 5  # per-bin event count required for grid inference (matches Fig9)
 SEV_TICKS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]
 AXIS_FRAME_COLOR = '#333333'
 EMPTY_CELL_COLOR = '#ededed'
 SUPPORT_FILL_COLOR = '#cccccc'
+HATCH_EDGECOLOR = '#bbbbbb'  # bins with 0 < count < MIN_COUNT (matches Fig9)
 
 # The two anchored events. Each slot picks one in-focal event from the
 # named ensemble via the chosen `selection_method`:
@@ -114,6 +116,66 @@ FOCAL_EVENTS = {
     ),
 }
 EVENT_SLOT_ORDER = ['A', 'B']
+
+# -- alternative figure versions ---------------------------------------------
+# Candidate storyline pairings for manuscript review. Each version is a full
+# {'A': cfg, 'B': cfg} slot mapping rendered to its own suffixed filename
+# (FIG_NAME_STEM + '_' + suffix); the unsuffixed FIG_NAME_STEM output from
+# the original FOCAL_EVENTS configuration is left untouched on disk.
+#
+# Slot-B rationale (manuscript Fig 8 / code Fig 9): the WWDS scenario
+# shortens joint-exceedance return periods most in the upper-severity bins,
+# so Event B is drawn from the severity > 2.8 class whose frequency
+# increases under WWDS. The sub-annual duration filter (<= 366 d) targets
+# the rapid single-drawdown storyline driven by drier summers, and the
+# Emergency filter guarantees the event reaches the FFMP Drought Emergency
+# zone at its storage minimum. Within that class, 'rank_min' on
+# event_min_storage_pct picks the deepest combined-storage drawdown.
+# v1 additionally caps severity at 3.4 (the region's top severity bin
+# starts at ~3.41) so the pick is not the tail-maximizing edge event;
+# v2 drops the cap to show the extreme-drawdown alternative.
+
+_EVENT_B_DEEP_WWDS = dict(
+    label='B',
+    title='Deep-drawdown WWDS focal event',
+    selection_method='rank_min',
+    rank_column='event_min_storage_pct',
+    filter_severity_min=2.8,
+    filter_severity_max=3.4,
+    filter_max_duration_days=366,
+    filter_zone_at_min='Emergency',
+    ensemble='climate_adjusted_low',
+    marker='s',
+)
+
+_EVENT_B_EXTREME_WWDS = dict(
+    label='B',
+    title='Extreme-drawdown WWDS focal event',
+    selection_method='rank_min',
+    rank_column='event_min_storage_pct',
+    filter_severity_min=2.8,
+    filter_max_duration_days=366,
+    filter_zone_at_min='Emergency',
+    ensemble='climate_adjusted_low',
+    marker='s',
+)
+
+# Event A's exact criterion applied to the WWSS ensemble: even the wettest
+# scenario still produces the worst-shortage class of focal droughts.
+_EVENT_A_WWSS = dict(
+    label='A',
+    title='Worst NYC-shortage focal drought (WWSS)',
+    selection_method='rank_max',
+    rank_column='nyc_shortage_pct',
+    ensemble='climate_adjusted_high',
+    marker='o',
+)
+
+FIG_VERSIONS = {
+    'v1_deepB': {'A': FOCAL_EVENTS['A'], 'B': _EVENT_B_DEEP_WWDS},
+    'v2_extremeB': {'A': FOCAL_EVENTS['A'], 'B': _EVENT_B_EXTREME_WWDS},
+    'v3_wwssA': {'A': _EVENT_A_WWSS, 'B': _EVENT_B_DEEP_WWDS},
+}
 
 # Length (in years) of the rows-2/3/4/5 x-axis window. All event slots
 # share this length so the two columns are directly comparable. The
@@ -218,6 +280,20 @@ def _compute_3yr_window(event, total_years=WINDOW_YEARS):
     return w_start, w_end
 
 
+def _describe_slot_filters(cfg):
+    """Short human-readable summary of the optional pool filters in *cfg*."""
+    parts = []
+    if cfg.get('filter_severity_min') is not None:
+        parts.append(f"sev>{cfg['filter_severity_min']}")
+    if cfg.get('filter_severity_max') is not None:
+        parts.append(f"sev<={cfg['filter_severity_max']}")
+    if cfg.get('filter_max_duration_days') is not None:
+        parts.append(f"dur<={cfg['filter_max_duration_days']}d")
+    if cfg.get('filter_zone_at_min') is not None:
+        parts.append(f"zone@min={cfg['filter_zone_at_min']}")
+    return ', '.join(parts)
+
+
 def _select_anchored_event(all_data, sev_edges, mag_edges, focal_cells, cfg):
     """Pick one in-focal event from ``cfg['ensemble']`` per the slot's
     ``selection_method``. Supported methods:
@@ -228,6 +304,17 @@ def _select_anchored_event(all_data, sev_edges, mag_edges, focal_cells, cfg):
     - ``'rank_max'``: event with the largest value of
       ``cfg['rank_column']`` over the focal pool.
     - ``'rank_min'``: event with the smallest value.
+
+    Optional pool filters (applied before the selection method) restrict
+    the focal pool to the storyline class of interest:
+
+    - ``filter_severity_min``: severity strictly greater than this value.
+    - ``filter_severity_max``: severity at most this value (use to exclude
+      the region's tail-most severity bins).
+    - ``filter_max_duration_days``: duration at most this many days
+      (e.g. 366 to keep sub-annual, rapid-drawdown droughts).
+    - ``filter_zone_at_min``: require ``ffmp_zone_at_min`` to equal this
+      zone (e.g. 'Emergency').
     """
     ds = cfg['ensemble']
     df_binned = assign_grid_bins(all_data[ds], sev_edges, mag_edges)
@@ -240,6 +327,22 @@ def _select_anchored_event(all_data, sev_edges, mag_edges, focal_cells, cfg):
             f"No focal-region events available in ensemble '{ds}' for slot "
             f"'{cfg['label']}'. Loosen focal thresholds or pick a different "
             f"ensemble in FOCAL_EVENTS."
+        )
+
+    if cfg.get('filter_severity_min') is not None:
+        pool = pool[pool['severity'] > cfg['filter_severity_min']]
+    if cfg.get('filter_severity_max') is not None:
+        pool = pool[pool['severity'] <= cfg['filter_severity_max']]
+    if cfg.get('filter_max_duration_days') is not None:
+        pool = pool[pool['duration_days'] <= cfg['filter_max_duration_days']]
+    if cfg.get('filter_zone_at_min') is not None:
+        pool = pool[pool['ffmp_zone_at_min'] == cfg['filter_zone_at_min']]
+    if pool.empty:
+        raise RuntimeError(
+            f"Focal pool for slot '{cfg['label']}' (ensemble '{ds}') is "
+            f"empty after applying filters "
+            f"{_describe_slot_filters(cfg) or '(none)'}. Loosen the "
+            f"filter_* values in the slot config."
         )
 
     method = cfg.get('selection_method', 'target_nearest')
@@ -361,9 +464,15 @@ def _load_event_window(event, results_sets, ssi_calc):
 
 def _panel_support_grid(ax, support_grid, sev_edges, mag_edges, focal_cells,
                         selected_events):
-    """Panel (a): grey presence map + focal boundary + A/B markers."""
+    """Panel (a): grey support map + focal boundary + A/B markers.
+
+    Follows Fig9's convention: solid grey fill only for bins holding at
+    least MIN_COUNT events (the bins used for inference); bins with fewer
+    events (but at least one) are hatched and excluded from inference;
+    empty bins stay white.
+    """
     ax.set_facecolor('white')
-    display = np.where(support_grid > 0, 1.0, np.nan).T
+    display = np.where(support_grid >= MIN_COUNT, 1.0, np.nan).T
     ax.pcolormesh(
         sev_edges, mag_edges,
         np.ma.masked_invalid(display),
@@ -371,6 +480,18 @@ def _panel_support_grid(ax, support_grid, sev_edges, mag_edges, focal_cells,
         vmin=0.5, vmax=1.5,
         rasterized=True, zorder=3,
     )
+    ns, nm = support_grid.shape
+    for i in range(ns):
+        for j in range(nm):
+            cnt = support_grid[i, j]
+            if 0 < cnt < MIN_COUNT:
+                ax.add_patch(Rectangle(
+                    (sev_edges[i], mag_edges[j]),
+                    sev_edges[i + 1] - sev_edges[i],
+                    mag_edges[j + 1] - mag_edges[j],
+                    facecolor='none', hatch='///',
+                    edgecolor=HATCH_EDGECOLOR, linewidth=0, zorder=3,
+                ))
     draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells)
 
     for slot in EVENT_SLOT_ORDER:
@@ -413,8 +534,9 @@ def _panel_key(ax, selected_events):
     ax.set_axis_off()
     label_panel(ax, 'b', fontsize=FONTSIZE_LABEL)
     lines = [
-        ('item',   r'Grey cells: stationary-ensemble drought support'
-                   '\n(at least one event in that severity-magnitude bin).'),
+        ('item',   'Grey cells: stationary-ensemble severity-magnitude bins\n'
+                   f'with at least {MIN_COUNT} events; hatched cells hold '
+                   f'fewer than {MIN_COUNT}.'),
         ('item',   r'White outline: focal region (Fig 9 criteria;'
                    '\nall 3 ensembles, NYC storage stressed).'),
     ]
@@ -621,7 +743,8 @@ def _focal_setup_cache_path():
     tag = (f"ssi{SSI_WINDOW}"
            f"_rp{FOCAL_RP_THRESH_YEARS}"
            f"_fr{FOCAL_FRAC_THRESH}"
-           f"_st{FOCAL_WORST_STORAGE_THRESH}")
+           f"_st{FOCAL_WORST_STORAGE_THRESH}"
+           f"_mc{MIN_COUNT}")
     return os.path.join(
         CACHE_DIR, f"fig10_focal_setup_{CACHE_VERSION}_{tag}.pkl")
 
@@ -692,37 +815,22 @@ def _load_or_compute_focal_setup(all_data):
     return result
 
 
-# -- main --------------------------------------------------------------------
+# -- per-version rendering ---------------------------------------------------
 
-def main():
-    apply_publication_style()
-    plt.rcParams.update({'font.size': 13, 'font.weight': 'normal'})
-    os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
-
-    print(f"Fig10: focal-region drought event landscape "
-          f"(SSI-{SSI_WINDOW})")
-
-    # 1. Event metrics per ensemble.
-    all_data = {}
-    for ds in DATASETS:
-        all_data[ds] = load_event_metrics(ds, SSI_WINDOW)
-        print(f"  {ds}: {len(all_data[ds])} events")
-
-    # 2. Focal-region setup (grid edges, focal cells, stationary count grid)
-    #    — cached because it is the dominant cost and is invariant to
-    #    FOCAL_EVENTS configuration.
-    setup = _load_or_compute_focal_setup(all_data)
+def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
+                    ffmp_seasonal, window_cache):
+    """Select the A/B events of one figure version, load their HDF5 windows
+    (cached across versions in *window_cache*), build the 10-panel figure,
+    and save it as FIG_NAME_STEM + '_' + version_suffix (or FIG_NAME_STEM
+    itself when the suffix is empty)."""
     sev_edges = setup['sev_edges']
     mag_edges = setup['mag_edges']
     focal_cells = setup['focal_cells']
     count_grid_stationary = setup['count_grid_stationary']
-    print(f"  Focal region: {len(focal_cells)} cells")
-    if len(focal_cells) == 0:
-        raise RuntimeError("Empty focal region; cannot anchor events.")
 
     selected_events = {}
     for slot in EVENT_SLOT_ORDER:
-        cfg = FOCAL_EVENTS[slot]
+        cfg = focal_events[slot]
         ev = _select_anchored_event(
             all_data, sev_edges, mag_edges, focal_cells, cfg,
         )
@@ -733,6 +841,9 @@ def main():
                           f"target min_storage={cfg['target_min_storage_pct']}%")
         else:
             sel_detail = f"{method} on {cfg['rank_column']}"
+        filters = _describe_slot_filters(cfg)
+        if filters:
+            sel_detail += f"; filters: {filters}"
         print(
             f"  Event {cfg['label']} ({cfg['title']}): "
             f"{DATASET_LABELS_SHORT.get(ev['ensemble'], ev['ensemble'])} "
@@ -745,30 +856,24 @@ def main():
             f"[{sel_detail}]"
         )
 
-    # 4. Fit SSI-3 calculator on baseline historical inflow (used to
-    #    standardize each event's NYC-aggregate monthly inflow into SSI-3).
-    print("  Fitting SSI-3 calculator on baseline historical inflow...")
-    ssi_calc = fit_ssi_calculator(SSI_WINDOW)
-
-    # 4b. FFMP seasonal rule curves (Watch / Warning / Emergency by
-    #     calendar day-of-year), drawn as faint bands behind panels e/f.
-    ffmp_seasonal = _build_ffmp_seasonal_lookup()
-    if ffmp_seasonal is None:
-        print("  Warning: FFMP boundaries unavailable; storage panels "
-              "will be drawn without rule-curve bands.")
-
-    # 5. Load 2-yr HDF5 windows for the two anchored events. ibt_demands
-    #    is kept in the load even though it is not currently plotted, so a
-    #    later shortage-metric overlay (demand - diversion) can be added
-    #    without changing the HDF5 read.
+    # Load 2-yr HDF5 windows for the two anchored events. ibt_demands
+    # is kept in the load even though it is not currently plotted, so a
+    # later shortage-metric overlay (demand - diversion) can be added
+    # without changing the HDF5 read. Windows are cached across versions
+    # so events shared between versions load once.
     results_sets = ['res_storage', 'ibt_diversions', 'ibt_demands',
                     'inflow', 'contribution']
     event_windows = {}
     for slot in EVENT_SLOT_ORDER:
         ev = selected_events[slot]
-        print(f"  Loading HDF5 window for event {slot} "
-              f"({ev['ensemble']} R{ev['realization_id']:04d})...")
-        event_windows[slot] = _load_event_window(ev, results_sets, ssi_calc)
+        cache_key = (ev['ensemble'], ev['realization_id'],
+                     str(ev['start'].date()))
+        if cache_key not in window_cache:
+            print(f"  Loading HDF5 window for event {slot} "
+                  f"({ev['ensemble']} R{ev['realization_id']:04d})...")
+            window_cache[cache_key] = _load_event_window(
+                ev, results_sets, ssi_calc)
+        event_windows[slot] = window_cache[cache_key]
 
     # 6. Figure layout — two stacked GridSpecs so the gap between the
     #    landscape row (a/b) and the timeseries stack (c-j) stays generous,
@@ -900,11 +1005,11 @@ def main():
     ensemble_handles = [
         Line2D(
             [0], [0],
-            marker=FOCAL_EVENTS[slot]['marker'], linestyle='-',
+            marker=selected_events[slot]['config']['marker'], linestyle='-',
             color=DATASET_COLORS[selected_events[slot]['ensemble']],
             markeredgecolor='white', markeredgewidth=1.0,
             markersize=10, linewidth=2.0,
-            label=(f"Event {FOCAL_EVENTS[slot]['label']} — "
+            label=(f"Event {selected_events[slot]['config']['label']} — "
                    f"{DATASET_LABELS[selected_events[slot]['ensemble']]}"),
         )
         for slot in EVENT_SLOT_ORDER
@@ -966,10 +1071,58 @@ def main():
     fig.add_artist(leg_row4)
 
     # -- save ----------------------------------------------------------------
-    out_stem = os.path.join(FIG_OUTPUT_DIR, FIG_NAME_STEM)
+    stem = FIG_NAME_STEM + (f'_{version_suffix}' if version_suffix else '')
+    out_stem = os.path.join(FIG_OUTPUT_DIR, stem)
     save_fig(fig, out_stem, dpi=DPI_HIGH)
     plt.close(fig)
-    print(f"Done. Saved: {out_stem}.{{png,svg,pdf}}")
+    print(f"  Saved: {out_stem}.{{png,svg,pdf}}")
+
+
+# -- main --------------------------------------------------------------------
+
+def main():
+    apply_publication_style()
+    plt.rcParams.update({'font.size': 13, 'font.weight': 'normal'})
+    os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
+
+    print(f"Fig10: focal-region drought event landscape "
+          f"(SSI-{SSI_WINDOW})")
+
+    # 1. Event metrics per ensemble.
+    all_data = {}
+    for ds in DATASETS:
+        all_data[ds] = load_event_metrics(ds, SSI_WINDOW)
+        print(f"  {ds}: {len(all_data[ds])} events")
+
+    # 2. Focal-region setup (grid edges, focal cells, stationary count grid)
+    #    — cached because it is the dominant cost and is invariant to the
+    #    event-slot configurations.
+    setup = _load_or_compute_focal_setup(all_data)
+    print(f"  Focal region: {len(setup['focal_cells'])} cells")
+    if len(setup['focal_cells']) == 0:
+        raise RuntimeError("Empty focal region; cannot anchor events.")
+
+    # 3. Fit SSI-3 calculator on baseline historical inflow (used to
+    #    standardize each event's NYC-aggregate monthly inflow into SSI-3).
+    print("  Fitting SSI-3 calculator on baseline historical inflow...")
+    ssi_calc = fit_ssi_calculator(SSI_WINDOW)
+
+    # 3b. FFMP seasonal rule curves (Watch / Warning / Emergency by
+    #     calendar day-of-year), drawn as faint bands behind panels e/f.
+    ffmp_seasonal = _build_ffmp_seasonal_lookup()
+    if ffmp_seasonal is None:
+        print("  Warning: FFMP boundaries unavailable; storage panels "
+              "will be drawn without rule-curve bands.")
+
+    # 4. Render each configured figure version. HDF5 event windows are
+    #    cached across versions so shared events load only once.
+    window_cache = {}
+    for suffix, focal_events in FIG_VERSIONS.items():
+        print(f"Version '{suffix}':")
+        _render_version(suffix, focal_events, all_data, setup, ssi_calc,
+                        ffmp_seasonal, window_cache)
+
+    print("Done.")
 
 
 if __name__ == '__main__':

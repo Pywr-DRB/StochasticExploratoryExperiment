@@ -269,7 +269,9 @@ MIN_COUNT_PER_BIN = 5
 # (iii) Worst-case minimum NYC storage  <  FOCAL_WORST_STORAGE_THRESH
 #       in AT LEAST ONE ensemble.
 FOCAL_RP_THRESH_YEARS    = 1000     # T_W ≤ 1,000 yr  (was 1e-3 yr⁻¹ rate)
-FOCAL_FRAC_THRESH        = 0.95     # ≥5% of droughts reach Drought Emergency
+FOCAL_FRAC_THRESH        = 0.90     # ≥10% of droughts reach Drought Emergency
+                                    # (0.95 / ≥5% was the pre-2026-09-08 value;
+                                    # 10% chosen after frac-sensitivity runs)
 FOCAL_WORST_STORAGE_THRESH = 15.0   # combined NYC storage <15% in ≥1 event
 
 # Legacy alias kept so unrelated callers (e.g. the marker overlay in Fig9)

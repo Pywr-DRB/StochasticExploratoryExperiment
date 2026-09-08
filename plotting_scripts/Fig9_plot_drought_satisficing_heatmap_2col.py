@@ -72,6 +72,13 @@ SHOW_CHANGE = False
 # whichever threshold was used, so 15 % and 25 % versions don't overwrite.
 STORAGE_THRESH_OVERRIDE = None
 
+# Override FOCAL_FRAC_THRESH the same way for criterion (ii) sensitivity
+# figures. FOCAL_FRAC_THRESH is the fraction of droughts AVOIDING Drought
+# Emergency, so 0.90 means "≥10% of droughts reach DE"; the output
+# filename's `_fracNN` suffix tracks whichever threshold was used. Set to
+# None to use the manuscript default from methods.config (0.90, i.e. ≥10%).
+FRAC_THRESH_OVERRIDE = None
+
 # Grey dividing lines that separate the absolute (col 0) from Δ (cols 1-2)
 # heatmaps and the metric rows from each other. Toggle off if these will be
 # added in postprocessing of the SVG.
@@ -240,6 +247,12 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     storage_thresh = (FOCAL_WORST_STORAGE_THRESH
                       if STORAGE_THRESH_OVERRIDE is None
                       else float(STORAGE_THRESH_OVERRIDE))
+    frac_thresh = (FOCAL_FRAC_THRESH
+                   if FRAC_THRESH_OVERRIDE is None
+                   else float(FRAC_THRESH_OVERRIDE))
+    # Percent of droughts reaching DE implied by criterion (ii), for the
+    # criteria text (frac_thresh is the fraction AVOIDING emergency).
+    de_pct = int(round((1.0 - frac_thresh) * 100.0))
 
     sev_edges, mag_edges, sev_centers, mag_centers = make_shared_edges_logmag(
         all_data, DATASETS, n_bins=GRID_N_BINS)
@@ -268,6 +281,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     focal_cells = identify_focal_region(
         T_W_grids, frac_grids, min_grids, DATASETS,
+        frac_thresh=frac_thresh,
         storage_thresh=storage_thresh)
     focal_event_counts = {
         did: _count_events_in_focal_region(
@@ -634,7 +648,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         ('item',   rf'(i)   Return Period (joint exc.) $\leq$ '
                    rf'{FOCAL_RP_THRESH_YEARS:,} yr'
                    '\n        in all 3 scenarios'),
-        ('item',   r'(ii)  $\geq$5% of droughts reach DE'
+        ('item',   rf'(ii)  $\geq${de_pct}% of droughts reach DE'
                    '\n        in all 3 scenarios'),
         ('item',   rf'(iii) NYC storage <{int(round(storage_thresh))}% in $\geq$1 event'
                    '\n        in at least 1 of the 3 scenarios'),
@@ -890,7 +904,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     # -- save ----------------------------------------------------------------
     fname_base = (f"{FIG_OUTPUT_DIR}/Fig9_satisficing_heatmap_ssi{ssi_window}"
-                  f"_rp{FOCAL_RP_THRESH_YEARS}_frac{FOCAL_FRAC_THRESH:.2f}"
+                  f"_rp{FOCAL_RP_THRESH_YEARS}_frac{frac_thresh:.2f}"
                   f"_sto{storage_thresh:.0f}")
     fname_png = fname_base + '.png'
     fname_svg = fname_base + '.svg'
