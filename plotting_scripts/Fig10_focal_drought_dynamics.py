@@ -529,12 +529,16 @@ def _panel_support_grid(ax, support_grid, sev_edges, mag_edges, focal_cells,
     _style_axis_frame(ax)
 
 
-def _panel_key(ax, selected_events):
-    """Panel (b): text legend / marker key for panel (a)."""
+def _panel_key(ax, selected_events, support_label='stationary-ensemble'):
+    """Panel (b): text legend / marker key for panel (a).
+
+    *support_label* names the ensemble whose event counts fill panel (a)'s
+    grey support grid (SI variants pass a per-scenario label).
+    """
     ax.set_axis_off()
     label_panel(ax, 'b', fontsize=FONTSIZE_LABEL)
     lines = [
-        ('item',   'Grey cells: stationary-ensemble severity-magnitude bins\n'
+        ('item',   f'Grey cells: {support_label} severity-magnitude bins\n'
                    f'with at least {MIN_COUNT} events; hatched cells hold '
                    f'fewer than {MIN_COUNT}.'),
         ('item',   r'White outline: focal region (Fig 9 criteria;'
@@ -818,15 +822,35 @@ def _load_or_compute_focal_setup(all_data):
 # -- per-version rendering ---------------------------------------------------
 
 def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
-                    ffmp_seasonal, window_cache):
+                    ffmp_seasonal, window_cache,
+                    out_dir=None, name_stem=None,
+                    support_grid=None, support_label='stationary-ensemble'):
     """Select the A/B events of one figure version, load their HDF5 windows
     (cached across versions in *window_cache*), build the 10-panel figure,
     and save it as FIG_NAME_STEM + '_' + version_suffix (or FIG_NAME_STEM
-    itself when the suffix is empty)."""
+    itself when the suffix is empty).
+
+    Optional overrides (used by the SI per-scenario variant,
+    si_scripts/SI22_scenario_storyline_droughts.py; defaults reproduce
+    the main-text figure exactly):
+
+    - ``out_dir`` / ``name_stem``: destination directory and filename stem
+      (default FIG_OUTPUT_DIR / FIG_NAME_STEM).
+    - ``support_grid``: per-bin event-count grid drawn as panel (a)'s grey
+      support (default: the stationary count grid from *setup*).
+    - ``support_label``: ensemble name used in panel (b)'s key text.
+
+    Returns the ``{slot: event dict}`` mapping of the selected events.
+    """
     sev_edges = setup['sev_edges']
     mag_edges = setup['mag_edges']
     focal_cells = setup['focal_cells']
-    count_grid_stationary = setup['count_grid_stationary']
+    count_grid_stationary = (
+        setup['count_grid_stationary'] if support_grid is None
+        else support_grid
+    )
+    out_dir = FIG_OUTPUT_DIR if out_dir is None else out_dir
+    name_stem = FIG_NAME_STEM if name_stem is None else name_stem
 
     selected_events = {}
     for slot in EVENT_SLOT_ORDER:
@@ -919,7 +943,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     label_panel(ax_a, 'a', fontsize=FONTSIZE_LABEL)
 
     # Panel (b)
-    _panel_key(ax_b, selected_events)
+    _panel_key(ax_b, selected_events, support_label=support_label)
 
     # Panels (c), (d): SSI-3 monthly timeseries per anchored event.
     _panel_ssi3(ax_c, event_windows['A']['ssi3'],
@@ -1071,11 +1095,13 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     fig.add_artist(leg_row4)
 
     # -- save ----------------------------------------------------------------
-    stem = FIG_NAME_STEM + (f'_{version_suffix}' if version_suffix else '')
-    out_stem = os.path.join(FIG_OUTPUT_DIR, stem)
+    stem = name_stem + (f'_{version_suffix}' if version_suffix else '')
+    os.makedirs(out_dir, exist_ok=True)
+    out_stem = os.path.join(out_dir, stem)
     save_fig(fig, out_stem, dpi=DPI_HIGH)
     plt.close(fig)
     print(f"  Saved: {out_stem}.{{png,svg,pdf}}")
+    return selected_events
 
 
 # -- main --------------------------------------------------------------------
