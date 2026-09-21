@@ -6,8 +6,8 @@ Stochastic ensemble modeling framework for the Delaware River Basin (DRB), built
 
 Listed in `requirements.txt`. Key packages:
 
-- [Pywr-DRB](https://github.com/Pywr-DRB/Pywr-DRB) **v2.2.0** -- Water resources model for the DRB (cite the [v2.2.0 Zenodo release](https://doi.org/10.5281/zenodo.10720011)). v2.2 includes the `perfect_foresight` flow-prediction mode used by this experiment (`flow_prediction_mode` is set explicitly in `methods/config.py`, since the Pywr-DRB default is `regression_disagg`).
-- [SynHydro](https://github.com/TrevorJA/SynHydro) -- Stochastic generation library (Kirsch-Nowak, SSI); pinned to commit `275f178` in `requirements.txt`
+- [Pywr-DRB](https://github.com/Pywr-DRB/Pywr-DRB) **v2.2.0** -- Water resources model for the DRB (cite the [v2.2.0 Zenodo release](https://doi.org/10.5281/zenodo.21716508); the DOI for all versions is [10.5281/zenodo.10720011](https://doi.org/10.5281/zenodo.10720011)). v2.2 includes the `perfect_foresight` flow-prediction mode used by this experiment (`flow_prediction_mode` is set explicitly in `methods/config.py`, since the Pywr-DRB default is `regression_disagg`).
+- [SynHydro](https://github.com/TrevorJA/SynHydro) **v0.1.0** -- Stochastic generation library (Kirsch-Nowak, SSI); pinned to the `v0.1.0` tag in `requirements.txt` (cite the [v0.1.0 Zenodo release](https://doi.org/10.5281/zenodo.22759484))
 - [mpi4py](https://mpi4py.readthedocs.io/) -- MPI-based parallelization
 
 Install with:
@@ -33,8 +33,6 @@ Example usage:
 ```bash
 mpirun -np 150 python 01_generate_ensemble_sets.py stationary_ensemble
 ```
-
-A serial workflow (`serial_workflow.py`) is available for debugging or small-scale runs without MPI.
 
 ## SLURM submission scripts
 
@@ -91,7 +89,7 @@ S0 (baseline)
 
 - `S*.sh` -- SLURM job submission scripts for HPC execution
 - `0*.py` -- Main workflow scripts (generation, simulation, post-processing)
-- `plotting_scripts/F*.py` -- Manuscript figure generation scripts
+- `plotting_scripts/Fig*.py` -- Manuscript figure generation scripts
 - `si_scripts/SI*.py` -- Supplementary information figure scripts
 
 ## Configuration
@@ -118,9 +116,8 @@ Each config directory contains a `config.json` recording the settings used.
 ## Project structure
 
 ```
-plotting_scripts/     Manuscript figure scripts (F1-F5)
-  underdev/           In-progress figure scripts
-si_scripts/           Supplementary information scripts (SI0-SI16)
+plotting_scripts/     Manuscript figure scripts (Fig3-Fig10)
+si_scripts/           Supplementary information scripts (SI0-SI22)
   underdev/           In-progress SI scripts
 methods/              Core library (generation, simulation, post-processing, analysis)
   metrics/            Shortfall and satisficing calculations
@@ -140,5 +137,4 @@ outputs/              Config-specific output root
       focal_events/
     figures/           Generated figures
     config.json        Configuration snapshot
-docs/                 Manuscript and supplemental drafts
 ```
