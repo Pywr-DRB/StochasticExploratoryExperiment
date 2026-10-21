@@ -54,7 +54,7 @@ settings that were used (Python 3.11.5, OpenMPI 4.0.5).
   not read by the code. Both files were produced with
   [CMIP6_multimodel_streamflow](https://github.com/Pywr-DRB/CMIP6_multimodel_streamflow).
 - Historical streamflow and diversion records are read from the Pywr-DRB package.
-- The synthetic ensembles and the derived metric tables produced by this code are archived on Zenodo
+- The synthetic streamflow and demand ensembles produced by steps 01 and 02 are archived on Zenodo
   (DOI to be added).
 
 ## Workflow
@@ -72,7 +72,6 @@ identify the drought events of the historical record.
 | `04_postprocess_data_mpi.py` | Compute shortages and NYC release contributions from the simulation output |
 | `05_calculate_ssi_drought_metrics.py` | Identify SSI-3, SSI-6 and SSI-12 drought events |
 | `06_calculate_performance_metrics.py` | Annual metrics, Hashimoto reliability and resiliency, storage-zone events, per-event metrics |
-| `extract_manuscript_values.py` | Collect the numerical values quoted in the manuscript into `manuscript/ensemble_stats/` |
 
 SLURM submission scripts:
 
@@ -86,8 +85,7 @@ SLURM submission scripts:
 | `S5_calculate_performance_metrics.sh` | Step 06 for all ensembles and the reconstruction, then FFMP storage-zone probabilities (`si_scripts/SI3_...`) |
 | `S6_run_figure_generation.sh` | Manuscript figures |
 | `S7_run_SI_scripts.sh` | Supplementary figures |
-| `S8_extract_manuscript_values.sh` | `extract_manuscript_values.py` |
-| `S99_run_entire_workflow.sh` | Submits S0 to S8 as one SLURM dependency chain |
+| `S99_run_entire_workflow.sh` | Submits S0 to S7 as one SLURM dependency chain |
 
 Job order in `S99_run_entire_workflow.sh`:
 
@@ -104,7 +102,7 @@ S1 generate --> S1 prep -----> S1 simulate
                                               |
                                         S5 performance metrics
                                               |
-                              S6 figures | S7 SI figures | S8 manuscript values
+                              S6 figures | S7 SI figures
 ```
 
 The generation and simulation steps run on several nodes; the Pywr-DRB input preparation runs on one
@@ -165,7 +163,6 @@ produced by this repository. The script numbers predate the final figure numberi
 ```
 0*_*.py                 Workflow steps
 S*.sh                   SLURM submission scripts
-extract_manuscript_values.py
 methods/                Shared code
   config.py             Experiment settings
   ensemble_utils.py     Ensemble set specifications, directories and the config.json snapshot

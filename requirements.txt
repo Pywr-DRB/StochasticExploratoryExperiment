@@ -2,7 +2,6 @@ numpy
 pandas
 scipy
 matplotlib
-statsmodels
 h5py
 mpi4py
 pywrdrb @ git+https://github.com/Pywr-DRB/Pywr-DRB.git@v2.2.0

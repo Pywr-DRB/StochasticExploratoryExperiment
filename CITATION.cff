@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the article below."
+title: "StochasticExploratoryExperiment: stochastic drought ensembles for the Delaware River Basin"
+type: software
+authors:
+  - family-names: Amestoy
+    given-names: Trevor
+    affiliation: Cornell University
+    orcid: "https://orcid.org/0000-0002-1736-456X"
+  - family-names: Reed
+    given-names: Patrick
+    affiliation: Cornell University
+    orcid: "https://orcid.org/0000-0002-7963-6102"
+repository-code: "https://github.com/Pywr-DRB/StochasticExploratoryExperiment"
+license: MIT
+preferred-citation:
+  type: article
+  title: "Exploratory Modeling to Better Understand How Changing Drought Extremes May Shape Water Supply Vulnerabilities in the Delaware River Basin"
+  authors:
+    - family-names: Amestoy
+      given-names: Trevor
+    - family-names: Reed
+      given-names: Patrick
+  journal: "Journal of Hydrology: Regional Studies"
+  year: 2026

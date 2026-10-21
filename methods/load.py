@@ -12,7 +12,6 @@ from synhydro.core.ensemble import Ensemble
 from methods.config import (
     RECONSTRUCTION_OUTPUT_FNAME,
     DROUGHT_METRICS_DIR, PERFORMANCE_METRICS_DIR, EVENT_METRICS_DIR,
-    ZONE_PROB_DIR,
     N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET,
 )
 from methods.ensemble_utils import get_ensemble_set_spec, ENSEMBLE_SETS
@@ -664,33 +663,6 @@ def load_ensemble_diversions(dataset_id, loc='nyc'):
                 ensemble_diversions[int(realization_id)] = pd.Series(div_data, index=dates)
 
     return ensemble_diversions
-
-
-def load_zone_probabilities(dataset_id, period='weekly'):
-    """
-    Load zone probabilities from CSV.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    period : str
-        Time period ('daily' or 'weekly')
-
-    Returns
-    -------
-    pd.DataFrame or None
-        Zone probabilities indexed by period, or None if file not found
-    """
-    csv_file = f"{ZONE_PROB_DIR}/{dataset_id}_zone_probs_{period}.csv"
-
-    if not os.path.exists(csv_file):
-        print(f"ERROR: Zone probabilities not found: {csv_file}")
-        print("Run si_scripts/SI3_calculate_storage_zone_probabilities.py first.")
-        return None
-
-    df = pd.read_csv(csv_file, index_col='period')
-    return df
 
 
 # =============================================================================

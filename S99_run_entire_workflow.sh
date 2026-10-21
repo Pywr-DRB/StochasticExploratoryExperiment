@@ -8,7 +8,7 @@
 #   S2_gen    climate-adjusted (low, high): generate    5 nodes
 #   S2_prep   climate-adjusted: prep                    1 node x 40 ranks
 #   S2_sim    climate-adjusted: simulate                5 nodes
-#   S3 -> S4 -> S5 -> {S6, S7, S8}
+#   S3 -> S4 -> S5 -> {S6, S7}
 #
 # The prep steps run on a single node because the Pywr-DRB v2.2 ensemble
 # preprocessors scatter data from rank 0 in a way that stalls over
@@ -69,17 +69,15 @@ echo "S4 SSI metrics:       job $S4 (after S3)"
 S5=$(sbatch --parsable --dependency=afterok:$S4 S5_calculate_performance_metrics.sh)
 echo "S5 perf metrics:      job $S5 (after S4)"
 
-# --- S6, S7, S8: figures, SI figures, manuscript values (parallel) ---
+# --- S6, S7: figures and SI figures (parallel) ---
 S6=$(sbatch --parsable --dependency=afterok:$S5 S6_run_figure_generation.sh)
 echo "S6 figures:           job $S6 (after S5)"
 S7=$(sbatch --parsable --dependency=afterok:$S5 S7_run_SI_scripts.sh)
 echo "S7 SI figures:        job $S7 (after S5)"
-S8=$(sbatch --parsable --dependency=afterok:$S5 S8_extract_manuscript_values.sh)
-echo "S8 manuscript vals:   job $S8 (after S5)"
 
 echo ""
 echo "============================================================"
 echo "ALL JOBS SUBMITTED"
 echo "============================================================"
 echo "Monitor with: squeue -u \$USER"
-echo "Cancel all:   scancel $S0 $S1G $S1P $S2G $S1S $S2P $S2S $S3 $S4 $S5 $S6 $S7 $S8"
+echo "Cancel all:   scancel $S0 $S1G $S1P $S2G $S1S $S2P $S2S $S3 $S4 $S5 $S6 $S7"
