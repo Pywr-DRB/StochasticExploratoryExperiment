@@ -10,17 +10,14 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
-from matplotlib.patches import Patch
-from matplotlib.lines import Line2D
 from scipy.stats import ranksums, levene
 
 from .styles import (
     HISTORIC_COLOR, HISTORIC_LABEL,
-    DATASET_COLORS, DATASET_LABELS,
+    DATASET_COLORS,
     ALPHA_FILL, ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
     LINEWIDTH_THIN, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
-    DPI_PRINT, apply_publication_style
+    DPI_PRINT
 )
 
 # NYC reservoirs for aggregate flow calculation
@@ -32,7 +29,7 @@ MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 # Approximate week numbers for start of each month
 MONTH_WEEK_STARTS = [1, 5, 9, 14, 18, 22, 27, 31, 35, 40, 44, 48]
 
-# Re-exported for backward compatibility; canonical definition lives in methods.config.
+# MGD_TO_MCM is defined in methods.config and re-exported here.
 from methods.config import MGD_TO_MCM
 
 
@@ -171,7 +168,7 @@ def plot_fdc_percentile_comparison(
     ylabel, xlabel : str
         Axis labels
     percentiles : tuple
-        Lower and upper percentiles for range (default 5, 95)
+        Lower and upper percentiles for range (default 0.5, 99.5)
     show_legend : bool
         Whether to show legend
     synthetic_color : str, optional
@@ -257,7 +254,7 @@ def plot_fdc_percentile_comparison(
     hist_iq_low = np.percentile(hist_fdcs, inner_percentiles[0], axis=0) * MGD_TO_MCM
     hist_iq_high = np.percentile(hist_fdcs, inner_percentiles[1], axis=0) * MGD_TO_MCM
 
-    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
+    # Layered from bottom: syn 99% -> hist 99% -> syn 50% -> hist 50% -> syn median -> hist median
     ax.fill_between(
         exceedance_probs, syn_p_low, syn_p_high,
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
@@ -384,7 +381,7 @@ def plot_autocorrelation_comparison(
         series = flow_series.dropna().values
         syn_autocorr[i, :] = _vectorized_autocorr(series, max_lag)
 
-    # Plot synthetic: outer band → inner band → median
+    # Plot synthetic: outer band -> inner band -> median
     ax.fill_between(
         lag_range,
         np.nanpercentile(syn_autocorr, percentiles[0], axis=0),
@@ -406,7 +403,7 @@ def plot_autocorrelation_comparison(
         label=f'{synthetic_label} (median)'
     )
 
-    # Historic: single line (only one series — no uncertainty band)
+    # Historic: single line (only one series, so no uncertainty band)
     ax.plot(
         lag_range, hist_autocorr,
         color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK, linestyle='--',
@@ -461,7 +458,7 @@ def plot_weekly_streamflow_percentiles(
     ylabel, xlabel : str
         Axis labels. xlabel auto-set from timescale if None.
     percentiles : tuple
-        Lower and upper percentiles for range (default 5, 95)
+        Lower and upper percentiles for range (default 0.5, 99.5)
     show_legend : bool
         Whether to show legend
     synthetic_color : str, optional
@@ -619,7 +616,7 @@ def plot_weekly_streamflow_percentiles(
     hist_iq_high = hist_iq_high * MGD_TO_MCM
     hist_median = hist_median * MGD_TO_MCM
 
-    # Layered from bottom: syn 99% → hist 99% → syn 50% → hist 50% → syn median → hist median
+    # Layered from bottom: syn 99% -> hist 99% -> syn 50% -> hist 50% -> syn median -> hist median
     ax.fill_between(
         periods, syn_p_low, syn_p_high,
         alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
@@ -774,7 +771,7 @@ def plot_pvalue_comparison(
     All synthetic realizations are pooled for each period and compared
     directly to the historic values.  Each bar shows the p-value for that
     period; bars below ``significance_threshold`` are filled to indicate
-    a statistically significant difference.  Y-axis is linear (0–1).
+    a statistically significant difference.  Y-axis is linear (0-1).
 
     Parameters
     ----------
@@ -870,180 +867,6 @@ def plot_pvalue_comparison(
     return ax
 
 
-def plot_ensemble_summary_figure(
-    Q_historic: pd.DataFrame,
-    Q_synthetic: dict,
-    sites: list = None,
-    dataset_id: str = 'stationary_ensemble',
-    fname: str = None,
-    figsize: tuple = (12, 14),
-    percentiles: tuple = (0, 100),
-    max_lag: int = 30,
-    timescale: str = 'weekly',
-    stats_timescale: str = 'monthly',
-):
-    """
-    Create 4-panel summary figure for manuscript with autocorrelation, FDC,
-    periodic flow ranges, and statistical test p-values.
-
-    Layout (2, 1, 1):
-    - Top row: Autocorrelation (left), FDC ranges (right)
-    - Middle row: Flow percentile bands by month or week (full width)
-    - Bottom row: Wilcoxon & Levene p-values bar chart (full width)
-
-    Uses aggregate flow from NYC reservoirs (sum of cannonsville, pepacton, neversink).
-
-    Parameters
-    ----------
-    Q_historic : pd.DataFrame
-        Historical daily flow data with DatetimeIndex
-    Q_synthetic : dict
-        Dictionary of synthetic flow DataFrames keyed by realization ID
-    sites : list, optional
-        List of sites to aggregate. Defaults to NYC_RESERVOIRS.
-    dataset_id : str
-        Dataset identifier for color scheme
-    fname : str, optional
-        Filename to save figure
-    figsize : tuple
-        Figure size (width, height)
-    percentiles : tuple
-        Lower and upper percentiles for range (default 0, 100)
-    max_lag : int
-        Maximum lag for autocorrelation plot (default 30 days)
-    timescale : str
-        Time-period aggregation for panel C (flow percentiles): 'monthly'
-        (12 periods) or 'weekly' (52 periods). Default 'weekly'.
-    stats_timescale : str or None
-        Time-period aggregation for panels D–E (statistical tests).
-        If None, uses the same value as ``timescale``. Default 'monthly'.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure object
-    """
-    apply_publication_style()
-
-    if sites is None:
-        sites = NYC_RESERVOIRS
-
-    synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
-    synthetic_label = DATASET_LABELS.get(dataset_id, 'Synthetic')
-
-    if stats_timescale is None:
-        stats_timescale = timescale
-
-    # Pre-aggregate flows ONCE for all panels
-    hist_agg = _get_aggregate_flow(Q_historic, sites)
-    syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
-
-    # Create figure with GridSpec layout: 2 content rows + 2 thin p-value rows
-    fig = plt.figure(figsize=figsize)
-    gs = gridspec.GridSpec(4, 2, figure=fig, height_ratios=[1, 1, 0.22, 0.22])
-
-    ax_autocorr = fig.add_subplot(gs[0, 0])
-    ax_fdc      = fig.add_subplot(gs[0, 1])
-    ax_periodic = fig.add_subplot(gs[1, :])
-    ax_wilcoxon = fig.add_subplot(gs[2, :])
-    ax_levene   = fig.add_subplot(gs[3, :])
-
-    # Panel A: Autocorrelation comparison
-    plot_autocorrelation_comparison(
-        Q_historic, Q_synthetic,
-        ax=ax_autocorr, max_lag=max_lag, percentiles=percentiles,
-        synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-        show_legend=False,
-        _hist_agg=hist_agg, _syn_agg=syn_agg,
-    )
-    ax_autocorr.text(0.02, 0.97, 'a)', transform=ax_autocorr.transAxes,
-                     fontsize=12, va='top', ha='left')
-
-    # Panel B: FDC percentile comparison
-    plot_fdc_percentile_comparison(
-        Q_historic, Q_synthetic,
-        ax=ax_fdc, percentiles=percentiles,
-        synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-        show_legend=False,
-        _hist_agg=hist_agg, _syn_agg=syn_agg,
-    )
-    ax_fdc.text(0.02, 0.97, 'b)', transform=ax_fdc.transAxes,
-                fontsize=12, va='top', ha='left')
-
-    # Panel C: Streamflow percentiles by timescale
-    plot_weekly_streamflow_percentiles(
-        Q_historic, Q_synthetic,
-        ax=ax_periodic, timescale=timescale, percentiles=percentiles,
-        synthetic_color=synthetic_color, synthetic_label=synthetic_label,
-        show_legend=False,
-        _hist_agg=hist_agg, _syn_agg=syn_agg,
-    )
-    ax_periodic.text(0.01, 0.97, 'c)', transform=ax_periodic.transAxes,
-                     fontsize=12, va='top', ha='left')
-
-    # Panel D: Wilcoxon rank-sum p-values (no x-tick labels — shared with panel E)
-    plot_pvalue_comparison(
-        Q_historic, Q_synthetic,
-        ax=ax_wilcoxon, which='wilcoxon', timescale=stats_timescale,
-        show_xticklabels=False,
-        show_legend=False,
-        _hist_agg=hist_agg, _syn_agg=syn_agg,
-    )
-    ax_wilcoxon.text(0.01, 0.85, 'd)', transform=ax_wilcoxon.transAxes,
-                     fontsize=12, va='top', ha='left')
-
-    # Panel E: Levene p-values (x-tick labels shown here)
-    plot_pvalue_comparison(
-        Q_historic, Q_synthetic,
-        ax=ax_levene, which='levene', timescale=stats_timescale,
-        show_xticklabels=True,
-        show_legend=False,
-        _hist_agg=hist_agg, _syn_agg=syn_agg,
-    )
-    ax_levene.text(0.01, 0.85, 'e)', transform=ax_levene.transAxes,
-                   fontsize=12, va='top', ha='left')
-
-    # Shared legend (flow panels only; p-value panels are self-labeled via ylabel)
-    period_label = 'month' if timescale == 'monthly' else 'week'
-    legend_handles = [
-        Patch(facecolor=synthetic_color, alpha=ALPHA_FILL,
-              label=f'{synthetic_label} ({percentiles[0]}-{percentiles[1]}%)'),
-        Line2D([0], [0], color=synthetic_color, linewidth=LINEWIDTH_MEDIUM,
-               linestyle='-', label=f'{synthetic_label} (median)'),
-        Patch(facecolor=HISTORIC_COLOR, alpha=ALPHA_FILL * 0.7,
-              label=f'{HISTORIC_LABEL} ({percentiles[0]}-{percentiles[1]}%)'),
-        Line2D([0], [0], color=HISTORIC_COLOR, linewidth=LINEWIDTH_THICK,
-               linestyle='--', label=f'{HISTORIC_LABEL} (median)'),
-        Line2D([0], [0], color='k', linestyle='--', linewidth=1, label='p = 0.05'),
-    ]
-
-    fig.legend(
-        handles=legend_handles,
-        loc='lower center', ncol=3, frameon=False,
-        bbox_to_anchor=(0.5, -0.04), fontsize=9,
-    )
-
-    plt.tight_layout()
-    plt.subplots_adjust(bottom=0.09)
-
-    # Align y-axis labels across the three full-width panels
-    fig.align_ylabels([ax_autocorr, ax_periodic, ax_wilcoxon, ax_levene])
-
-    # Reduce blank space between panels d and e
-    pos_w = ax_wilcoxon.get_position()
-    pos_l = ax_levene.get_position()
-    gap = pos_w.y0 - (pos_l.y0 + pos_l.height)
-    shift = gap * 0.6
-    ax_levene.set_position([pos_l.x0, pos_l.y0 + shift, pos_l.width, pos_l.height])
-
-    if fname:
-        plt.savefig(fname, dpi=DPI_PRINT, bbox_inches='tight')
-        print(f"Saved figure to {fname}")
-        plt.close(fig)
-
-    return fig
-
-
 def plot_low_flow_convergence(
     Q_syn_site: pd.DataFrame,
     realization_ids: list,
@@ -1056,13 +879,13 @@ def plot_low_flow_convergence(
     figsize: tuple = (14, 6),
 ):
     """
-    Plot ensemble convergence of LOW-FLOW EXTREMES.
+    Plot ensemble convergence of low-flow extremes.
 
     The diagnostic answers: "Does adding more realizations still reveal more
     extreme low-flow events, or has the ensemble's low-flow tail been
-    characterized?" For each subset size n, the ensemble extreme (MIN over
+    characterized?" For each subset size n, the ensemble extreme (minimum over
     realizations and water years) is computed across many bootstrap subsamples.
-    The bootstrap median is expected to MONOTONICALLY DECREASE with n and
+    The bootstrap median is expected to decrease monotonically with n and
     plateau when the tail is well-sampled. There is no averaging across
     realizations -- only min and bootstrap percentiles.
 
@@ -1232,23 +1055,23 @@ def plot_drought_metric_convergence(
 
     Two complementary views, stacked as rows in one figure:
 
-    1. POOLED MEAN (top row): for each subset of n realizations, pool all
+    1. Pooled mean (top row): for each subset of n realizations, pool all
        drought events from those realizations and compute the equal-weight
        mean of each metric:
 
-           pooled_mean = Σ metric / count(events)
+           pooled_mean = sum(metric) / count(events)
 
        Stability question: "Is the central tendency of drought events stable?"
 
-    2. ENSEMBLE MAX (bottom row, when include_extremes=True): for each
-       subset, the maximum across (realizations × events) of each metric.
+    2. Ensemble max (bottom row, when include_extremes=True): for each
+       subset, the maximum across (realizations x events) of each metric.
 
            ensemble_max = max(metric over events in n realizations)
 
        Stability question: "Have we sampled the worst drought the generator
        can produce?" Expected to monotonically increase with N and plateau.
 
-    For both, the 5–50–95 percentiles across n_bootstrap_samples without-
+    For both, the 5-50-95 percentiles across n_bootstrap_samples without-
     replacement subsamples define the band and median line. Horizontal
     dashed lines mark the historical-record mean (top row) and max (bottom
     row) when `obs_droughts` is provided.
@@ -1262,7 +1085,7 @@ def plot_drought_metric_convergence(
         All N realization IDs in the ensemble (zero-event realizations are
         included in N but contribute 0 to the pool and NaN to the max).
     ssi_window : int
-        SSI window (3, 6, or 12) — used for titles and footer.
+        SSI window (3, 6, or 12), used for titles and footer.
     obs_droughts : pd.DataFrame, optional
         Observed drought events for the same SSI window. Historical mean
         and max of each metric are drawn as dashed reference lines.
@@ -1281,7 +1104,7 @@ def plot_drought_metric_convergence(
     fname : str, optional
         If provided, save the figure to this path.
     figsize : tuple, optional
-        Defaults to (4.8 · n_metrics + 0.8, 5.5 · n_rows).
+        Defaults to (4.8 * n_metrics + 0.8, 5.5 * n_rows).
 
     Returns
     -------

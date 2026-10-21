@@ -1,26 +1,19 @@
 """
-F1: Ensemble validation figure.
+Fig4: Ensemble diagnostics figure (SI Figure S2.5).
 
-Four-panel figure showing:
+Five-panel figure showing:
 - (a) Autocorrelation comparison for synthetic vs historic
 - (b) Annual flow duration curve ranges for synthetic vs historic
 - (c) Weekly streamflow percentile bands for synthetic vs historic
 - (d) Wilcoxon rank-sum p-values by month
 - (e) Levene test p-values by month
 
-Usage:
-    python Fig4_plot_ensemble_diagnostics.py <dataset_id>
+Two versions are written: the standard figure and a variant in which a 3-week
+centered rolling mean is applied to the Q0.5/Q99.5 envelope bounds in panel (c)
+(median unsmoothed).
 
-Rev1 changes
-------------
-- Legend: "Reconstructed Historical" (was "Historical"), "Stationary Baseline"
-  (was "Historic Baseline").
-- Envelope label: "99% IQR (Q0.5-Q99.5)" everywhere.
-- Panel letters: lowercase "a)"..."e)" via label_panel().
-- Scope annotation in panel (c) lower-left via add_scope_annotation().
-- Exports PNG + SVG + PDF via save_fig() with _rev1 suffix.
-- Companion _rev1_smooth variant: 3-week rolling mean on Q0.5 / Q99.5
-  bounds only in panel (c); median unsmoothed.
+Usage:
+    python plotting_scripts/Fig4_plot_ensemble_diagnostics.py <dataset_id>
 """
 
 import sys
@@ -49,9 +42,9 @@ from methods.plotting.ensemble_summary import (
 from methods.plotting.styles import (
     DATASET_COLORS, DATASET_LABELS,
     HISTORIC_COLOR, RECONSTRUCTED_HIST_LABEL,
-    ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
+    ALPHA_BAND_OUTER,
     LINEWIDTH_THIN, LINEWIDTH_MEDIUM, LINEWIDTH_THICK,
-    DPI_PRINT, apply_publication_style,
+    apply_publication_style,
     save_fig, label_panel,
 )
 from methods.plotting.legend import (
@@ -67,7 +60,7 @@ from methods.ensemble_utils import ENSEMBLE_SETS
 # Output directory
 FIG_OUTPUT_DIR = f"{FIG_DIR}/Fig4_ensemble_diagnostics"
 
-# Smoothing window (weeks) for _rev1_smooth variant
+# Smoothing window (weeks) for the smoothed-envelope variant
 _SMOOTH_WINDOW = 3
 
 
@@ -160,7 +153,7 @@ def _plot_weekly_smooth(
     hist_p_low_s = _rolling_mean_1d(hist_p_low, smooth_window)
     hist_p_high_s = _rolling_mean_1d(hist_p_high, smooth_window)
 
-    # Layered from bottom: syn 98% → hist 98% → syn median → hist median
+    # Layered from bottom: syn 98% -> hist 98% -> syn median -> hist median
     ax.fill_between(periods, syn_p_low_s, syn_p_high_s,
                     alpha=ALPHA_BAND_OUTER, color=synthetic_color, linewidth=0,
                     zorder=1, label=f'{synthetic_label} 98% IQR (smoothed)')
@@ -194,7 +187,7 @@ def _build_ensemble_figure_rev1(
     percentiles=(0.5, 99.5),
     figsize=(9, 10.5),
 ):
-    """Build the rev1 ensemble-diagnostic figure.
+    """Build the five-panel ensemble-diagnostic figure.
 
     Parameters
     ----------
@@ -218,7 +211,7 @@ def _build_ensemble_figure_rev1(
     synthetic_color = DATASET_COLORS.get(dataset_id, DATASET_COLORS['stationary_ensemble'])
     synthetic_label = DATASET_LABELS.get(dataset_id, dataset_id)
 
-    # Pre-aggregate ONCE
+    # Aggregate flows once for all panels
     hist_agg = _get_aggregate_flow(Q_historic, sites)
     syn_agg = _pre_aggregate_synthetic(Q_synthetic, sites)
 
@@ -237,7 +230,7 @@ def _build_ensemble_figure_rev1(
     ax_wilcoxon = fig.add_subplot(gs[2, :])
     ax_levene = fig.add_subplot(gs[3, :])
 
-    # Bottom row: composite legend strip — [markers | anatomy | ensembles]
+    # Bottom row: composite legend strip: [markers | anatomy | ensembles]
     legend_gs = gridspec.GridSpecFromSubplotSpec(
         1, 3,
         subplot_spec=gs[4, :],
@@ -314,7 +307,7 @@ def _build_ensemble_figure_rev1(
     label_panel(ax_levene, 'e', y=0.85)
 
     # ---------- Composite legend: [markers | anatomy | ensembles] ----------
-    # Panel 1 (left): other markers — just the p = 0.05 line
+    # Panel 1 (left): the p = 0.05 line
     ax_markers.legend(
         handles=[Line2D([0], [0], color='k', linestyle='--', linewidth=1)],
         labels=['p = 0.05'],
@@ -364,7 +357,7 @@ def _build_ensemble_figure_rev1(
 
 
 def plot_manuscript_ensemble_figure(dataset_id):
-    """Generate ensemble validation figure (rev1 + rev1_smooth)."""
+    """Generate the ensemble diagnostics figure and its smoothed-envelope variant."""
     verify_dataset_id(dataset_id)
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
 
@@ -394,8 +387,8 @@ def plot_manuscript_ensemble_figure(dataset_id):
         f"{FIG_OUTPUT_DIR}/F1_{dataset_id}_ensemble_diagnostics_rev1_smooth"
     )
 
-    # --- Rev1 (unsmoothed) ---
-    print("Building rev1 (unsmoothed) figure...")
+    # --- Unsmoothed ---
+    print("Building unsmoothed figure...")
     fig = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=False,
@@ -404,8 +397,8 @@ def plot_manuscript_ensemble_figure(dataset_id):
     save_fig(fig, rev1_stem, dpi=600)
     plt.close(fig)
 
-    # --- Rev1 smooth (smoothed envelope bounds) ---
-    print("Building rev1_smooth (smoothed envelope) figure...")
+    # --- Smoothed envelope bounds ---
+    print("Building smoothed-envelope figure...")
     fig_smooth = _build_ensemble_figure_rev1(
         Q_historic, syn_ensemble, dataset_id,
         smooth_envelope=True,
@@ -419,7 +412,7 @@ def plot_manuscript_ensemble_figure(dataset_id):
 
 def main(dataset_id):
     """Main function."""
-    print(f"F1: Ensemble validation - {dataset_id}")
+    print(f"Fig4: Ensemble diagnostics - {dataset_id}")
     success = plot_manuscript_ensemble_figure(dataset_id)
     if not success:
         sys.exit(1)
@@ -427,7 +420,7 @@ def main(dataset_id):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python Fig4_plot_ensemble_diagnostics.py <dataset_id>")
+        print("Usage: python plotting_scripts/Fig4_plot_ensemble_diagnostics.py <dataset_id>")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)
 

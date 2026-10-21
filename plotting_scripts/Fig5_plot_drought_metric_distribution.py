@@ -1,12 +1,13 @@
 """
-F2: Drought metric distribution figure.
+Fig5: SSI drought hazard distributions (manuscript Figure 4 for SSI-3;
+SI Figures S3.2 and S3.3 for SSI-6 and SSI-12).
 
-Left panel: hexbin of severity vs magnitude for the stationary ensemble.
+Left panel: 2-D histogram of severity vs magnitude for the stationary ensemble.
 Right panels (3x2): exceedance-rate CDFs per dataset (rows) and
 drought metric (columns). Each row shows one dataset plus historic markers.
 
 Usage:
-  python F2_plot_drought_metric_distribution.py [ssi_window]
+  python plotting_scripts/Fig5_plot_drought_metric_distribution.py [ssi_window]
 """
 
 import sys
@@ -27,7 +28,7 @@ warnings.filterwarnings("ignore")
 from methods.config import FIG_DIR, N_YEARS, RECONSTRUCTION_N_YEARS, SSI_WINDOWS
 from methods.load import load_drought_events
 from methods.plotting.styles import (
-    DATASET_COLORS, DATASET_LINESTYLES, DATASET_LABELS,
+    DATASET_COLORS, DATASET_LABELS,
     HISTORIC_COLOR, HISTORIC_LABEL,
     ALPHA_BAND_OUTER, ALPHA_BAND_INNER,
     LINEWIDTH_MEDIUM, CMAP_SEQUENTIAL, DPI_HIGH,
@@ -175,7 +176,7 @@ def _compute_delta_bands(df_scenario, baseline_median, metric, n_years, x_grid,
     Returns
     -------
     bands : dict
-        ``{p: array}`` delta exceedance rate (yr⁻¹) at each *x_grid* point.
+        ``{p: array}`` delta exceedance rate (per year) at each *x_grid* point.
     """
     realization_ids = sorted(df_scenario['realization_id'].unique())
     delta_curves = np.zeros((len(realization_ids), len(x_grid)))
@@ -236,14 +237,14 @@ def plot_drought_manuscript_figure(
     plot_relative_change : bool
         If True, right panels show the change in exceedance rate relative to the
         stationary-ensemble median, rather than absolute exceedance rates.
-        For each realization, Δ = exceedance_realization − median_stationary on a
-        shared x-grid.  The filled band is the 0–100th percentile of Δ across
-        realizations; the solid line is the median Δ.  A dashed y = 0 line marks
-        the baseline.  Historic markers are expressed as Δ relative to the
-        stationary median curve.  Default: False.
+        For each realization, delta = exceedance_realization - median_stationary on a
+        shared x-grid.  The filled band is the 0-100th percentile of delta across
+        realizations; the solid line is the median delta.  A dashed y = 0 line marks
+        the baseline.  Historic markers are expressed as delta relative to the
+        stationary median curve.  Default: True.
     gridshape : str
         Left-panel bin shape: 'square' (default, uses hist2d) or 'hex'
-        (uses hexbin, legacy behaviour).
+        (uses hexbin).
 
     Returns
     -------
@@ -276,9 +277,9 @@ def plot_drought_manuscript_figure(
 
     # ------------------------------------------------------------------
     # Figure layout:
-    #   Row 0 — main panels (hexbin left, 3x2 CDF grid right)
-    #   Row 1 — colorbar (left cell only; right cell is empty spacer)
-    #   Row 2 — full-width legend strip: [anatomy] [datasets] [markers]
+    #   Row 0: main panels (hexbin left, 3x2 CDF grid right)
+    #   Row 1: colorbar (left cell only; right cell is empty spacer)
+    #   Row 2: full-width legend strip: [anatomy] [datasets] [markers]
     # ------------------------------------------------------------------
     fig = plt.figure(figsize=figsize)
 
@@ -306,7 +307,7 @@ def plot_drought_manuscript_figure(
     # Middle-left: colorbar
     ax_cbar = fig.add_subplot(outer_gs[1, 0])
 
-    # Bottom row — legend strip. Left cell (under panel a / hexbin) holds
+    # Bottom row: legend strip. Left cell (under panel a / hexbin) holds
     # the observed-event markers. Right cell (under panels b-g) is split
     # into [anatomy | ensembles].
     ax_markers = fig.add_subplot(outer_gs[2, 0])
@@ -462,7 +463,7 @@ def plot_drought_manuscript_figure(
     cb.set_label('Drought event count per bin', fontsize=FONTSIZE_SMALL)
     cb.ax.tick_params(labelsize=FONTSIZE_SMALL - 1)
     if log_hexbin_counts and gridshape == 'hex':
-        # hexbin stores log10(count) internally; legacy path (not discretized)
+        # hexbin stores log10(count) internally; this path is not discretized
         vmin, vmax = hb.get_clim()
         log_ticks = [np.log10(10**e) for e in range(0, 7)
                      if vmin <= np.log10(10**e) <= vmax]
@@ -517,7 +518,7 @@ def plot_drought_manuscript_figure(
                 )
 
                 # Grey zone: where scenario has no droughts but
-                # baseline may still have events (Δ=0 is misleading)
+                # baseline may still have events (delta = 0 is misleading)
                 scenario_max = df[metric].max()
                 baseline_df = ensemble_data['stationary_ensemble']['droughts']
                 baseline_max = baseline_df[metric].max()
@@ -606,8 +607,7 @@ def plot_drought_manuscript_figure(
                     ax.set_ylim(bottom=1e-3)
 
             # --- Common formatting ---
-            # Show numeric x-tick labels on every row (per reviewer feedback);
-            # only the bottom row gets the full axis-label text.
+            # Numeric x-tick labels on every row; only the bottom row gets the axis-label text.
             if r == n_rows - 1:
                 ax.set_xlabel(METRIC_CDF_AXIS_LABELS[metric], fontsize=FONTSIZE_MEDIUM)
             else:
@@ -664,7 +664,7 @@ def plot_drought_manuscript_figure(
             for c in range(n_cols):
                 cdf_axes[r, c].set_ylim(shared_delta_ymin, shared_delta_ymax)
     else:
-        # All rows use absolute exceedance — share a single y-range
+        # All rows use absolute exceedance: share a single y-range
         all_ylims = [cdf_axes[r, c].get_ylim()
                      for r in range(n_rows) for c in range(n_cols)]
         shared_ymin = min(yl[0] for yl in all_ylims)
@@ -684,7 +684,7 @@ def plot_drought_manuscript_figure(
     # Composite legend strip: [anatomy] [datasets] [markers + patches]
     # ------------------------------------------------------------------
 
-    # Panel 1: anatomy — teaching glyph that names each layer
+    # Panel 1: anatomy glyph naming each layer
     draw_iqr_anatomy(ax_anatomy, fontsize=FONTSIZE_SMALL + 0.5)
 
     # Panel 2: dataset entries (one composite IQR glyph per dataset)
@@ -749,7 +749,7 @@ def plot_drought_manuscript_figure(
 
 
 def main():
-    """Generate the F2 manuscript figure."""
+    """Generate the Fig5 figure for the requested SSI window."""
     ssi_window = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     if ssi_window not in SSI_WINDOWS:
         print(f"ERROR: Invalid SSI window: {ssi_window}. Must be one of {SSI_WINDOWS}")
@@ -757,38 +757,11 @@ def main():
 
     log_magnitude = True
     
-    # # --- Severity vs Magnitude (default) ---
-    # print(f"F2: Drought metric distribution (SSI-{ssi_window})")
-    # plot_drought_manuscript_figure(ssi_window=ssi_window,
-    #                                log_magnitude=log_magnitude,
-    #                                log_exceedance=False,
-    #                                plot_relative_change=False)
-    # plt.close('all')
-
-    print(f"F2: Relative change in exceedance rates (SSI-{ssi_window})")
+    print(f"Fig5: Relative change in exceedance rates (SSI-{ssi_window})")
     plot_drought_manuscript_figure(ssi_window=ssi_window,
                                    log_magnitude=log_magnitude,
                                    log_exceedance=False,
                                    plot_relative_change=True)
-    plt.close('all')
-
-    # # --- Severity vs Duration variant ---
-    # print(f"F2: Drought metric distribution - duration (SSI-{ssi_window})")
-    # plot_drought_manuscript_figure(ssi_window=ssi_window,
-    #                                cdf_metrics=['severity', 'duration'],
-    #                                hexbin_y='duration',
-    #                                log_magnitude=log_magnitude,
-    #                                log_exceedance=False,
-    #                                plot_relative_change=False)
-    # plt.close('all')
-
-    # print(f"F2: Relative change - duration (SSI-{ssi_window})")
-    # plot_drought_manuscript_figure(ssi_window=ssi_window,
-    #                                cdf_metrics=['severity', 'duration'],
-    #                                hexbin_y='duration',
-    #                                log_magnitude=False,
-    #                                log_exceedance=False,
-    #                                plot_relative_change=True)
     plt.close('all')
 
 

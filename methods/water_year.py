@@ -17,7 +17,7 @@ MIN_DAYS_FOR_COMPLETE_WATER_YEAR = 360
 
 
 def get_water_year(date):
-    """Return water year for a date.  WY N: June 1 N → May 31 N+1."""
+    """Return the water year for a date. Water year N runs June 1 of year N to May 31 of year N+1."""
     if date.month >= 6:
         return date.year
     return date.year - 1

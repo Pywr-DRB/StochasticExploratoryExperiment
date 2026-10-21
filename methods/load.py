@@ -10,24 +10,19 @@ from pywrdrb.path_manager import get_pn_object
 from pywrdrb.utils.constants import cfs_to_mgd
 from synhydro.core.ensemble import Ensemble
 from methods.config import (
-    RECONSTRUCTION_OUTPUT_FNAME, WRFAORC_OUTPUT_FNAME, WRF1960s_OUTPUT_FNAME,
-    ROOT_DIR, OUTPUT_DIR,
+    RECONSTRUCTION_OUTPUT_FNAME,
     DROUGHT_METRICS_DIR, PERFORMANCE_METRICS_DIR, EVENT_METRICS_DIR,
-    ZONE_PROB_DIR, SATISFICING_DIR,
+    ZONE_PROB_DIR,
     N_ENSEMBLE_SETS, N_REALIZATIONS_PER_ENSEMBLE_SET,
-    N_YEARS,
 )
 from methods.ensemble_utils import get_ensemble_set_spec, ENSEMBLE_SETS
 from methods.metrics.shortfall import (
     get_flow_and_target_values, add_trenton_equiv_flow,
     calculate_shortage_series,
 )
-from methods.metrics.satisficing import add_satisficing_category
 
 file_dir = os.path.dirname(os.path.abspath(__file__))
 data_dir = f"{file_dir}/../data"
-
-# DROUGHT_METRICS_DIR is now imported from methods.config
 
 
 def get_realization_ids_from_export(fname, dataset_id, results_set='shortage'):
@@ -35,7 +30,7 @@ def get_realization_ids_from_export(fname, dataset_id, results_set='shortage'):
 
     Opens the HDF5 store, scans keys matching /{results_set}/{dataset_id}/*,
     and returns sorted integer realization IDs. This is a fast metadata-only
-    operation — no DataFrames are deserialized.
+    operation; no DataFrames are deserialized.
 
     Parameters
     ----------
@@ -129,42 +124,6 @@ def load_annual_metrics(dataset_id):
     return pd.read_csv(csv_file)
 
 
-def load_hashimoto_metrics(dataset_id):
-    """
-    Load Hashimoto simulation-level metrics CSV.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per realization with reliability/resiliency for Montague and Trenton.
-    """
-    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_hashimoto_metrics.csv"
-    if not os.path.exists(csv_file):
-        raise FileNotFoundError(
-            f"Hashimoto metrics not found: {csv_file}\n"
-            f"Run 06_calculate_performance_metrics.py first!"
-        )
-    return pd.read_csv(csv_file)
-
-
-def load_hashimoto_events(dataset_id):
-    """
-    Load Hashimoto per-shortage-event CSV.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per shortage event per location per realization.
-    """
-    csv_file = f"{PERFORMANCE_METRICS_DIR}/{dataset_id}_hashimoto_shortage_events.csv"
-    if not os.path.exists(csv_file):
-        raise FileNotFoundError(
-            f"Hashimoto events not found: {csv_file}\n"
-            f"Run 06_calculate_performance_metrics.py first!"
-        )
-    return pd.read_csv(csv_file)
-
-
 def load_baseline_historical_flow(gage_flow=True, 
                                   period='full',
                                   flowtype='pub_nhmv10_BC_withObsScaled'):
@@ -227,7 +186,6 @@ def load_wrf1960s_historical_flow(gage_flow=True):
     Q.index = pd.to_datetime(Q.index)
     
     return Q
-
 
 
 def load_drought_events(dataset_id, ssi_window, observed=False, filter_extreme=False):
@@ -424,7 +382,7 @@ def load_ensemble_set_data(dataset_id, set_idx, ensemble_set_specs):
 
 def load_and_process_historical_models(dataset_id):
     """
-    Load and process historical/reference models (reconstruction, wrfaorc, wrf1960s).
+    Load and process the reconstruction (historical) simulation.
 
     Computes shortage and contribution for each historical model using the
     same central ``calculate_shortage_series`` function as ensemble postprocessing.
@@ -594,36 +552,6 @@ def load_gage_flow_data(dataset_id, ensemble_set_specs=None):
     return combined_gage_flow
 
 
-def load_shortage_data(dataset_id):
-    """
-    Load pre-calculated shortage data from postprocessing.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-
-    Returns
-    -------
-    pywrdrb.Data
-        Data object with shortage, ibt_diversions, and ibt_demands
-    """
-    fname = f'{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5'
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Postprocessed data not found: {fname}\n"
-            "Run 04_postprocess_data.py first!"
-        )
-
-    print(f"Loading shortage data from: {fname}")
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=['shortage', 'ibt_diversions', 'ibt_demands'])
-    print("  Data loaded successfully")
-
-    return data
-
-
 def load_observed_diversions(loc='nyc'):
     """
     Load observed diversion data for training period.
@@ -758,184 +686,11 @@ def load_zone_probabilities(dataset_id, period='weekly'):
 
     if not os.path.exists(csv_file):
         print(f"ERROR: Zone probabilities not found: {csv_file}")
-        print("Run 07_calculate_storage_zone_probabilities.py first!")
+        print("Run si_scripts/SI3_calculate_storage_zone_probabilities.py first.")
         return None
 
     df = pd.read_csv(csv_file, index_col='period')
     return df
-
-
-def load_storage_percentiles(dataset_id, period='weekly'):
-    """
-    Load storage percentiles from CSV.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    period : str
-        Time period ('daily' or 'weekly')
-
-    Returns
-    -------
-    pd.DataFrame or None
-        Storage percentiles indexed by period with columns p1, p5, p10, etc.
-        Returns None if file not found.
-    """
-    csv_file = f"{ZONE_PROB_DIR}/{dataset_id}_storage_percentiles_{period}.csv"
-
-    if not os.path.exists(csv_file):
-        print(f"ERROR: Storage percentiles not found: {csv_file}")
-        print("Run 07_calculate_storage_zone_probabilities.py first!")
-        return None
-
-    df = pd.read_csv(csv_file, index_col='period')
-    return df
-
-
-def load_reservoir_storage(dataset_id):
-    """
-    Load reservoir storage data from postprocessed HDF5 file.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-
-    Returns
-    -------
-    dict
-        Dictionary mapping realization_id to storage DataFrame
-    """
-    fname = f"{OUTPUT_DIR}/{dataset_id}_with_postprocessing.hdf5"
-
-    if not os.path.exists(fname):
-        raise FileNotFoundError(
-            f"Postprocessed data file not found: {fname}\n"
-            f"Run 04_postprocess_data.py first!"
-        )
-
-    # Load only reservoir storage data
-    data = pywrdrb.Data()
-    data.load_from_export(fname, results_sets=['res_storage'])
-
-    if dataset_id not in data.res_storage:
-        raise KeyError(f"Dataset {dataset_id} not found in res_storage")
-
-    return data.res_storage[dataset_id]
-
-
-def load_drought_satisficing(dataset_id, ssi_window,
-                             storage_threshold=20.0, violation_days=3):
-    """
-    Load drought events merged with annual performance metrics and annotated
-    with satisficing categories.
-
-    Loads the drought events CSV and the annual metrics CSV, filters the
-    metrics to the whole-year period (``period == 'all'``), and merges on
-    ``(water_year, realization_id)`` so each drought event carries the
-    annual metrics for the year it started.  Satisficing category columns
-    are then added via :func:`add_satisficing_category`.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier (e.g. ``'stationary_ensemble'``).
-    ssi_window : int
-        SSI window (3, 6, or 12 months).
-    storage_threshold : float
-        Minimum acceptable NYC storage percentage (default: 20%).
-    violation_days : int
-        Maximum acceptable consecutive Montague violation days (default: 3).
-
-    Returns
-    -------
-    pd.DataFrame
-        Drought events with additional columns:
-        ``nyc_min_storage_pct``, ``montague_max_consec_shortage_days``,
-        ``storage_pass``, ``montague_pass``, ``satisficing_category``.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the drought events or annual metrics CSV is missing.
-        Run ``06_calculate_performance_metrics.py`` to generate the metrics.
-    """
-    events_df = load_drought_events(dataset_id, ssi_window)
-    annual_df = load_annual_metrics(dataset_id)
-
-    annual_df = (
-        annual_df[annual_df['period'] == 'all']
-        .rename(columns={'water_year': 'year'})
-    )
-
-    events_df['start'] = pd.to_datetime(events_df['start'])
-    events_df['year'] = events_df['start'].dt.year
-
-    merged = events_df.merge(
-        annual_df[['year', 'realization_id',
-                   'nyc_min_storage_pct', 'montague_max_consec_shortage_days']],
-        on=['year', 'realization_id'],
-        how='left',
-    )
-    merged = merged.dropna(subset=['nyc_min_storage_pct'])
-    merged = add_satisficing_category(merged, storage_threshold, violation_days)
-    print(f"    Merged {len(merged)} drought events with annual satisficing")
-    return merged
-
-
-def compute_event_exceedances(df, metric='severity', n_years=N_YEARS):
-    """
-    Compute exceedance rates for each drought event across the entire ensemble.
-
-    For each event, computes how many events across ALL realizations have
-    metric >= this event's value, normalized by total ensemble-years.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Drought events with 'realization_id' and metric columns
-    metric : str
-        Metric to use for exceedance calculation (e.g., 'severity', 'magnitude')
-    n_years : int
-        Number of years per realization for normalization (default: 70)
-
-    Returns
-    -------
-    exceedances : np.ndarray
-        Exceedance rate for each event across entire ensemble (events per year)
-
-    Examples
-    --------
-    >>> from methods.load import load_drought_events, compute_event_exceedances
-    >>> df = load_drought_events('stationary_ensemble', ssi_window=3)
-    >>> exceedances = compute_event_exceedances(df, metric='severity')
-    >>> # Select events at 0.1 yr^-1 exceedance rate
-    >>> target = 0.1
-    >>> best_idx = np.argmin(np.abs(exceedances - target))
-    >>> selected_event = df.loc[best_idx]
-    """
-    # Total years across all realizations
-    n_realizations = df['realization_id'].nunique()
-    total_years = n_years * n_realizations
-
-    # Get all metric values across entire ensemble
-    all_values = df[metric].values
-
-    exceedances = np.zeros(len(df))
-
-    # Use enumerate to get positional index (not label index)
-    # This handles cases where df.index has gaps due to filtering
-    for i, (idx, row) in enumerate(df.iterrows()):
-        val = row[metric]
-
-        # Count how many events across ALL realizations have metric >= this value
-        n_exceedances = np.sum(all_values >= val)
-
-        # Normalize by total ensemble-years
-        exceedances[i] = n_exceedances / total_years
-
-    return exceedances
 
 
 # =============================================================================
@@ -991,7 +746,7 @@ def load_contribution_metrics(dataset_id):
 def load_event_metrics(dataset_id, ssi_window, min_duration=30):
     """Load per-drought-event metrics CSV for a given dataset and SSI window.
 
-    These CSVs are produced by ``08_calculate_event_metrics.py`` and contain
+    These CSVs are produced by ``06_calculate_performance_metrics.py`` and contain
     one row per drought event with hazard characteristics, system actions,
     and outcome metrics (storage, shortage, FFMP zone at minimum, etc.).
 
@@ -1014,7 +769,7 @@ def load_event_metrics(dataset_id, ssi_window, min_duration=30):
     if not os.path.exists(fname):
         raise FileNotFoundError(
             f"Event metrics not found: {fname}\n"
-            "Run 08_calculate_event_metrics.py first!"
+            "Run 06_calculate_performance_metrics.py first."
         )
 
     df = pd.read_csv(fname)

@@ -7,7 +7,7 @@ from pywrdrb.pywr_drb_node_data import immediate_downstream_nodes_dict
 from methods.water_year import count_water_years
 
 # =============================================================================
-# CONFIGURATION NAME — determines output directory
+# CONFIGURATION NAME (sets the output directory under outputs/)
 # =============================================================================
 CONFIG_NAME = "perf_foresight_fullkirsch"
 
@@ -17,7 +17,7 @@ CONFIG_NAME = "perf_foresight_fullkirsch"
 
 # Total experiment size
 TOTAL_REALIZATIONS = 2000
-BASELINE_DATASET =  'pub_nhmv10_BC_withObsScaled' # 'wrfaorc_withObsScaled' or 'pub_nhmv10_BC_withObsScaled'
+BASELINE_DATASET = 'pub_nhmv10_BC_withObsScaled'  # Pywr-DRB inflow type used for the historical record
 
 # Ensemble set configuration (for generation and storage)
 N_REALIZATIONS_PER_ENSEMBLE_SET = 100  # Memory-manageable chunks
@@ -33,11 +33,9 @@ END_DATE = '2100-12-31'
 
 N_YEARS = count_water_years(START_DATE, END_DATE)
 
-# N_YEARS_GENERATE: years of synthetic data to request from Kirsch/Nowak.
-# Must cover the full simulation period through END_DATE. count_water_years()
-# excludes partial water years at the end (e.g. WY2100 = Jun–Dec 2100 only has
-# 214 days, below the 300-day threshold), so N_YEARS alone generates data that
-# can fall ~1 year short of END_DATE. Add 2 years of buffer to ensure coverage.
+# Years of synthetic data to generate. count_water_years() drops partial water
+# years at the ends of the simulation period, so N_YEARS alone can fall about
+# one year short of END_DATE; two extra years guarantee coverage.
 N_YEARS_GENERATE = N_YEARS + 2
 
 # Reconstruction simulation date range and year count
@@ -105,11 +103,6 @@ DATASET_CONFIGS = {
         'description': 'Driest climate change',
         'monthly_prc_change': monthly_shift_scenarios.loc[:, 'low'].values
     },
-    # 'climate_adjusted_medium': {
-    #     'type': 'climate_adjusted', 
-    #     'description': 'Mid-range climate change',
-    #     'monthly_prc_change': monthly_shift_scenarios.loc[:, 'medium'].values
-    # },
     'climate_adjusted_high': {
         'type': 'climate_adjusted',
         'description': 'Wettest climate change',
@@ -207,8 +200,6 @@ SAVE_RESULTS_SETS = [
 
 # Output files
 RECONSTRUCTION_OUTPUT_FNAME = f"{OUTPUT_DIR}/reconstruction.hdf5"
-WRFAORC_OUTPUT_FNAME = f"{OUTPUT_DIR}/wrfaorc_withObsScaled.hdf5"
-WRF1960s_OUTPUT_FNAME = f"{OUTPUT_DIR}/wrf1960s_calib_nlcd2016.hdf5"
 
 # =============================================================================
 # NYC RESERVOIR STORAGE CAPACITIES
@@ -230,24 +221,17 @@ NYC_TOTAL_CAPACITY = sum(NYC_STORAGE_CAPACITIES.values())  # 270,800 MG
 # as zero to filter out numerical noise / trivially small deficits.
 DEFAULT_SHORTAGE_TOLERANCE_MGD = 1.0
 
-# Unit conversion: 1 US gallon = 3.785411784 L exactly. Same factor for flow
-# (MGD → MCM/day) and volume (MG → MCM); two names are kept for call-site clarity.
+# Unit conversion (1 US gallon = 3.785411784 L): MGD to MCM/day, or MG to MCM
 MGD_TO_MCM = 3.785411784e-3
-MG_TO_MCM = MGD_TO_MCM
 
 # =============================================================================
-# DROUGHT EVENT ANALYSIS — SHARED GRID & FOCAL-REGION SPECIFICATIONS
+# DROUGHT EVENT ANALYSIS: SHARED GRID AND FOCAL-REGION SPECIFICATIONS
 # =============================================================================
-# Constants used by the severity × magnitude heatmap pipeline (Fig9, Fig10alt,
-# count_focal_zone_events) and the duration-adjusted return-period helper in
-# methods/return_period.py. Centralized here so a single edit propagates to
-# every figure.
+# Constants shared by the severity x magnitude heatmaps (Fig9, Fig10) and the
+# return-period helpers in methods/return_period.py.
 
-# --- Severity × magnitude bin grid ---
+# --- Severity x magnitude bin grid ---
 GRID_N_BINS         = 16        # bins per axis
-GRID_LOG_MAG        = True      # log-spaced magnitude axis
-GRID_TARGET_SEV_BIN = 7         # 0-indexed reference cell (severity)
-GRID_TARGET_MAG_BIN = 10        # 0-indexed reference cell (magnitude)
 SEV_MIN, SEV_MAX    = 1.0, 4.5  # severity (peak |SSI|) bin bounds
 MAG_MIN, MAG_MAX    = 1.0, 100.0  # magnitude (|SSI| deficit-months) bounds
 
@@ -256,31 +240,20 @@ MAG_MIN, MAG_MAX    = 1.0, 100.0  # magnitude (|SSI| deficit-months) bounds
 # focal-region selection.
 MIN_COUNT_PER_BIN = 5
 
-# --- Focal-region multi-metric criteria (Fig9 & Fig10alt) ---
-# All three must hold for a cell to enter the focal region.
-#
-# (i)   Drought-free interval T_W = T_R - E[D|bin]  ≤  FOCAL_RP_THRESH_YEARS
-#       in ALL ensembles. T_W is the Bonaccorso-Shiau interarrival time
-#       (Bonaccorso et al. 2003; Shiau & Shen 2001) less the mean event
-#       duration in the cell — i.e. the expected drought-free waiting time
-#       between events of the cell's severity-magnitude class.
-# (ii)  Fraction of events that AVOID Drought Emergency  <  FOCAL_FRAC_THRESH
-#       in ALL ensembles  (equivalently, ≥ 1 - FOCAL_FRAC_THRESH reach DE).
-# (iii) Worst-case minimum NYC storage  <  FOCAL_WORST_STORAGE_THRESH
-#       in AT LEAST ONE ensemble.
-FOCAL_RP_THRESH_YEARS    = 1000     # T_W ≤ 1,000 yr  (was 1e-3 yr⁻¹ rate)
-FOCAL_FRAC_THRESH        = 0.90     # ≥10% of droughts reach Drought Emergency
-                                    # (0.95 / ≥5% was the pre-2026-09-08 value;
-                                    # 10% chosen after frac-sensitivity runs)
-FOCAL_WORST_STORAGE_THRESH = 15.0   # combined NYC storage <15% in ≥1 event
-
-# Legacy alias kept so unrelated callers (e.g. the marker overlay in Fig9)
-# need not all be touched at once. New code should import
-# FOCAL_WORST_STORAGE_THRESH.
-WORST_STORAGE_THRESH = FOCAL_WORST_STORAGE_THRESH
-
-# --- Misc satisficing constant (used by SI14 only; kept here for discoverability) ---
-SATISFICING_THRESHOLD = 0.90
+# --- Focal-region criteria (Fig9, Fig10) ---
+# A cell enters the focal region when all three hold:
+#   (i)   drought-free interval T_W = T_R - E[D | bin] <= FOCAL_RP_THRESH_YEARS
+#         in every ensemble, where T_R is the Bonaccorso-Shiau interarrival time
+#         (Bonaccorso et al. 2003; Shiau and Shen 2001) and E[D | bin] the mean
+#         event duration in the cell;
+#   (ii)  the fraction of events that avoid Drought Emergency is below
+#         FOCAL_FRAC_THRESH in every ensemble (at least 1 - FOCAL_FRAC_THRESH
+#         reach Drought Emergency);
+#   (iii) the worst-case minimum NYC storage is below
+#         FOCAL_WORST_STORAGE_THRESH in at least one ensemble.
+FOCAL_RP_THRESH_YEARS    = 1000     # years
+FOCAL_FRAC_THRESH        = 0.90     # at least 10% of droughts reach Drought Emergency
+FOCAL_WORST_STORAGE_THRESH = 15.0   # percent of combined NYC capacity
 
 # =============================================================================
 # VALIDATION (runs at import time)

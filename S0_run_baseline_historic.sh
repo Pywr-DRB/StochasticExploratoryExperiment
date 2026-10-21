@@ -15,13 +15,10 @@ np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 # MPI transport: force libfabric TCP provider instead of RDMA verbs
 export FI_PROVIDER=tcp
 
-# Configuration name (determines output directory)
-export CONFIG_NAME=${CONFIG_NAME:-default}
+# Log directory (output directories are created by the Python scripts)
+mkdir -p logs
 
-# Create directories (output dirs created by Python via ensure_ensemble_set_dirs)
-mkdir -p logs pywrdrb/inputs
-
-echo "Running $DATASET_ID with $np ranks on $SLURM_NNODES nodes"
+echo "Running baseline simulations with $np ranks on $SLURM_NNODES nodes"
 
 # Execute workflow
 mpirun -np $np python3 00_run_baseline_simulations.py

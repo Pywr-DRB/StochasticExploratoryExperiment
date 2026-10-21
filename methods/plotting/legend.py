@@ -21,9 +21,8 @@ from matplotlib.lines import Line2D
 
 from methods.plotting.styles import ALPHA_BAND_OUTER, LINEWIDTH_THIN, LINEWIDTH_MEDIUM
 
-# Legend-only: inner-band alpha is bumped above the plot's ALPHA_BAND_INNER
-# so the three layers stay distinguishable at small legend-handle sizes.
-# The plot itself continues to use ALPHA_BAND_INNER from styles.py.
+# Legend-only inner-band alpha, higher than ALPHA_BAND_INNER so the three
+# layers stay distinguishable at legend-handle size.
 ANATOMY_ALPHA_INNER = 0.55
 ANATOMY_COLOR_DEFAULT = '#4d4d4d'
 
@@ -136,7 +135,7 @@ def draw_iqr_anatomy(
     Renders a large grey glyph in the right half of ``ax`` with callout
     labels fanned vertically to the left: outer band label sits above
     and arrows up-left onto the top outer-only strip; inner band label
-    is horizontal into the 25–75% band; median label sits below and
+    is horizontal into the 25-75% band; median label sits below and
     arrows down-left onto the median line.
 
     The function configures ``ax`` (turns axis off, sets xlim/ylim to

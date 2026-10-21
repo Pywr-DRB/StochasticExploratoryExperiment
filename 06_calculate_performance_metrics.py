@@ -5,13 +5,13 @@ MPI-parallel calculation of all performance metric CSVs.
 
 Each rank independently:
   1. Reads realization IDs from HDF5 metadata (no data loaded)
-  2. Loads ONLY its assigned realizations (selective HDF5 reading)
-  3. Computes annual metrics (per water-year × period), Hashimoto RRV,
+  2. Loads only its assigned realizations (selective HDF5 reading)
+  3. Computes annual metrics (per water-year x period), Hashimoto RRV,
      contribution analysis, zone duration events, and per-SSI-event metrics
   4. Sends results to rank 0 via point-to-point send/recv
 
-Requires step 04 (SSI drought identification) to have completed first.
-Requires step 05 (HDF5 postprocessing) to have completed first.
+Requires the outputs of 04_postprocess_data_mpi.py (HDF5 postprocessing) and
+05_calculate_ssi_drought_metrics.py (SSI drought events).
 
 No global MPI collectives (bcast, gather, barrier, reduce) are used.
 
@@ -20,13 +20,13 @@ Usage:
     mpirun -np N python 06_calculate_performance_metrics.py <dataset_id> 3 6 12
     python 06_calculate_performance_metrics.py <dataset_id> --all   # serial fallback
 
-Output:
-    pywrdrb/performance_metrics/{dataset_id}_annual_metrics.csv
-    pywrdrb/performance_metrics/{dataset_id}_hashimoto_metrics.csv
-    pywrdrb/performance_metrics/{dataset_id}_hashimoto_shortage_events.csv
-    pywrdrb/performance_metrics/{dataset_id}_contribution_metrics.csv
-    pywrdrb/performance_metrics/{dataset_id}_zone_duration_events.csv
-    pywrdrb/event_metrics/{dataset_id}_ssi{window}_event_metrics.csv
+Output (under outputs/<CONFIG_NAME>/data/):
+    performance_metrics/{dataset_id}_annual_metrics.csv
+    performance_metrics/{dataset_id}_hashimoto_metrics.csv
+    performance_metrics/{dataset_id}_hashimoto_shortage_events.csv
+    performance_metrics/{dataset_id}_contribution_metrics.csv
+    performance_metrics/{dataset_id}_zone_duration_events.csv
+    event_metrics/{dataset_id}_ssi{window}_event_metrics.csv
 """
 
 import os
@@ -47,12 +47,9 @@ from methods.postprocess import (
     calculate_annual_metrics,
     calculate_hashimoto_all,
     calculate_contribution_analysis_metrics,
-    calculate_and_save_zone_duration_events,
     save_metrics_csv,
 )
 from methods.metrics.event_metrics import calculate_all_event_metrics
-
-# PERFORMANCE_METRICS_DIR and EVENT_METRICS_DIR now imported from methods.config via *
 
 
 def main(dataset_id, ssi_windows):
@@ -87,7 +84,7 @@ def main(dataset_id, ssi_windows):
     if rank == 0:
         print(f"  {n_realizations} realizations across {size} ranks")
 
-    # Load data — superset of what all analyses need
+    # Load the results sets needed by all analyses
     results_sets = [
         'major_flow', 'mrf_target', 'res_storage', 'res_level',
         'inflow', 'ibt_diversions', 'ibt_demands',
@@ -97,11 +94,8 @@ def main(dataset_id, ssi_windows):
         fname, my_realizations, results_sets, rank, size
     )
 
-    # =========================================================================
-    # Use first SSI window for the main annual metrics drought conditioning.
-    # Annual metrics are computed once (drought/nondrought split from primary SSI).
-    # Per-SSI-window event metrics are computed separately for each window.
-    # =========================================================================
+    # Annual metrics are computed once; the drought/non-drought split uses the
+    # first SSI window. Per-event metrics are computed for every SSI window.
     primary_ssi_window = ssi_windows[0]
     if is_reconstruction:
         # Use observed drought events for the reconstruction simulation
@@ -118,9 +112,7 @@ def main(dataset_id, ssi_windows):
               f"Run 05_calculate_ssi_drought_metrics.py first.")
         return
 
-    # =========================================================================
-    # Part 1: Annual metrics (realization × water_year × period)
-    # =========================================================================
+    # Part 1: Annual metrics (realization x water_year x period)
     local_annual = calculate_annual_metrics(
         local_data, dataset_id, my_realizations, primary_drought_events
     )
@@ -128,9 +120,7 @@ def main(dataset_id, ssi_windows):
         comm, local_annual, rank, size, tag=700
     )
 
-    # =========================================================================
     # Part 2: Hashimoto RRV metrics (simulation-level + per-event)
-    # =========================================================================
     local_hashimoto, local_hashimoto_events = calculate_hashimoto_all(
         local_data, dataset_id, my_realizations
     )
@@ -141,9 +131,7 @@ def main(dataset_id, ssi_windows):
         comm, local_hashimoto_events, rank, size, tag=711
     )
 
-    # =========================================================================
     # Part 3: Contribution analysis metrics
-    # =========================================================================
     local_contrib = calculate_contribution_analysis_metrics(
         local_data, dataset_id, my_realizations
     )
@@ -151,9 +139,7 @@ def main(dataset_id, ssi_windows):
         comm, local_contrib, rank, size, tag=720
     )
 
-    # =========================================================================
     # Part 4: Zone duration events
-    # =========================================================================
     local_zone_records = []
     from methods.zone_duration_metrics import calculate_drought_zone_events
     for r in my_realizations:
@@ -172,9 +158,7 @@ def main(dataset_id, ssi_windows):
         comm, local_zone_df, rank, size, tag=730
     )
 
-    # =========================================================================
     # Part 5: Per-SSI-event metrics (for each SSI window)
-    # =========================================================================
     gathered_event_metrics = {}
     for ssi_window in ssi_windows:
         if is_reconstruction:
@@ -204,9 +188,7 @@ def main(dataset_id, ssi_windows):
         )
         gathered_event_metrics[ssi_window] = gathered
 
-    # =========================================================================
     # Rank 0: combine and save all CSVs
-    # =========================================================================
     if rank == 0:
         os.makedirs(PERFORMANCE_METRICS_DIR, exist_ok=True)
         os.makedirs(EVENT_METRICS_DIR, exist_ok=True)
@@ -287,7 +269,7 @@ if __name__ == "__main__":
                     print(f"WARNING: SSI window {ssi_window} not in configured windows {SSI_WINDOWS}")
                 ssi_windows.append(ssi_window)
             except ValueError:
-                print(f"ERROR: Invalid SSI window '{arg}' — must be an integer")
+                print(f"ERROR: Invalid SSI window '{arg}'; must be an integer")
                 sys.exit(1)
 
     if not ssi_windows:

@@ -1,5 +1,5 @@
 """
-SI19: Convergence of extreme drought joint-exceedance return period.
+SI19: Convergence of the extreme-drought joint-exceedance return period (SI Figures S2.10-S2.12).
 
 Measures how the joint-exceedance return period T_W (the same quantity
 shown in Fig9 panel (a)) stabilizes as the ensemble grows, evaluated
@@ -8,13 +8,13 @@ neighborhood.
 
 Return period definition (reused from Fig9 / methods.return_period):
 
-    T_W(s*, m*) = T_R − E[D | sev ≥ s* AND mag ≥ m*]
+    T_W(s*, m*) = T_R - E[D | sev >= s* AND mag >= m*]
     T_R         = E[L_interarrival] / P_exc(s*, m*)
-    P_exc       = 1 − F_S(s*) − F_M(m*) + Ĉ(F_S(s*), F_M(m*))
+    P_exc       = 1 - F_S(s*) - F_M(m*) + C_n(F_S(s*), F_M(m*))
 
 i.e. the duration-adjusted drought-free interval at the lower-left
 corner of a heatmap cell, with the joint exceedance probability
-estimated via the empirical copula (Deheuvels 1979; Nelsen 2006 §2.4;
+estimated via the empirical copula C_n (Deheuvels 1979; Nelsen 2006 Sect. 2.4;
 Salvadori & De Michele 2004). Computed by
 ``methods.return_period.compute_return_period_grid_exceedance`` and
 read at the corner cell whose lower-left corner is the chosen
@@ -29,12 +29,12 @@ Convergence experiment:
   - report 5/50/95 bootstrap percentiles of T_W vs. N for each threshold.
 
 Three thresholds (lower-left corners of severity-magnitude cells):
-  1. (sev ≥ 2.0, mag ≥ 5)   — moderate severe drought
-  2. (sev ≥ 2.5, mag ≥ 15)  — focal-region center, near 1960s drought
-  3. (sev ≥ 3.0, mag ≥ 30)  — deep tail
+  1. (sev >= 2.0, mag >= 5):  moderate severe drought
+  2. (sev >= 2.5, mag >= 15): focal-region center, near 1960s drought
+  3. (sev >= 3.0, mag >= 30): deep tail
 
 Usage:
-    python SI19_drought_return_period_convergence.py [dataset_id] [ssi_window]
+    python si_scripts/SI19_drought_return_period_convergence.py [dataset_id] [ssi_window]
 
 Defaults: dataset_id = stationary_ensemble, ssi_window = 3
 """
@@ -50,7 +50,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import (
-    FIG_DIR, N_YEARS, DATASET_CONFIGS, verify_dataset_id,
+    FIG_DIR, N_YEARS, verify_dataset_id,
 )
 from methods.load import load_event_metrics, load_drought_events
 from methods.return_period import compute_return_period_grid_exceedance
@@ -65,7 +65,7 @@ os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
 # (label, severity_threshold, magnitude_threshold)
 # Each pair is the lower-left corner of the cell whose T_W will be tracked.
-# Spans the focal region of Fig9: moderate → focal-center → deep tail.
+# Spans the focal region of Fig9: moderate -> focal-center -> deep tail.
 THRESHOLDS = [
     ("Moderate (sev>=2.0, mag>=5)",   2.0,  5.0),
     ("Severe (sev>=2.5, mag>=15)",    2.5, 15.0),
@@ -76,7 +76,7 @@ THRESHOLDS = [
 # only when the script is run against the stationary baseline (matches
 # Fig9, where the DoR triangle is drawn only on panel (a)). The (sev, mag)
 # values are read from the observed-events table at this date rather than
-# hardcoded — same convention as Fig9 (DOR_TARGET_DATE).
+# hardcoded, as in Fig9 (DOR_TARGET_DATE).
 DOR_TARGET_DATE = pd.Timestamp('1964-12-01')
 DOR_DATASET_ID = 'stationary_ensemble'
 
@@ -88,16 +88,16 @@ RNG_SEED = 42
 # min_count for the return-period calc. Fig9 uses 5 to mask sparsely-
 # populated cells visually. For the convergence experiment we want to
 # observe the *point estimate* stabilising, so allow any non-empty
-# exceedance set and separately track when ≥5 exceedances are reached.
+# exceedance set and separately track when >= 5 exceedances are reached.
 MIN_COUNT_CONVERGENCE = 1
 MIN_COUNT_RELIABLE = 5
 
 
 def _resolve_1960s_dor_threshold(dataset_id, ssi_window):
-    """Return ("1960s DoR (sev=…, mag=…)", sev, mag) or None.
+    """Return ("1960s DoR (sev=..., mag=...)", sev, mag) or None.
 
     Reads observed drought events for *dataset_id* and picks the event
-    active on DOR_TARGET_DATE — same logic as Fig9's red triangle. The
+    active on DOR_TARGET_DATE, the same logic as Fig9's red triangle. The
     threshold is the observed (severity, magnitude) of that event, so
     the T_W convergence panel answers: "how long does it take to pin
     down the return period of an event AT LEAST as severe and as long
@@ -155,7 +155,7 @@ def compute_convergence_bands(df, realization_ids, ssi_window, thresholds):
     bands : np.ndarray, shape (n_subset_sizes, 3, n_thresholds)
         Percentiles [5, 50, 95] of T_W across bootstrap samples.
     reliable_frac : np.ndarray, shape (n_subset_sizes, n_thresholds)
-        Fraction of bootstrap samples reaching ≥MIN_COUNT_RELIABLE
+        Fraction of bootstrap samples reaching >= MIN_COUNT_RELIABLE
         exceedance events at each threshold.
     """
     n_realizations = len(realization_ids)
@@ -185,7 +185,7 @@ def compute_convergence_bands(df, realization_ids, ssi_window, thresholds):
             sub_df = df.iloc[sub_idx]
             # Each call subsets to events in this bootstrap's realizations,
             # then reads T_W at each threshold corner. n_years stays at the
-            # per-realization N_YEARS — total ensemble years is n × N_YEARS.
+            # per-realization N_YEARS; total ensemble years is n x N_YEARS.
             for k, (_lbl, s_thr, m_thr) in enumerate(thresholds):
                 T_W_val, n_exc = _eval_T_W_at_threshold(
                     sub_df, s_thr, m_thr, N_YEARS,
@@ -233,7 +233,7 @@ def plot_convergence(n_subset_sizes, bands, reliable_frac,
             label='Bootstrap median of T_W',
         )
 
-        # Mark the smallest N at which ≥50% of bootstrap samples reach
+        # Mark the smallest N at which >= 50% of bootstrap samples reach
         # MIN_COUNT_RELIABLE exceedance events (the Fig9 reliability bar).
         reliable_mask = reliable_frac[:, k] >= 0.5
         if reliable_mask.any():
@@ -255,7 +255,7 @@ def plot_convergence(n_subset_sizes, bands, reliable_frac,
         ax.legend(loc='best', frameon=True, fontsize='small')
         ax.grid(False)
 
-        # Top secondary axis: ensemble years = N × N_YEARS.
+        # Top secondary axis: ensemble years = N x N_YEARS.
         sec = ax.secondary_xaxis(
             'top',
             functions=(lambda x: x * N_YEARS, lambda y: y / N_YEARS),
@@ -289,15 +289,15 @@ def plot_convergence(n_subset_sizes, bands, reliable_frac,
 
 def run(dataset_id, ssi_window):
     verify_dataset_id(dataset_id)
-    print(f"SI19: drought return-period convergence — "
+    print(f"SI19: drought return-period convergence - "
           f"{dataset_id}, SSI-{ssi_window}")
 
     df = load_event_metrics(dataset_id, ssi_window)
     realization_ids = sorted(df['realization_id'].unique().tolist())
-    print(f"  Events: {len(df):,}; realizations with ≥1 event: "
+    print(f"  Events: {len(df):,}; realizations with >= 1 event: "
           f"{len(realization_ids):,}")
 
-    # Stationary baseline gets an extra 1960s-DoR convergence panel —
+    # Stationary baseline gets an extra 1960s-DoR convergence panel;
     # the climate-adjusted scenarios share the historical record but
     # Fig9 panel (a) is the only place the DoR triangle is drawn, so
     # the convergence reference is restricted to the same dataset.

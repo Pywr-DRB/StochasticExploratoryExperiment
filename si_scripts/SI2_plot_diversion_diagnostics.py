@@ -1,7 +1,7 @@
 """
-SI3: Plot Diversion Diagnostics
+SI2: Diversion diagnostics (SI Figures S2.2-S2.4).
 
-This script creates publication-quality diagnostic plots comparing observed and
+Diagnostic plots comparing observed and
 ensemble-extrapolated diversion data for NYC and NJ water supplies.
 
 The plots include:
@@ -9,14 +9,11 @@ The plots include:
 - Seasonal patterns (monthly box plots)
 - Time series overview
 
-These visualizations support the academic publication's supplementary information
-by demonstrating the quality of the diversion extrapolation methodology.
-
 Usage:
-    python SI3_plot_diversion_diagnostics.py <dataset_id>
+    python si_scripts/SI2_plot_diversion_diagnostics.py <dataset_id>
 
 Example:
-    python SI3_plot_diversion_diagnostics.py stationary_ensemble
+    python si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
 """
 
 import sys
@@ -25,14 +22,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import *
 from methods.load import load_observed_diversions, load_ensemble_diversions
 
-# Matplotlib settings for publication-quality figures
+# Matplotlib settings
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
 plt.rcParams['font.size'] = 10
@@ -305,9 +301,7 @@ def plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id, temporal_
 def main(dataset_id):
     """Main function"""
 
-    print("=" * 60)
-    print(f"DIVERSION DIAGNOSTICS: {dataset_id}")
-    print("=" * 60)
+    print(f"SI2: diversion diagnostics for {dataset_id}")
 
     # Verify dataset
     verify_dataset_id(dataset_id)
@@ -318,7 +312,6 @@ def main(dataset_id):
         location_name = location_names.get(loc, loc)
 
         print(f"\n{location_name} Diversions:")
-        print("-" * 40)
 
         # Load observed data
         print(f"  Loading observed {location_name} diversions...")
@@ -356,16 +349,14 @@ def main(dataset_id):
             plot_timeseries_overview(observed, ensemble_dict, loc, dataset_id,
                                    temporal_resolution=resolution)
 
-    print("\n" + "=" * 60)
-    print("Diversion diagnostic plots completed!")
-    print("=" * 60)
+    print("Done.")
 
 
 if __name__ == "__main__":
 
     # Get the dataset_id from command line arguments
     if len(sys.argv) != 2:
-        print("Usage: python SI3_plot_diversion_diagnostics.py <dataset_id>")
+        print("Usage: python si_scripts/SI2_plot_diversion_diagnostics.py <dataset_id>")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)
 

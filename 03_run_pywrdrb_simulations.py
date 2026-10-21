@@ -36,13 +36,13 @@ def parallel_run_all_sets(dataset_id):
     dataset_config = DATASET_CONFIGS[dataset_id]
 
     if rank == 0:
-        print(f"[SIM] {dataset_id} | {N_ENSEMBLE_SETS} sets × {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations | {size} ranks")
+        print(f"[SIM] {dataset_id} | {N_ENSEMBLE_SETS} sets x {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations | {size} ranks")
         missing_sets = [
             set_id for set_id in range(N_ENSEMBLE_SETS)
             if not os.path.exists(get_ensemble_set_spec(set_id, dataset_id).files['catchment_inflow'])
         ]
         if missing_sets:
-            print(f"[SIM] WARNING: Missing prepared sets: {missing_sets} — run prep first!")
+            print(f"[SIM] WARNING: Missing prepared sets: {missing_sets}; run prep first.")
 
     # Track success/failure
     success_count = 0
@@ -51,7 +51,7 @@ def parallel_run_all_sets(dataset_id):
     assignments = get_set_assignments(rank, size, N_ENSEMBLE_SETS)
 
     if size >= N_ENSEMBLE_SETS:
-        # Multiple ranks per set — use point-to-point communication
+        # Multiple ranks per set: use point-to-point communication
         set_id, local_rank, local_size = assignments[0]
         peers = get_set_peer_ranks(rank, size, N_ENSEMBLE_SETS)
 
@@ -64,7 +64,7 @@ def parallel_run_all_sets(dataset_id):
         total_processed = 1
         success_count = 1 if success else 0
     else:
-        # More sets than ranks — each rank processes its assigned sets serially
+        # More sets than ranks: each rank processes its assigned sets in turn
         for set_id, local_rank, local_size in assignments:
             success = run_ensemble_set_simulations(set_id, dataset_id, use_mpi=False)
             total_processed += 1

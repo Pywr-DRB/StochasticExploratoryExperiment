@@ -1,16 +1,12 @@
 """
-F3 (Alternative): Drought zone occurrence figure.
+Fig6: Drought zone seasonality and occurrence (manuscript Figure 5).
 
-3-panel layout focused on drought zone occurrence:
-  Left:  A  (Temporal P(FFMP Drought Zone) by water-year week)
-  Right: B1 (frequency box plots) | B2 (duration box plots)
-
-Panel A shows weekly probability of being in any FFMP drought zone
-(Emergency OR Warning OR Watch) across the water year, for each
-climate scenario.  Panels B1/B2 are identical to the original F3.
+Three panels: (a) weekly probability that NYC storage is in any FFMP drought
+zone (Watch, Warning or Emergency) across the water year, per scenario;
+(b) frequency and (c) duration box plots by zone.
 
 Usage:
-    python F3_plot_drought_zone_occurrence.py
+    python plotting_scripts/Fig6_plot_drought_zone_occurrence.py
 """
 
 import sys
@@ -18,7 +14,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 import warnings
@@ -32,7 +27,7 @@ from methods.plotting.styles import (
     apply_publication_style, label_panel,
 )
 
-# Drought zone boxplots (modular, in methods/plotting/)
+# Drought zone boxplots
 from methods.plotting.drought_zone_boxplots import (
     plot_frequency_boxplot,
     plot_duration_boxplot,
@@ -111,9 +106,8 @@ def plot_panel_A_zone_probability(ax):
     format_wy_xaxis(ax)
     ax.set_xlabel('Month', fontsize=FONTSIZE_LABEL)
 
-    # Panel label (inside axes, matching F4 style)
+    # Panel label inside axes
     label_panel(ax, 'a')
-
 
 
 # ============================================================================
@@ -165,7 +159,7 @@ def create_figure(show_historic=False):
     """
     Create the 3-panel drought zone occurrence figure.
 
-    Layout (matching original F3 GridSpec):
+    Layout:
       A (P(drought zone), left column) | B1 (frequency, top right)
                                        | B2 (duration, bottom right)
     """
@@ -237,17 +231,8 @@ def main():
         'legend.fontsize': 11,
     })
 
-    print("F3 (alt): Drought zone occurrence figure")
-    print("=" * 70)
+    print("Fig6: Drought zone occurrence figure")
 
-    # # Version without historic data
-    # fig = create_figure(show_historic=False)
-    # fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence.png"
-    # fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
-    # print(f"Saved: {fname}")
-    # plt.close(fig)
-
-    # Version with historic data
     fig = create_figure(show_historic=True)
     fname = f"{FIG_OUTPUT_DIR}/Fig6_zone_occurrence_with_historic.png"
     fig.savefig(fname, dpi=DPI_HIGH, bbox_inches='tight')
@@ -256,9 +241,7 @@ def main():
     print(f"Saved: {fname}")
     plt.close(fig)
 
-    print("\n" + "=" * 70)
-    print("F3 zone occurrence figures generated successfully!")
-    print("=" * 70)
+    print("Done.")
 
 
 if __name__ == '__main__':

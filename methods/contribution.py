@@ -22,8 +22,8 @@ from methods.water_year import (
 )
 
 # Minimum thresholds
-MIN_INFLOW_THRESHOLD = 1000   # MG — for representative-year search
-MIN_ROLLING_INFLOW = 100      # MG — for ratio low-inflow masking
+MIN_INFLOW_THRESHOLD = 1000   # MG; used in the representative-year search
+MIN_ROLLING_INFLOW = 100      # MG; masks low-inflow days in the ratio
 
 # Default rolling window (days)
 DEFAULT_WINDOW_DAYS = 90
@@ -54,7 +54,7 @@ def _scatter_to_doy_columns(values, dates, col_arrays,
     dates : pd.DatetimeIndex
         Date index.
     col_arrays : list
-        Accumulator list — columns are appended in-place.
+        Accumulator list; columns are appended in place.
     zone_filter : list of int, optional
         Drought zones to keep.
     wy_zone_map : dict, optional
@@ -94,7 +94,7 @@ def _scatter_to_doy_columns(values, dates, col_arrays,
 
 
 def _build_doy_dataframe(col_arrays):
-    """Build a (366 × N) DataFrame from collected column arrays."""
+    """Build a (366 x N) DataFrame from collected column arrays."""
     if col_arrays:
         return pd.DataFrame(
             np.column_stack(col_arrays),
@@ -114,7 +114,7 @@ def calculate_daily_contribution_percentage(data, dataset_id, zone_filter=None):
     Returns
     -------
     result : pd.DataFrame
-        366 rows (day-of-water-year) × N columns.
+        366 rows (day-of-water-year) x N columns.
     n_years_total : int
     n_years_filtered : int
     """
@@ -160,7 +160,7 @@ def calculate_daily_contribution_ratio(data, dataset_id, window=None):
     Returns
     -------
     result : pd.DataFrame
-        366 rows (day-of-water-year) × N columns.
+        366 rows (day-of-water-year) x N columns.
     """
     if window is None:
         window = DEFAULT_WINDOW_DAYS
@@ -202,32 +202,6 @@ def classify_water_years_by_max_zone(res_level_df):
         water_year_classifications[wy] = max_zone
 
     return water_year_classifications
-
-
-def classify_years_by_max_zone(res_level_df):
-    """
-    Classify each calendar year by the maximum drought zone reached.
-
-    Parameters
-    ----------
-    res_level_df : pd.DataFrame
-        Reservoir level DataFrame with 'nyc' column and datetime index
-
-    Returns
-    -------
-    dict
-        Mapping year -> {'max_zone': int, 'max_zone_date': pd.Timestamp}
-    """
-    nyc = res_level_df['nyc']
-    years = nyc.index.year
-    max_zone_per_year = nyc.groupby(years).max()
-    max_zone_date_per_year = nyc.groupby(years).idxmax()
-
-    return {
-        year: {'max_zone': max_zone_per_year[year],
-               'max_zone_date': max_zone_date_per_year[year]}
-        for year in max_zone_per_year.index
-    }
 
 
 def get_zone_filter_label(zone_list):

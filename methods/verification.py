@@ -58,7 +58,7 @@ def verify_postprocessing_output(dataset_id):
     if not os.path.exists(output_file):
         raise FileNotFoundError(
             f"Postprocessed data not found: {output_file}\n"
-            f"Run 04_postprocess_data.py for {dataset_id} first!"
+            f"Run 04_postprocess_data_mpi.py for {dataset_id} first."
         )
 
     print(f"[OK] Postprocessing outputs verified for {dataset_id}")

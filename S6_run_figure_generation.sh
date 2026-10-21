@@ -10,9 +10,6 @@
 module load python/3.11.5
 source venv/bin/activate
 
-# Configuration name (determines output directory)
-export CONFIG_NAME=${CONFIG_NAME:-default}
-
 mkdir -p logs
 
 run() {
@@ -26,30 +23,27 @@ run() {
     fi
 }
 
-# Fig3: Selected CMIP6 climate scenarios (target vs achieved changes)
-run plotting_scripts/Fig3_selected_climate_scenarios.py
-
-# Fig4: Ensemble flow distribution and verification plots
+# Fig4: Ensemble diagnostics (SI Figure S2.5)
 run plotting_scripts/Fig4_plot_ensemble_diagnostics.py stationary_ensemble
 
-# Fig5: Drought metric distributions
+# Fig5: Drought metric distributions (Figure 4 for SSI-3; SI Figures S3.2 and S3.3 for SSI-6 and SSI-12)
 run plotting_scripts/Fig5_plot_drought_metric_distribution.py 12
 run plotting_scripts/Fig5_plot_drought_metric_distribution.py 6
 run plotting_scripts/Fig5_plot_drought_metric_distribution.py 3
 
-# Fig6: Drought zone occurrence (temporal probability + frequency/duration boxplots)
+# Fig6: Drought zone seasonality and occurrence (Figure 5)
 run plotting_scripts/Fig6_plot_drought_zone_occurrence.py
 
-# Fig7: KDEs of NYC contribution / total inflow
+# Fig7: NYC contribution and diversion KDEs by storage zone (SI Figure S5.1)
 run plotting_scripts/Fig7_2x3_kdes_3mo_9mo_windows.py
 
-# Fig8: NYC contribution distributions
+# Fig8: NYC contribution to the Montague flow target across the water year (Figure 6)
 run plotting_scripts/Fig8_plot_contribution_distributions.py --montague --layout stacked
 
-# Fig9: Drought satisficing heatmaps (severity x magnitude)
+# Fig9: Consequential drought region heatmaps (Figure 7)
 run plotting_scripts/Fig9_plot_drought_satisficing_heatmap_2col.py 3
 
-# Fig10: Focal-region drought event landscape + two anchored droughts
+# Fig10: Drought storylines (Figure 8)
 run plotting_scripts/Fig10_focal_drought_dynamics.py
 
 echo ""

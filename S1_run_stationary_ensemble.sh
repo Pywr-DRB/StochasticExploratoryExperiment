@@ -13,15 +13,12 @@ source venv/bin/activate
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 # MPI transport: force libfabric TCP provider instead of RDMA verbs
-# (OpenMPI 4.0.5 + libfabric 1.12.1 verbs/RDMA crashes at scale)
+# (the cluster's verbs/RDMA transport crashes at scale)
 export FI_PROVIDER=tcp
 
-# OpenMPI TCP tuning — reduce connection failures at scale
+# OpenMPI TCP tuning to reduce connection failures at scale
 export OMPI_MCA_btl_tcp_links=1
 export OMPI_MCA_mpi_yield_when_idle=1
-
-# Configuration name (determines output directory)
-export CONFIG_NAME=${CONFIG_NAME:-default}
 
 # Workflow flags
 DATASET_ID="${1:-stationary_ensemble}"
@@ -29,8 +26,7 @@ GENERATE=${GENERATE:-true}
 PREP=${PREP:-true}
 SIMULATE=${SIMULATE:-true}
 
-# Create directories
-mkdir -p logs pywrdrb/inputs
+mkdir -p logs
 
 echo "Running $DATASET_ID with $np ranks on $SLURM_NNODES nodes"
 

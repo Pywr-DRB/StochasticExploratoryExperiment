@@ -60,7 +60,7 @@ def plot_fdc_gridded(Qh, Qs,
         ax = axs[i // ncols, i % ncols]
 
         # For Qs[site], trim so that it is only full years
-        # Since FDCs are annual, we dont want partial years included
+        # FDCs are annual, so partial years are excluded
         syn_index = Qs[site].index
         start_year = syn_index[0].year
         end_year = syn_index[-1].year
@@ -79,7 +79,7 @@ def plot_fdc_gridded(Qh, Qs,
 
         ensemble = Ensemble(ensemble_dict)
 
-        # Plot using new SynHydro API
+        # Plot with SynHydro
         plot_flow_duration_curve(
             ensemble,
             observed=Qh.loc[:, site],
@@ -123,7 +123,7 @@ def plot_autocorrelation_gridded(Qh, Qs,
     timestep : str
         'daily' or 'monthly'
     lag_range : np.ndarray
-        Array of lag values to compute (not used with new API, which uses max_lag)
+        Lag values; only the maximum is used (passed to SynHydro as max_lag)
     fname : str, optional
         Filename to save figure
     """
@@ -172,7 +172,7 @@ def plot_autocorrelation_gridded(Qh, Qs,
 
         ensemble = Ensemble(ensemble_dict)
 
-        # Plot using new SynHydro API
+        # Plot with SynHydro
         plot_autocorrelation(
             ensemble,
             observed=Qh.loc[:, site],

@@ -55,9 +55,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     verify_dataset_id(dataset_id)
     dataset_config = DATASET_CONFIGS[dataset_id]
 
-    print(f"\n{'='*80}")
-    print(f"CALCULATING ZONE PROBABILITIES: {dataset_id}")
-    print(f"{'='*80}")
+    print(f"\nCalculating zone probabilities: {dataset_id}")
     print(f"  Dataset type: {dataset_config['type']}")
     print(f"  Period: {period}")
 
@@ -146,8 +144,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
             storage_doy_adjusted[mask_feb29] = 59
             storage_doy_adjusted[mask_after] = storage_doy[mask_after] - 1
 
-        # Create aligned FFMP boundaries using vectorized lookup
-        # This is much faster than list comprehension
+        # Align FFMP boundaries to the storage dates by day-of-year lookup
         ffmp_aligned = ffmp_doy_lookup.loc[storage_doy_adjusted].values
         ffmp_aligned = pd.DataFrame(
             ffmp_aligned,
@@ -210,9 +207,7 @@ def calculate_zone_probabilities(dataset_id, period='weekly', pct_extents=(0.0, 
     df.to_csv(csv_file)
     print(f"  Saved: {csv_file}")
 
-    print(f"\n{'='*80}")
-    print(f"ZONE PROBABILITIES COMPLETE: {dataset_id}")
-    print(f"{'='*80}")
+    print(f"Zone probabilities complete: {dataset_id}")
 
     return df
 
@@ -249,9 +244,7 @@ def calculate_storage_percentiles(dataset_id, period='weekly',
     verify_dataset_id(dataset_id)
     dataset_config = DATASET_CONFIGS[dataset_id]
 
-    print(f"\n{'='*80}")
-    print(f"CALCULATING STORAGE PERCENTILES: {dataset_id}")
-    print(f"{'='*80}")
+    print(f"\nCalculating storage percentiles: {dataset_id}")
     print(f"  Dataset type: {dataset_config['type']}")
     print(f"  Period: {period}")
     print(f"  Percentiles: {percentiles}")
@@ -333,8 +326,6 @@ def calculate_storage_percentiles(dataset_id, period='weekly',
     df.to_csv(csv_file)
     print(f"  Saved: {csv_file}")
 
-    print(f"\n{'='*80}")
-    print(f"STORAGE PERCENTILES COMPLETE: {dataset_id}")
-    print(f"{'='*80}")
+    print(f"Storage percentiles complete: {dataset_id}")
 
     return df

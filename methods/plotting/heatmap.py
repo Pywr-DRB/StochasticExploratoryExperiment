@@ -1,26 +1,23 @@
 """
-Reusable helpers for severity × magnitude heatmap figures.
+Reusable helpers for severity x magnitude heatmap figures.
 
 Grid computation functions operate on the per-event-metrics DataFrames
-produced by ``08_calculate_event_metrics.py`` (loaded via
+produced by ``06_calculate_performance_metrics.py`` (loaded via
 ``methods.load.load_event_metrics``).
 
-Shared figure / focal-region specifications are defined once in
-``methods.config`` and re-exported here so existing imports keep
-working.
+Grid and focal-region settings come from ``methods.config``.
 """
 
 import numpy as np
 
 from methods.config import (
-    GRID_N_BINS, GRID_LOG_MAG, GRID_TARGET_SEV_BIN, GRID_TARGET_MAG_BIN,
+    GRID_N_BINS,
     SEV_MIN, SEV_MAX, MAG_MIN, MAG_MAX,
     MIN_COUNT_PER_BIN,
     FOCAL_FRAC_THRESH, FOCAL_RP_THRESH_YEARS, FOCAL_WORST_STORAGE_THRESH,
-    WORST_STORAGE_THRESH, SATISFICING_THRESHOLD,
 )
 
-# Backwards-compatible name (a few callers still import the legacy alias)
+# Short aliases used by the figure scripts
 N_HEAT_BINS = 10
 MIN_COUNT = MIN_COUNT_PER_BIN
 
@@ -95,43 +92,13 @@ def assign_grid_bins(df, sev_edges, mag_edges):
     return out
 
 
-def select_from_grid_cell(df_binned, sev_bin, mag_bin,
-                          rank_col='event_min_storage_pct',
-                          ascending=True, n=1):
-    """Select events from a specific grid cell, ranked by a metric.
-
-    Parameters
-    ----------
-    df_binned : pd.DataFrame
-        Output of :func:`assign_grid_bins`.
-    sev_bin, mag_bin : int
-        Grid-cell indices.
-    rank_col : str
-        Column to rank by (default: worst storage → ascending=True).
-    ascending : bool
-        If True, the smallest values rank first (worst-case selection).
-    n : int
-        Number of events to return from this cell.
-
-    Returns
-    -------
-    pd.DataFrame
-        Up to *n* rows from the requested cell, sorted by *rank_col*.
-    """
-    cell = df_binned[(df_binned['sev_bin'] == sev_bin) &
-                     (df_binned['mag_bin'] == mag_bin)]
-    if len(cell) == 0:
-        return cell
-    return cell.sort_values(rank_col, ascending=ascending).head(n)
-
-
 def compute_min_storage_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
     """2-D grid of worst-case (absolute minimum) storage per bin.
 
     Returns
     -------
-    min_grid : np.ndarray (ns × nm), NaN where count < min_count
-    count_grid : np.ndarray (ns × nm)
+    min_grid : np.ndarray (ns x nm), NaN where count < min_count
+    count_grid : np.ndarray (ns x nm)
     """
     sev = df['severity'].values
     mag = df['magnitude'].values
@@ -163,8 +130,8 @@ def compute_emergency_grid(df, sev_edges, mag_edges, min_count=MIN_COUNT):
 
     Returns
     -------
-    frac_grid : np.ndarray (ns × nm), NaN where count < min_count
-    count_grid : np.ndarray (ns × nm)
+    frac_grid : np.ndarray (ns x nm), NaN where count < min_count
+    count_grid : np.ndarray (ns x nm)
     """
     sev = df['severity'].values
     mag = df['magnitude'].values
@@ -287,7 +254,7 @@ def draw_focal_boundary(ax, sev_edges, mag_edges, focal_cells,
 
         loops.append(loop)
 
-    # Draw each loop as a closed path — halo first (if requested), then core.
+    # Draw each loop as a closed path: halo first (if requested), then core.
     for loop in loops:
         verts = loop
         codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
@@ -314,7 +281,7 @@ def identify_focal_region(T_W_grids, frac_grids, min_grids, datasets,
     Criteria
     --------
     1. Fraction avoiding emergency < *frac_thresh* in ALL datasets
-    2. T_W ≤ *rp_thresh_years* in ALL datasets
+    2. T_W <= *rp_thresh_years* in ALL datasets
     3. Worst-case storage < *storage_thresh* in at least 1 dataset
 
     Returns

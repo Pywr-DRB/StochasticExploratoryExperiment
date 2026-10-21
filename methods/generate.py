@@ -52,7 +52,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     set_id : int
         Ensemble set identifier (0-indexed)
     dataset_id : str
-        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
     comm : MPI.Comm or None
@@ -81,7 +81,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         rank = local_rank
         size = local_size
     elif use_mpi and MPI_AVAILABLE:
-        # Legacy / standalone mode: use COMM_WORLD directly
+        # Standalone mode: use COMM_WORLD directly
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         size = comm.Get_size()
@@ -112,11 +112,11 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         else:
             comm.Barrier()
 
-    # Load data — use preloaded_data if provided (already broadcast by caller)
+    # Use preloaded data if provided; otherwise rank 0 loads and broadcasts
     if preloaded_data is not None:
         Q, Q_baseline, Q_inflow = preloaded_data
     else:
-        # Load and broadcast data (optimized: only rank 0 loads)
+        # Only rank 0 loads; data are then broadcast
         if rank == 0:
             # Full Q is 1945-01-01 through 2023-12-31
             Q = load_baseline_historical_flow(gage_flow=True, period='full',
@@ -130,9 +130,8 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
             Q = Q.loc[:, pywrdrb_nodes_to_generate]
             Q_baseline = Q_baseline.loc[:, pywrdrb_nodes_to_generate]
 
-            # CRITICAL: Replace zeros with NaN before fitting
-            # Streamflow should never be exactly zero - zeros in historical data are artifacts
-            # that would otherwise propagate to synthetic ensembles via Nowak disaggregation
+            # Replace zeros with NaN before fitting: zero flows in the historical record are
+            # artifacts that would otherwise propagate through the Nowak disaggregation
             n_zeros_before = (Q == 0.0).sum().sum()
             if n_zeros_before > 0:
                 print(f"Set {set_id + 1}: Replacing {n_zeros_before} zero values with NaN (physically unrealistic)")
@@ -165,8 +164,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     kirsch_gen.preprocessing(Q)
     kirsch_gen.fit()
 
-    # boundary_blend_timesteps=2 preserves the pre-upgrade behavior
-    # (old blend_days=2 default); the new flexible-timescale API defaults it to 0.
+    # Blend two timesteps across month boundaries in the disaggregation
     nowak_disagg = NowakDisaggregator(
         input_timestep='monthly',
         output_timestep='daily',
@@ -176,17 +174,12 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     nowak_disagg.preprocessing(Q)
     nowak_disagg.fit()
 
-    # Apply climate adjustments if needed.
-    #
-    # Multiplicative (delta-change) scenario perturbation, following the
-    # scenario approach of Kirsch et al. (2013) with the standard-deviation
-    # factor set equal to the mean factor. In log space this is simply
-    #   Ȳ_new = Ȳ_j + ln(1 + δ_j),   σ_new = σ_j
-    # so every synthetic monthly flow in calendar month j is scaled by
-    # (1 + δ_j): the real-space mean and standard deviation scale together,
-    # the coefficient of variation, the standardized anomaly structure, and
-    # the month-to-month persistence of the baseline are all preserved.
-    # (Only the projected seasonal redistribution of mean flow is imposed.)
+    # Climate adjustment: multiplicative delta-change perturbation following
+    # Kirsch et al. (2013), with the standard-deviation factor equal to the
+    # mean factor. In log space the monthly mean becomes Ybar_j + ln(1 + d_j)
+    # with sigma_j unchanged, so every synthetic flow in calendar month j is
+    # scaled by (1 + d_j); the coefficient of variation, standardized anomaly
+    # structure and month-to-month persistence of the baseline are preserved.
     if dataset_config['type'] == 'climate_adjusted':
         if rank == 0:
             print(f'Set {set_id + 1}: Applying climate adjustments for {dataset_id}...')
@@ -195,8 +188,8 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         if monthly_prc_change is None or len(monthly_prc_change) != 12:
             raise ValueError(f"Dataset {dataset_id} missing valid monthly_prc_change (need 12 values)")
 
-        Y_bar = kirsch_gen_baseline.mean_period          # Ȳ_j (12 × n_sites), log space
-        sigma = kirsch_gen_baseline.std_period           # σ_j (12 × n_sites), log space
+        Y_bar = kirsch_gen_baseline.mean_period          # monthly log-space mean (12 x n_sites)
+        sigma = kirsch_gen_baseline.std_period           # monthly log-space std (12 x n_sites)
 
         log_a = np.log(1.0 + np.asarray(monthly_prc_change, dtype=float) / 100.0).reshape(-1, 1)
 
@@ -227,10 +220,9 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
         local_start_idx = rank * realizations_per_rank + extra_realizations
 
     # Generate local ensemble subset (monthly, then disaggregate to daily)
-    # Seed strategy: deterministic per (set_id, rank) so results are reproducible
-    # and independent across ranks. SynHydro derives independent per-realization
-    # RNG streams from the master seed; Kirsch and Nowak each need it explicitly
-    # (global numpy state is no longer used).
+    # Seeds are deterministic per (set_id, rank) so results are reproducible and
+    # independent across ranks; SynHydro derives per-realization RNG streams from
+    # this seed, which must be passed to both Kirsch and Nowak.
     generation_seed = set_id * 10000 + rank
     if local_n_realizations > 0:
         # Step 1: Generate monthly flows using Kirsch
@@ -243,7 +235,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
                                                     start_year=pd.Timestamp(START_DATE).year)
 
         # Step 2: Disaggregate monthly flows to daily using Nowak
-        # Without an explicit seed, Nowak draws fresh OS entropy (non-reproducible)
+        # Pass the seed explicitly so the disaggregation is reproducible
         daily_ensemble_obj = nowak_disagg.disaggregate(monthly_ensemble_obj,
                                                        seed=generation_seed)
 
@@ -252,7 +244,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
     else:
         local_syn_ensemble = {}
 
-    # Fit KDEs for non-major nodes (optimized: only fit once on rank 0, broadcast parameters)
+    # Fit KDEs for non-major nodes (fit once on rank 0, then broadcast the parameters)
     if rank == 0:
         kde_params = {}  # Store parameters instead of full KDE objects
         for upstream in pywrdrb_nodes_to_generate:
@@ -406,7 +398,7 @@ def generate_ensemble_set(set_id, dataset_id, use_mpi=True,
                 Qs_inflows[site][:, i] = combined_inflow_ensemble[global_real_id][use_site].values
 
             # Convert to DataFrame with realization IDs
-            # IMPORTANT: Use set-specific realization IDs
+            # Column labels are the global realization IDs of this set
             real_cols = [str(i) for i in set_realization_ids]
 
             Q_syn[site] = pd.DataFrame(Q_syn[site],

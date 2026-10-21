@@ -1,5 +1,5 @@
 """
-F4: NYC Contribution Distribution Timeseries
+Fig8: NYC contribution to Montague flow across the water year (manuscript Figure 6).
 
 Modes:
   1. Single dataset: Contribution/Montague distribution for one ensemble
@@ -9,19 +9,17 @@ Modes:
   5. --combined: 6-panel combined (both metrics side by side)
 
 Usage:
-    python F4_plot_contribution_distributions.py <dataset_id>
-    python F4_plot_contribution_distributions.py --comparison <baseline_id> <comparison_id>
-    python F4_plot_contribution_distributions.py --montague
-    python F4_plot_contribution_distributions.py --ratio [--window 90]
-    python F4_plot_contribution_distributions.py --combined [--window 90]
+    python plotting_scripts/Fig8_plot_contribution_distributions.py <dataset_id>
+    python plotting_scripts/Fig8_plot_contribution_distributions.py --comparison <baseline_id> <comparison_id>
+    python plotting_scripts/Fig8_plot_contribution_distributions.py --montague
+    python plotting_scripts/Fig8_plot_contribution_distributions.py --ratio [--window 90]
+    python plotting_scripts/Fig8_plot_contribution_distributions.py --combined [--window 90]
 """
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import argparse
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Patch
@@ -30,10 +28,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, OUTPUT_DIR, DATASET_CONFIGS, NYC_RESERVOIRS, verify_dataset_id
+from methods.config import FIG_DIR, OUTPUT_DIR, DATASET_CONFIGS, verify_dataset_id
 from methods.plotting.styles import (
     DPI_HIGH, DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_LABEL, FONTSIZE_MEDIUM,
+    FONTSIZE_LABEL,
     apply_publication_style, label_panel,
 )
 from methods.contribution import (
@@ -237,7 +235,7 @@ def _plot_side_by_side_3panel(stat_pcts, diff_low, diff_high,
 def plot_single_dataset(dataset_id):
     """Plot contribution/Montague distribution for a single dataset."""
     verify_dataset_id(dataset_id)
-    print(f"F4: NYC contribution timeseries — {dataset_id}")
+    print(f"Fig8: NYC contribution timeseries - {dataset_id}")
 
     results_sets = ['contribution', 'major_flow']
     if FILTER_BY_ZONES is not None or SHOW_REPRESENTATIVE_YEAR:
@@ -292,7 +290,7 @@ def plot_comparison(baseline_id, comparison_id):
     """Plot difference between two ensembles."""
     verify_dataset_id(baseline_id)
     verify_dataset_id(comparison_id)
-    print(f"F4: Contribution comparison — {comparison_id} vs {baseline_id}")
+    print(f"Fig8: Contribution comparison - {comparison_id} vs {baseline_id}")
 
     results_sets = ['contribution', 'major_flow']
     if FILTER_BY_ZONES is not None:
@@ -340,7 +338,7 @@ def plot_comparison(baseline_id, comparison_id):
 
 def plot_montague_multipanel(zone_filter=None, layout='stacked'):
     """3-panel Montague contribution: stacked or side_by_side."""
-    print(f"F4: Multi-panel Montague contribution comparison (layout={layout})")
+    print(f"Fig8: Multi-panel Montague contribution comparison (layout={layout})")
 
     results_sets = ['contribution', 'major_flow']
     if zone_filter is not None:
@@ -392,7 +390,7 @@ def plot_ratio_multipanel(window=None):
         window = DEFAULT_WINDOW_DAYS
     window_months = window // 30
 
-    print(f"F4: Multi-panel contribution ratio — {window}-day window")
+    print(f"Fig8: Multi-panel contribution ratio - {window}-day window")
 
     all_data = _load_all_scenarios(['contribution', 'inflow'])
 
@@ -426,12 +424,12 @@ def plot_ratio_multipanel(window=None):
 # ============================================================================
 
 def plot_combined(window=None):
-    """6-panel (3×2): ratio on left, Montague on right."""
+    """6-panel (3 x 2): ratio on left, Montague on right."""
     if window is None:
         window = DEFAULT_WINDOW_DAYS
     window_months = window // 30
 
-    print(f"F4: Combined contribution figure — {window}-day window")
+    print(f"Fig8: Combined contribution figure - {window}-day window")
 
     apply_publication_style()
 
@@ -458,7 +456,7 @@ def plot_combined(window=None):
         mont_diff[did] = calculate_pairwise_difference_percentiles(
             montague_dfs['stationary_ensemble'], montague_dfs[did])
 
-    # Build figure: 3 rows × 2 columns
+    # Build figure: 3 rows x 2 columns
     print("Plotting...")
     fig = plt.figure(figsize=(14, 9.5))
     gs = gridspec.GridSpec(
@@ -558,11 +556,11 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 Examples:
-  python F4_plot_contribution_distributions.py stationary_ensemble
-  python F4_plot_contribution_distributions.py --comparison stationary_ensemble climate_adjusted_low
-  python F4_plot_contribution_distributions.py --montague
-  python F4_plot_contribution_distributions.py --ratio --window 90
-  python F4_plot_contribution_distributions.py --combined --window 90
+  python plotting_scripts/Fig8_plot_contribution_distributions.py stationary_ensemble
+  python plotting_scripts/Fig8_plot_contribution_distributions.py --comparison stationary_ensemble climate_adjusted_low
+  python plotting_scripts/Fig8_plot_contribution_distributions.py --montague
+  python plotting_scripts/Fig8_plot_contribution_distributions.py --ratio --window 90
+  python plotting_scripts/Fig8_plot_contribution_distributions.py --combined --window 90
 
 Available datasets: {list(DATASET_CONFIGS.keys())}
         """
@@ -574,7 +572,7 @@ Available datasets: {list(DATASET_CONFIGS.keys())}
     parser.add_argument('--montague', action='store_true',
                         help='3-panel stacked Montague contribution')
     parser.add_argument('--multipanel', '-m', action='store_true',
-                        help='Alias for --montague (backward compat)')
+                        help='Alias for --montague')
     parser.add_argument('--ratio', action='store_true',
                         help='3-panel stacked contribution/inflow ratio')
     parser.add_argument('--combined', action='store_true',

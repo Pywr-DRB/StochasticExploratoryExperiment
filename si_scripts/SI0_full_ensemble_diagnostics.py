@@ -1,5 +1,5 @@
 """
-Generate comprehensive diagnostic plots for ensemble validation (Supplemental).
+SI0: Ensemble validation diagnostics (SI Figures S2.6-S2.8).
 
 This script creates detailed diagnostic plots for synthetic ensemble validation:
 - Gridded FDC plots (daily/monthly, major/minor nodes)
@@ -10,10 +10,10 @@ This script creates detailed diagnostic plots for synthetic ensemble validation:
 Low-flow ensemble convergence diagnostics are produced separately by
 si_scripts/SI0b_low_flow_convergence.py so they can be (re)run on their own.
 
-For the main manuscript summary figure, see F1_plot_ensemble_diagnostics.py
+The summary version (SI Figure S2.5) is produced by plotting_scripts/Fig4_plot_ensemble_diagnostics.py.
 
 Usage:
-    python SI0_full_ensemble_diagnostics.py <dataset_id>
+    python si_scripts/SI0_full_ensemble_diagnostics.py <dataset_id>
 """
 
 import sys
@@ -231,33 +231,26 @@ def plot_full_ensemble_diagnostics(dataset_id: str):
                 filename=fname
             )
 
-    # Low-flow convergence is produced by si_scripts/SI0b_low_flow_convergence.py
-    # so it can be (re)run independently of the rest of SI0.
-
-    print(f"\nAll diagnostic plots saved for {dataset_id}!")
+    print(f"\nAll diagnostic plots saved for {dataset_id}.")
     return True
 
 
 def main(dataset_id: str):
     """Main function."""
-    print("=" * 60)
-    print(f"FULL ENSEMBLE DIAGNOSTICS (SI0): {dataset_id}")
-    print("=" * 60)
+    print(f"SI0: full ensemble diagnostics for {dataset_id}")
 
     success = plot_full_ensemble_diagnostics(dataset_id)
 
     if success:
-        print("=" * 60)
-        print("Diagnostic plots generated successfully!")
+        print("Done.")
     else:
-        print("=" * 60)
-        print("ERROR: Diagnostic plot generation failed!")
+        print("ERROR: diagnostic plot generation failed.")
         sys.exit(1)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python SI0_full_ensemble_diagnostics.py <dataset_id>")
+        print("Usage: python si_scripts/SI0_full_ensemble_diagnostics.py <dataset_id>")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)
 

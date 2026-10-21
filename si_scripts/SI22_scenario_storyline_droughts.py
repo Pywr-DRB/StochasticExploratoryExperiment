@@ -1,7 +1,7 @@
 """
-SI22: Storyline drought dynamics, selected separately from each ensemble.
+SI22: Storyline drought dynamics selected separately from each ensemble (SI Figures S6.1-S6.3).
 
-Main-text Fig10 (manuscript Figure 9) shows two storyline droughts drawn
+Main-text Fig10 (manuscript Figure 8) shows two storyline droughts drawn
 from the consequential (focal) drought region using two deterministic
 selection criteria:
 
@@ -21,8 +21,8 @@ separately, giving one 2-column figure per scenario:
     SI22_..._wwss         Events A & B from WWSS (climate_adjusted_high)
 
 The criteria are imported from ``FIG_VERSIONS[MAIN_TEXT_VERSION]`` in
-``plotting_scripts/Fig10_focal_drought_dynamics.py`` so the SI can never
-drift from the main-text rules; only the ``ensemble`` (and the slot
+``plotting_scripts/Fig10_focal_drought_dynamics.py`` so the SI uses the
+same rules as the main text; only the ``ensemble`` (and the slot
 title) is overridden per scenario. The focal region, grid edges, panel
 layout, x-axis windowing, smoothing and legend are all reused from the
 Fig10 module via ``_render_version``. Panel (a)'s grey support grid
@@ -80,16 +80,15 @@ SSI_WINDOW = fig10.SSI_WINDOW
 DATASETS = list(DATASET_CONFIGS.keys())
 
 # Which Fig10 version supplies the A/B criteria. 'v3_wwssA' is the
-# preferred main-text pairing: A = rank_max nyc_shortage_pct; B = rank_min
+# main-text pairing: A = rank_max nyc_shortage_pct; B = rank_min
 # event_min_storage_pct with sub-annual + Emergency-at-minimum filters and
 # the (2.8, 3.4] severity band that excludes the region's tail-most bin.
 MAIN_TEXT_VERSION = 'v3_wwssA'
 
 # Slot-config keys removed from the imported criteria before they are
-# applied. Per the SI request (2026-09-14) Event B drops BOTH severity
-# filters, so B is simply the sub-annual (<= 366 d) focal event that is in
-# Drought Emergency at its storage minimum with the lowest combined NYC
-# storage, with no severity restriction. Set to {} to mirror the main text.
+# applied. Event B drops both severity filters, so B is the sub-annual
+# (<= 366 d) focal event that is in Drought Emergency at its storage minimum
+# with the lowest combined NYC storage. Set to {} to mirror the main text.
 DROP_CRITERIA_KEYS = {
     'A': (),
     'B': ('filter_severity_min', 'filter_severity_max'),
@@ -108,8 +107,8 @@ SCENARIO_SUFFIX = {
     'climate_adjusted_high': 'wwss',
 }
 
-# Output destination. Per the SI request this sits directly under the
-# config directory (outputs/<CONFIG_NAME>/SI22_...), not under figures/.
+# Output goes directly under the config directory
+# (outputs/<CONFIG_NAME>/SI22_...), not under figures/.
 SI_OUTPUT_DIR = os.path.join(CONFIG_DIR, 'SI22_scenario_storyline_droughts')
 FIG_NAME_STEM = f'SI22_storyline_droughts_ssi{SSI_WINDOW}'
 EVENTS_CSV = os.path.join(SI_OUTPUT_DIR, 'SI22_selected_events.csv')

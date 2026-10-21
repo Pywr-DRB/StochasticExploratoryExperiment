@@ -1,30 +1,18 @@
 #!/bin/bash
-# Submit the entire workflow as a chain of SLURM jobs with dependencies.
+# Submit the full workflow as a chain of dependent SLURM jobs.
 #
-# Job structure (peak usage 8 nodes; verified on Pywr-DRB v2.2.0, Aug 2026):
-#   S0        baseline reconstruction                       1 node
-#   S1_gen    stationary ensemble: generate (01)            8 nodes  (collective-free, safe multi-node)
-#   S1_prep   stationary ensemble: prep (02)                1 node x 40 ranks, --mem=0
-#   S1_sim    stationary ensemble: simulate (03)            8 nodes
-#   S2_gen    climate-adjusted (low+high): generate         5 nodes
-#   S2_prep   climate-adjusted: prep                        1 node x 40 ranks, --mem=0
-#   S2_sim    climate-adjusted: simulate                    5 nodes
+#   S0        baseline reconstruction                   1 node
+#   S1_gen    stationary ensemble: generate (01)        8 nodes
+#   S1_prep   stationary ensemble: prep (02)            1 node x 40 ranks
+#   S1_sim    stationary ensemble: simulate (03)        8 nodes
+#   S2_gen    climate-adjusted (low, high): generate    5 nodes
+#   S2_prep   climate-adjusted: prep                    1 node x 40 ranks
+#   S2_sim    climate-adjusted: simulate                5 nodes
 #   S3 -> S4 -> S5 -> {S6, S7, S8}
 #
-# WHY prep runs on ONE node: Pywr-DRB v2.2's ensemble preprocessors distribute
-# data with a rank-0 pickle-scatter that deadlocks over cross-node TCP at scale
-# (observed: 320 ranks/8 nodes hung for hours at 99% CPU with zero output).
-# On a single node all MPI traffic is shared-memory and the problem disappears
-# (~4.5 h per dataset at 40 ranks). Do NOT patch ../Pywr-DRB; the manuscript
-# cites the clean v2.2.0 release.
-#
-# KNOWN RISK in the simulate step: methods/simulate.py uses a point-to-point
-# barrier before combining each set's batch files; it hung once in 20 sets at
-# 320 ranks. If a set's *_rankN_batchM.hdf5 files are all present but the
-# combined <dataset>_setN.hdf5 never appears, combine them manually with
-# pywrdrb.utils.hdf5.combine_batched_hdf5_outputs (sort by rank, batch),
-# verify against a sibling set, delete the batch files, cancel the hung job,
-# and re-submit the remaining chain.
+# The prep steps run on a single node because the Pywr-DRB v2.2 ensemble
+# preprocessors scatter data from rank 0 in a way that stalls over
+# cross-node TCP at scale; on one node all MPI traffic is shared-memory.
 #
 # Usage: bash S99_run_entire_workflow.sh
 

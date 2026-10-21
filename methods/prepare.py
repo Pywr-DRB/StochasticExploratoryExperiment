@@ -32,7 +32,7 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
     set_id : int
         Ensemble set identifier (0-indexed)
     dataset_id : str
-        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
     comm : MPI communicator, optional
@@ -85,9 +85,8 @@ def prep_ensemble_set(set_id, dataset_id, use_mpi=True, comm=None):
             realization_ids = comm.bcast(realization_ids, root=0)
 
         # =====================================================================
-        # Step 1: Process predicted inflows
-        # (Pywr-DRB v2.2 runs STARFIT offline simulation internally when
-        #  'perfect_foresight' is in modes; no separate pre-simulation step)
+        # Step 1: Predicted inflows (Pywr-DRB runs the STARFIT offline simulation
+        # internally for the 'perfect_foresight' mode)
         # =====================================================================
         inflow_preprocessor = PredictedInflowEnsemblePreprocessor(
             flow_type=f"{dataset_id}_set{set_id + 1}",

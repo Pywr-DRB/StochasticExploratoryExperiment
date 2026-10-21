@@ -5,10 +5,6 @@ Provides functions to filter, categorize, and analyze contribution metrics
 by window length and drought zone.
 """
 
-import pandas as pd
-
-from methods.load import load_contribution_metrics
-
 
 def get_metrics_for_window(df, window_days, metrics=None):
     """
@@ -89,68 +85,3 @@ def categorize_by_zone(df, zone_categories=None):
     return categorized
 
 
-def find_optimal_window_for_correlation(dataset_id, target_metric='annual_min_storage_pct',
-                                       source_metric='contribution_ratio',
-                                       window_range=(30, 180, 10)):
-    """
-    Find optimal window length maximizing correlation magnitude using pre-computed metrics.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    target_metric : str
-        Target metric for correlation (default: 'annual_min_storage_pct')
-    source_metric : str
-        Source metric for correlation (default: 'contribution_ratio')
-    window_range : tuple of (min, max, step)
-        Range of window days to test
-
-    Returns
-    -------
-    dict
-        Keys: 'optimal_window', 'optimal_correlation', 'all_correlations'
-    """
-    df = load_contribution_metrics(dataset_id)
-    available_windows = [30, 60, 90, 120, 150, 180, 270]
-
-    min_w, max_w, step = window_range
-    test_windows = [w for w in available_windows if min_w <= w <= max_w]
-
-    if not test_windows:
-        raise ValueError(
-            f"No pre-computed windows in range {min_w}-{max_w}. "
-            f"Available windows: {available_windows}"
-        )
-
-    correlations = {}
-
-    for w in test_windows:
-        source_col = f'{source_metric}_{w}d'
-
-        if source_col not in df.columns:
-            print(f"  Warning: Column {source_col} not found, skipping")
-            continue
-
-        df_clean = df[[source_col, target_metric]].dropna()
-
-        if len(df_clean) > 10:
-            corr = df_clean.corr().iloc[0, 1]
-            correlations[w] = corr
-            print(f"  Window {w:3d} days: r = {corr:7.4f}")
-        else:
-            print(f"  Window {w:3d} days: insufficient data")
-
-    if not correlations:
-        raise ValueError("Could not calculate correlations for any window in range")
-
-    optimal_window = min(correlations.keys(), key=lambda k: correlations[k])
-    optimal_corr = correlations[optimal_window]
-
-    print(f"\n  Optimal window: {optimal_window} days (r = {optimal_corr:.4f})")
-
-    return {
-        'optimal_window': optimal_window,
-        'optimal_correlation': optimal_corr,
-        'all_correlations': correlations
-    }

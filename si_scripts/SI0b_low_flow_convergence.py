@@ -1,15 +1,15 @@
 """
-Standalone ensemble convergence diagnostics (low-flow + drought metrics).
+SI0b: Ensemble convergence diagnostics for low-flow extremes and drought-event metrics (SI Figure S2.9).
 
 Produces convergence plots that can be (re)generated without running the
 full SI0 suite:
 
-LOW-FLOW EXTREMES (ensemble MIN across realizations × water years):
+Low-flow extremes (ensemble minimum across realizations x water years):
   1. Minimum 7-day mean flow (acute drought extreme).
   2. Minimum annual Q95 (chronic-low-flow-year extreme).
   Sites: NYC aggregate inflow and delMontague.
 
-DROUGHT-EVENT METRICS (pooled mean across drought events; one figure per
+Drought-event metrics (pooled mean across drought events; one figure per
 SSI window from SSI_WINDOWS):
   Default panels: mean duration, mean magnitude, mean severity.
   Loaded from outputs/.../data/drought_metrics/{dataset_id}_ssi{N}_drought_events.csv.
@@ -19,7 +19,7 @@ metrics and flatten for pooled-mean metrics. No averaging is applied to the
 low-flow panels; the drought panels use pooled-mean by design.
 
 Usage:
-    python SI0b_low_flow_convergence.py <dataset_id>
+    python si_scripts/SI0b_low_flow_convergence.py <dataset_id>
 """
 
 import sys
@@ -139,9 +139,7 @@ def run_low_flow_convergence(dataset_id: str) -> bool:
 
 
 def main(dataset_id: str):
-    print("=" * 60)
-    print(f"LOW-FLOW ENSEMBLE CONVERGENCE (SI0b): {dataset_id}")
-    print("=" * 60)
+    print(f"SI0b: low-flow ensemble convergence for {dataset_id}")
     ok = run_low_flow_convergence(dataset_id)
     if not ok:
         sys.exit(1)
@@ -149,7 +147,7 @@ def main(dataset_id: str):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python SI0b_low_flow_convergence.py <dataset_id>")
+        print("Usage: python si_scripts/SI0b_low_flow_convergence.py <dataset_id>")
         print(f"Available datasets: {list(DATASET_CONFIGS.keys())}")
         sys.exit(1)
     dataset_id = sys.argv[1]

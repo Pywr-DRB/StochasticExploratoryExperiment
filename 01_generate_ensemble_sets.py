@@ -1,11 +1,11 @@
 """
 Generate all ensemble sets in parallel using MPI rank distribution.
 
-IMPORTANT: This script avoids ALL collective MPI operations (bcast, barrier,
-gather, reduce) on the global communicator. The OpenMPI 4.0.5 + libfabric
-1.12.1 stack on Hopper HPC segfaults during global collectives with 240 ranks
-across 8 nodes. Instead, each rank loads data independently from disk, and
-only point-to-point send/recv is used within small set peer groups.
+Collective MPI operations (bcast, barrier, gather, reduce) on the global
+communicator are avoided because the OpenMPI/libfabric stack on the Hopper
+cluster segfaults during global collectives at scale. Each rank loads its
+data from disk, and only point-to-point send/recv is used within set peer
+groups.
 
 Supports three execution modes:
   - MPI with more ranks than sets: multiple ranks collaborate per set
@@ -73,7 +73,7 @@ def parallel_generate_all_sets(dataset_id):
     dataset_config = DATASET_CONFIGS[dataset_id]
 
     if rank == 0:
-        print(f"[GENERATE] {dataset_id} | {N_ENSEMBLE_SETS} sets × {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations | {size} ranks")
+        print(f"[GENERATE] {dataset_id} | {N_ENSEMBLE_SETS} sets x {N_REALIZATIONS_PER_ENSEMBLE_SET} realizations | {size} ranks")
 
     # Ensure all directories exist
     ensure_ensemble_set_dirs(dataset_id)
@@ -82,7 +82,7 @@ def parallel_generate_all_sets(dataset_id):
         # ------------------------------------------------------------------
         # Multi-rank-per-set regime: each rank loads data independently,
         # then works on its assigned set using point-to-point communication.
-        # NO global collectives (bcast/barrier) — they crash on Hopper.
+        # No global collectives (bcast/barrier); they crash on Hopper at scale.
         # ------------------------------------------------------------------
 
         # Each rank loads data from disk independently
@@ -111,7 +111,7 @@ def parallel_generate_all_sets(dataset_id):
             success = generate_ensemble_set(set_id, dataset_id, use_mpi=False)
             assert success, f"Set {set_id + 1} generation failed on rank {rank}"
 
-    # No global barrier — each set completes independently.
+    # No global barrier; each set completes independently.
     # Rank 0 verifies output files exist after its own set finishes.
     if rank == 0:
         existing_sets = get_existing_ensemble_sets(dataset_id)

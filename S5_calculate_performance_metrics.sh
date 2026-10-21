@@ -13,9 +13,6 @@ source venv/bin/activate
 # MPI transport: force libfabric TCP provider instead of RDMA verbs
 export FI_PROVIDER=tcp
 
-# Configuration name (determines output directory)
-export CONFIG_NAME=${CONFIG_NAME:-default}
-
 np=$(($SLURM_NTASKS_PER_NODE * $SLURM_NNODES))
 
 DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high" "reconstruction")
@@ -23,7 +20,7 @@ DATASETS=("stationary_ensemble" "climate_adjusted_low" "climate_adjusted_high" "
 mkdir -p logs
 
 for DATASET_ID in "${DATASETS[@]}"; do
-    # Reconstruction has only 1 realization — use 1 rank
+    # The reconstruction has a single realization, so use one rank
     if [ "$DATASET_ID" = "reconstruction" ]; then
         RUN_NP=1
     else
@@ -47,7 +44,6 @@ done
 echo ""
 echo "All performance metrics processed successfully."
 
-################################################################################
 echo "========================================"
 echo "Calculating storage zone probabilities..."
 echo "========================================"

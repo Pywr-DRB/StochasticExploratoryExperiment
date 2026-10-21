@@ -1,12 +1,12 @@
 """
-Per-drought-event metric calculator for Sankey-Parallel Coordinate figure.
+Per-drought-event metric calculator.
 
 Computes metrics over exact drought event windows from raw HDF5 timeseries.
 Each drought event (defined by SSI start/end dates) becomes one sample row
 with hazard characteristics, system actions, and outcome metrics.
 
-Reuses _evaluate_period() logic from methods.metrics.satisficing for
-consistent satisficing classification.
+Satisficing classification: NYC storage stays at or above storage_threshold and
+the Montague target is not missed for more than violation_days consecutive days.
 """
 
 import numpy as np
@@ -83,14 +83,12 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
     """
     Extract aligned timeseries for a single realization from pywrdrb.Data.
 
-    Uses the same accessor pattern as satisficing.py and 06_calculate_satisficing.
-
     Returns dict with keys: storage_pct, montague_shortage, nyc_inflow,
     contribution, nyc_diversion, nyc_demand. All pd.Series with common index.
     Returns None if data unavailable.
     """
     try:
-        # NYC aggregate storage as percentage (same as satisficing.py)
+        # NYC aggregate storage as percent of capacity
         storage_raw = data.res_storage[dataset_id][realization_id][NYC_RESERVOIRS].sum(axis=1)
         storage_pct = 100.0 * storage_raw / NYC_TOTAL_CAPACITY
 
@@ -107,7 +105,7 @@ def _load_realization_timeseries(data, dataset_id, realization_id):
         nyc_diversion = data.ibt_diversions[dataset_id][realization_id]['delivery_nyc']
         nyc_demand = data.ibt_demands[dataset_id][realization_id]['demand_nyc']
 
-        # Align to common index (same pattern as satisficing.py lines 98-108)
+        # Align to a common index
         common_idx = storage_pct.index
         montague_shortage = montague_shortage.reindex(common_idx, fill_value=0)
         trenton_shortage = trenton_shortage.reindex(common_idx, fill_value=0)
@@ -135,7 +133,6 @@ def _max_consecutive_positive(series, tolerance=0.0):
     """
     Count maximum consecutive days where series exceeds tolerance.
 
-    Same logic as satisficing._evaluate_period() violation counting.
 
     Parameters
     ----------
@@ -273,7 +270,7 @@ def _calculate_single_event(event, ts, storage_threshold, violation_days, ffmp_d
     total_trenton_shortage = tren_short.sum()
     max_consec_trenton = _max_consecutive_positive(tren_short)
 
-    # --- Classifications (matching satisficing_category logic) ---
+    # --- Classifications ---
     storage_ok = bool(min_storage >= storage_threshold)
     montague_ok = bool(max_consec_montague <= violation_days)
 

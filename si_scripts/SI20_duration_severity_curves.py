@@ -1,5 +1,5 @@
 """
-SI20: NYC aggregate inflow duration-severity curves (Gold et al. 2024 Fig 5b style).
+SI20: NYC aggregate inflow duration-severity curves, after Gold et al. (2024) Fig. 5b (SI Figure S3.4).
 
 Diagnostic figure that verifies SSI-based drought analysis against an
 absolute-value (non-standardized) drought metric. For each duration
@@ -70,14 +70,14 @@ FIG_PATH_STEM = os.path.join(FIG_DIR, "SI20_duration_severity_curves")
 def load_observed_nyc_daily():
     """Construct the daily NYC-aggregate inflow series used by observed SSI.
 
-    Mirrors methods/drought_analysis.py:104-127. Returns pd.Series indexed by date,
+    Mirrors methods/drought_analysis.py (calculate_historic_observed_droughts). Returns pd.Series indexed by date,
     values in MGD.
     """
     Q = load_baseline_historical_flow(
         gage_flow=False, period='full', flowtype=BASELINE_DATASET,
     )
     Q.replace(0, np.nan, inplace=True)
-    # Defensive: drop_columns for nyc_aggregate is ['delTrenton'] (won't be in catchment_inflow CSV)
+    # Drop delTrenton if present
     for col in ['delTrenton']:
         if col in Q.columns:
             Q.drop(columns=[col], inplace=True)
@@ -204,10 +204,8 @@ def compute_ensemble_rows(dataset_id):
 
 
 def compute_all():
-    print("=" * 70)
     print("SI20: Computing NYC aggregate inflow duration-severity curves")
     print(f"BASELINE_DATASET = {BASELINE_DATASET}")
-    print("=" * 70)
 
     parts = []
     print("\n[observed reconstruction]")
@@ -258,7 +256,7 @@ def plot(df):
                             markersize=3, alpha=0.35, linestyle='none'),
         )
 
-    # Observed overlay — horizontally aligned with the stationary_ensemble box
+    # Observed overlay, aligned with the stationary_ensemble box
     obs = df[df.dataset_id == RECONSTRUCTION_LABEL].set_index('duration_months')
     obs_vals = [obs.loc[n, 'min_cumulative_flow_mg'] for n in DURATIONS_MONTHS]
     obs_x = x_positions + offsets['stationary_ensemble']
@@ -312,7 +310,7 @@ def main():
     ap.add_argument('--recompute', action='store_true',
                     help='Force recompute of CSV cache (slow ~15-30 min).')
     ap.add_argument('--observed-only', action='store_true',
-                    help='Compute only observed reconstruction rows (for fast smoke-testing).')
+                    help='Compute only observed reconstruction rows (quick check).')
     ap.add_argument('--no-plot', action='store_true',
                     help='Skip plotting (compute & cache only).')
     args = ap.parse_args()
@@ -321,7 +319,7 @@ def main():
     os.makedirs(FIG_DIR, exist_ok=True)
 
     if args.observed_only:
-        print("Running observed-only smoke test (no cache write).")
+        print("Observed-only run (no cache write).")
         df = compute_observed_rows()
         print("\nObserved rows:")
         print(df.to_string(index=False))

@@ -1,11 +1,11 @@
 """
 Core functions for postprocessing Pywr-DRB simulation outputs.
 
-This module contains functions for:
-- Loading and combining ensemble set outputs
-- Calculating performance metrics
-- Adding derived metrics (shortages, contributions)
-- Exporting combined datasets
+Performance-metric calculations on postprocessed Pywr-DRB outputs:
+- Annual water-year metrics (all / drought / non-drought periods)
+- Hashimoto reliability and resiliency metrics
+- NYC contribution window metrics
+- Drought zone episode durations
 """
 
 import os
@@ -14,24 +14,16 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from methods.water_year import vectorized_water_year
 from methods.metrics.shortfall import (
-    add_trenton_equiv_flow,
     get_flow_and_target_values,
     calculate_shortage_series,
     calculate_hashimoto_metrics,
 )
-from methods.zone_duration_metrics import calculate_drought_zone_events
 from methods.config import (
-    N_REALIZATIONS_PER_ENSEMBLE_SET,
-    N_ENSEMBLE_SETS,
     NYC_TOTAL_CAPACITY,
     NYC_RESERVOIRS,
-    OUTPUT_DIR,
-    PERFORMANCE_METRICS_DIR,
 )
-from methods.ensemble_utils import get_ensemble_set_spec
 
 
 def _build_drought_day_mask(index, drought_events_df, realization_id):
@@ -219,7 +211,7 @@ def calculate_annual_metrics(data, dataset_id, realizations, drought_events_df):
         List of realization IDs.
     drought_events_df : pd.DataFrame
         SSI drought events with columns: start, end, realization_id.
-        Required — raises ValueError if None.
+        Required; raises ValueError if None.
 
     Returns
     -------
@@ -346,7 +338,7 @@ def calculate_annual_metrics(data, dataset_id, realizations, drought_events_df):
     metric_cols = [c for c in metrics_df.columns if c not in index_cols + annotation_cols]
     metrics_df = metrics_df[index_cols + annotation_cols + metric_cols]
 
-    print(f"  Calculated {len(metrics_df)} rows × {len(metrics_df.columns)} annual metrics")
+    print(f"  Calculated {len(metrics_df)} rows x {len(metrics_df.columns)} annual metrics")
     return metrics_df
 
 
@@ -433,14 +425,11 @@ def _contribution_metrics_for_realization(args):
     """
     Calculate contribution metrics for a single realization (worker function).
 
-    Designed to be called from ProcessPoolExecutor or directly in a loop.
-    Uses cumulative sums for O(1) window-sum lookups instead of repeated masking.
+    Uses cumulative sums for O(1) window sums.
 
-    Rolling windows are anchored on the date of annual minimum NYC combined
-    reservoir storage (``annual_min_storage_date``), matching the manuscript
-    description. The date of the deepest FFMP zone reached (``annual_max_zone_date``)
-    is still recorded for zone-classification purposes but is NOT used as the
-    window anchor.
+    Windows are anchored on the date of the annual minimum NYC combined storage
+    (``annual_min_storage_date``). The date of the deepest FFMP zone
+    (``annual_max_zone_date``) is recorded for zone classification only.
 
     Parameters
     ----------
@@ -499,10 +488,7 @@ def _contribution_metrics_for_realization(args):
             'annual_min_storage_date': annual_min_storage_date.isoformat(),
         }
 
-        # Find the position of annual_min_storage_date in the index.
-        # Windows are anchored here (matching the manuscript: "preceding the
-        # annual minimum NYC reservoir storage"), NOT on annual_max_zone_date.
-        # Use searchsorted for O(log n) lookup.
+        # Position of annual_min_storage_date in the index (window anchor)
         end_pos = idx.searchsorted(annual_min_storage_date, side='right') - 1
         if end_pos < 0:
             # annual_min_storage_date is before the start of the timeseries
@@ -538,9 +524,7 @@ def _contribution_metrics_for_realization(args):
             demand_sat = min(total_div / total_dem, 1.0) if total_dem > 0 else 1.0
 
             # Worst 1-month rolling demand satisfaction within window
-            # Skip first 29 positions: rolling values there use pre-window data.
-            # This matches the original which computed rolling on the window subset
-            # (where the first 29 values were NaN and excluded by .min()).
+            # Skip the first 29 positions, whose rolling values use pre-window data
             window_len = end_pos - start_pos + 1
             if window_len >= 30:
                 worst_1mo = 100.0 * rolling_sat_30.iloc[start_pos + 29:end_pos + 1].min()
@@ -571,11 +555,8 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
     """
     Calculate year-level contribution analysis metrics for multiple aggregation windows.
 
-    This function pre-computes metrics used by contribution analysis plotting scripts,
-    eliminating the need to recalculate on-the-fly during figure generation.
-
-    Uses cumulative-sum based window calculations and optional multiprocessing
-    for significantly faster execution on large ensembles.
+    Pre-computes the window metrics used by the contribution plotting scripts;
+    window sums use cumulative sums.
 
     Parameters
     ----------
@@ -594,17 +575,15 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
         DataFrame with columns:
         - realization_id, year, annual_max_zone, annual_max_zone_date,
           annual_min_storage_pct, annual_min_storage_date
-        - Rolling windows are anchored on ``annual_min_storage_date`` (date of
-          annual minimum NYC combined reservoir storage), matching the manuscript
-          description. ``annual_max_zone_date`` is retained for FFMP zone
-          classification but is NOT the window anchor.
+        - Windows are anchored on ``annual_min_storage_date``;
+          ``annual_max_zone_date`` is kept for FFMP zone classification only.
         - For each window W in window_days:
-          - contribution_total_{W}d: NYC→Montague contributions sum (MG)
-          - contribution_ratio_{W}d: (contribution/inflow) × 100 (%)
+          - contribution_total_{W}d: NYC releases for the Montague/Trenton targets, summed (MG)
+          - contribution_ratio_{W}d: (contribution/inflow) x 100 (%)
           - inflow_total_{W}d: NYC reservoir inflow sum (MG)
           - diversion_total_{W}d: NYC diversion (delivery) sum (MG)
-          - diversion_ratio_{W}d: (diversion/inflow) × 100 (%)
-          - demand_satisfaction_{W}d: volumetric diversion/demand ratio (≤1.0)
+          - diversion_ratio_{W}d: (diversion/inflow) x 100 (%)
+          - demand_satisfaction_{W}d: volumetric diversion/demand ratio (<= 1.0)
           - worst_1mo_demand_sat_{W}d: minimum 30-day rolling demand satisfaction (%)
     """
     print(f"  Calculating contribution analysis metrics for {len(realizations)} realizations...")
@@ -636,19 +615,7 @@ def calculate_contribution_analysis_metrics(data, dataset_id, realizations,
 
     metrics_df = pd.DataFrame(all_records)
 
-    print(f"  Calculated {len(metrics_df)} year-realization pairs × {len(metrics_df.columns)} metrics")
-
-    # -------------------------------------------------------------------------
-    # REGENERATION NOTE (2026-04-23)
-    # Window anchor changed from annual_max_zone_date to annual_min_storage_date.
-    # All pre-computed contribution metrics CSVs must be regenerated. The entry
-    # point is 06_calculate_performance_metrics.py (calls this function for each
-    # dataset_id). Run on HPC with the full ensemble; local spot-checks only.
-    # The output CSV schema now includes an additional column:
-    #   annual_min_storage_date  (ISO-format date string)
-    # Downstream loaders (methods/load.py::load_contribution_metrics) will parse
-    # this column automatically once the CSVs are regenerated.
-    # -------------------------------------------------------------------------
+    print(f"  Calculated {len(metrics_df)} year-realization pairs x {len(metrics_df.columns)} metrics")
 
     return metrics_df
 
@@ -670,58 +637,5 @@ def save_metrics_csv(df, dataset_id, suffix, output_dir):
     df.to_csv(fname, index=False)
     print(f"  Saved: {fname} ({len(df)} rows)")
     return fname
-
-
-def calculate_and_save_zone_duration_events(data, dataset_id, realizations, output_dir=None):
-    """
-    Calculate drought zone episode durations for all realizations and save to CSV.
-
-    Each contiguous drought episode (NYC zone >= 4, ending after 7+ consecutive days
-    below zone 4) is recorded as one row. The episode is attributed to the maximum
-    zone level reached during it; lower zones passed through are not recorded separately.
-    Duration is the full episode length from the first to the last drought day.
-
-    Parameters
-    ----------
-    data : pywrdrb.Data
-        Data object with res_level containing the 'nyc' zone timeseries.
-    dataset_id : str
-        Dataset identifier.
-    realizations : list
-        List of realization IDs.
-    output_dir : str
-        Output directory for the CSV file.
-
-    Returns
-    -------
-    events_df : pd.DataFrame
-        DataFrame with columns: realization_id, start_date, end_date,
-        duration_days, max_zone.
-    """
-    if output_dir is None:
-        output_dir = PERFORMANCE_METRICS_DIR
-    print(f"  Calculating zone drought episode durations...")
-
-    records = []
-    for r in realizations:
-        zone_series = data.res_level[dataset_id][r]['nyc']
-        episodes = calculate_drought_zone_events(zone_series, min_end_days=7)
-        for ep in episodes:
-            records.append({
-                'realization_id': r,
-                'start_date': ep['start_date'].isoformat(),
-                'end_date': ep['end_date'].isoformat(),
-                'duration_days': ep['duration_days'],
-                'max_zone': ep['max_zone'],
-            })
-
-    events_df = pd.DataFrame(records)
-
-    os.makedirs(output_dir, exist_ok=True)
-    fname = f"{output_dir}/{dataset_id}_zone_duration_events.csv"
-    events_df.to_csv(fname, index=False)
-    print(f"  Saved: {fname} ({len(events_df)} episodes across {len(realizations)} realizations)")
-
-    return events_df
 
 

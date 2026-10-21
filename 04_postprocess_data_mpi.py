@@ -1,37 +1,20 @@
 """
-MPI-based parallel postprocessing for ensemble data.
+MPI-parallel postprocessing of ensemble simulation outputs.
 
-Shared logic (shortage calculation, data loading, historical model processing)
-lives in methods/metrics/shortfall.py and methods/load.py.
-The serial equivalent uses methods.postprocess.postprocess_dataset().
-See also: serial_postprocessing.py (Step 4), methods/postprocess.py.
-
-This script uses mpi4py to distribute shortage and contribution calculations
-across multiple MPI ranks for faster processing of large ensembles.
-
-REDESIGNED APPROACH - Split by Ensemble Sets (not realizations):
-- Each rank processes one or more ENSEMBLE SETS (e.g., set1, set2, etc.)
-- Each rank loads ALL realizations for its assigned ensemble sets
-- This approach is more memory-efficient than loading partial data from many sets
-- Preserves 0-1999 realization ID numbering in final output
-
-Memory optimization:
-- Each rank only loads the ensemble sets it's responsible for
-- Data is processed and then discarded before gathering
-- Only computed metrics (shortage, contribution) are gathered to rank 0
+Each rank loads one or more complete ensemble sets, computes shortage and
+NYC contribution series for every realization, and sends the results to
+rank 0 via point-to-point send/recv. Rank 0 appends the reconstruction
+simulation and exports one HDF5 file per dataset
+({dataset_id}_with_postprocessing.hdf5) with global realization IDs
+(0 to TOTAL_REALIZATIONS - 1). Shortage and contribution logic lives in
+methods/metrics/shortfall.py and methods/load.py.
 
 Usage:
-    mpirun -np <N_RANKS> python 04_postprocess_data_mpi.py <dataset_id>
+    mpirun -np <N_RANKS> python 04_postprocess_data_mpi.py <dataset_id> [--low-memory] [--skip-recombine]
 
-Example:
-    mpirun -np 20 python 04_postprocess_data_mpi.py stationary_ensemble
-
-Note: Optimal performance when N_RANKS = N_ENSEMBLE_SETS (e.g., 20 ranks for 20 sets)
-
-Memory-efficient mode (--low-memory):
-- Each rank writes its results to a temporary HDF5 file
-- Rank 0 combines the temporary files sequentially
-- Avoids MPI gather memory bottleneck
+With --low-memory each rank writes its results to a temporary HDF5 file and
+rank 0 combines the files sequentially instead of gathering in memory.
+Performance is best when N_RANKS equals N_ENSEMBLE_SETS.
 """
 
 import sys
@@ -41,9 +24,6 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-# =============================================================================
-# MPI CONFIGURATION
-# =============================================================================
 from methods.mpi_utils import get_comm, MPI_AVAILABLE, global_point_to_point_gather
 
 import pywrdrb
@@ -385,10 +365,8 @@ def combine_and_export_results(all_rank_results, dataset_id, ensemble_set_specs)
 
 def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False):
     """
-    MPI-parallel version of combine_ensemble_sets_and_calculate_metrics.
-
-    NEW APPROACH: Split by ensemble sets instead of realizations.
-    Each rank processes complete ensemble sets, which is more memory-efficient.
+    Compute shortage and contribution series for all ensemble sets in parallel.
+    Each rank processes complete ensemble sets; results are gathered to rank 0.
 
     Parameters
     ----------
@@ -409,7 +387,7 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
         low_mem_tag = " [low-memory]" if low_memory else ""
         print(f"[POST] {dataset_id} | {N_ENSEMBLE_SETS} sets | {size} ranks{low_mem_tag}")
         if size > N_ENSEMBLE_SETS:
-            print(f"[POST] WARNING: More ranks ({size}) than sets ({N_ENSEMBLE_SETS}) — some ranks idle.")
+            print(f"[POST] WARNING: More ranks ({size}) than sets ({N_ENSEMBLE_SETS}); some ranks will be idle.")
 
     # Get dataset configuration
     ensemble_set_specs = ENSEMBLE_SETS[dataset_id]
@@ -466,7 +444,7 @@ def combine_ensemble_sets_and_calculate_metrics_mpi(dataset_id, low_memory=False
 
 def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
     """
-    MPI-parallel version of process_dataset.
+    Postprocess one dataset (MPI-parallel).
 
     Parameters
     ----------
@@ -522,9 +500,7 @@ def process_dataset_mpi(dataset_id, recombine_sets=True, low_memory=False):
             keep_data.load_from_export(fname, results_sets=required_results_sets)
             print(f"Successfully loaded combined data for {dataset_id}!")
 
-    # Metric CSV calculation has been moved to 06_calculate_performance_metrics.py.
-    # This script now only handles HDF5 postprocessing (shortage, contribution, export).
-
+    # Performance-metric CSVs are computed by 06_calculate_performance_metrics.py.
     return True
 
 

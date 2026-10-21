@@ -1,6 +1,6 @@
 """
-Validate that climate-adjusted ensembles realize the target % monthly-flow
-shifts specified in data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv.
+SI18: Validate that the climate-adjusted ensembles realize the target monthly-flow
+shifts in data/nyc_inflow_selected_scenarios_PRMS_2020_2059.csv (SI Figure S2.1).
 
 For NYC inflow (cannonsville + pepacton + neversink, MGD) the script computes:
   - historical baseline mean monthly flow (1980-2019, BASELINE_DATASET)
@@ -9,7 +9,7 @@ For NYC inflow (cannonsville + pepacton + neversink, MGD) the script computes:
   - target % difference from the PRMS scenarios CSV (already loaded in
     methods.config as monthly_shift_scenarios)
 
-Monthly mean follows the same definition used by the CMIP6 sibling pipeline:
+Monthly mean follows the CMIP6 scenario-selection definition:
   daily flow -> sum by (year, month) -> mean across years (pooled across
   realizations for ensembles).
 
@@ -17,7 +17,7 @@ Results are cached to outputs/{CONFIG_NAME}/data/climate_validation/ so the
 slow ensemble aggregation only runs once. Pass --recompute to rebuild caches.
 
 Usage:
-    python SI18_climate_adjustment_validation.py [--recompute]
+    python si_scripts/SI18_climate_adjustment_validation.py [--recompute]
 """
 
 import sys
@@ -33,7 +33,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from methods.config import (
-    DATASET_CONFIGS, BASELINE_DATASET, NYC_RESERVOIRS,
+    BASELINE_DATASET, NYC_RESERVOIRS,
     CONFIG_DIR, FIG_DIR, monthly_shift_scenarios,
 )
 from methods.load import load_baseline_historical_flow, load_and_combine_ensemble_sets
@@ -155,9 +155,7 @@ def main():
                         help='Recompute monthly means even if cache exists.')
     args = parser.parse_args()
 
-    print("=" * 60)
     print("SI18: Climate-adjustment monthly-flow validation")
-    print("=" * 60)
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     os.makedirs(FIG_SUBDIR, exist_ok=True)

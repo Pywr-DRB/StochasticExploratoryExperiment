@@ -10,11 +10,11 @@ warnings.filterwarnings("ignore")
 # MPI initialization (falls back to serial when mpi4py is unavailable)
 comm, rank, size = get_comm()
 
-# Flow scenarios (optionally filtered by command-line args)
+# Flow scenarios (command-line selection, overridden below)
 model_date_ranges = pywrdrb.utils.dates.model_date_ranges
 flowtypes = sys.argv[1:] if len(sys.argv) > 1 else list(model_date_ranges.keys())
 
-# Run only the pub_nhmv10_BC_withObsScaled flow 
+# Run only the reconstruction flow (pub_nhmv10_BC_withObsScaled)
 flowtypes = ['pub_nhmv10_BC_withObsScaled']
 
 

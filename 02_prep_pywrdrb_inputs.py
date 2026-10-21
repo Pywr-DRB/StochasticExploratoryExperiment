@@ -1,10 +1,9 @@
 """
 Prepare Pywr-DRB inputs for all ensemble sets in parallel using MPI rank distribution.
 
-Uses comm.Split() to create per-set sub-communicators, then passes the
-sub-communicator directly to the pywrdrb preprocessors via their `comm`
-parameter. All ranks participate — with 240 ranks and 20 sets, each set
-gets 12 ranks working in parallel.
+Uses comm.Split() to create one sub-communicator per ensemble set and passes
+it to the pywrdrb preprocessors through their `comm` parameter, so all ranks
+participate (with R ranks and N sets, each set gets R/N ranks).
 
 Usage:
   MPI:    mpirun -np N python 02_prep_pywrdrb_inputs.py <dataset_id>
@@ -41,7 +40,7 @@ def parallel_prep_all_sets(dataset_id):
         existing_sets = get_existing_ensemble_sets(dataset_id)
         if len(existing_sets) < N_ENSEMBLE_SETS:
             missing_sets = set(range(N_ENSEMBLE_SETS)) - set([s.set_id for s in existing_sets])
-            print(f"[PREP] WARNING: Missing ensemble sets: {sorted(missing_sets)} — run generation first!")
+            print(f"[PREP] WARNING: Missing ensemble sets: {sorted(missing_sets)}; run generation first.")
 
     assignments = get_set_assignments(rank, size, N_ENSEMBLE_SETS)
 
@@ -55,7 +54,7 @@ def parallel_prep_all_sets(dataset_id):
             local_comm.Free()
 
     else:
-        # Serial or more sets than ranks — each rank processes sets serially
+        # Serial, or more sets than ranks: each rank processes its sets in turn
         for set_id, local_rank, local_size in assignments:
             success = prep_ensemble_set(set_id, dataset_id, use_mpi=False)
 

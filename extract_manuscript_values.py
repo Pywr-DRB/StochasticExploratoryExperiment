@@ -5,7 +5,7 @@ Writes (under manuscript/ensemble_stats/):
   extracted_values_rev1.json         -- all numeric keys
   extracted_values_rev1.md           -- alphabetical human-readable listing
   extracted_values_by_section.md     -- section-grouped listing
-  focal_event_selections.json        -- Section 4.6 focal event draws
+  focal_event_selections.json        -- storyline event draws (Section 4.5)
   extracted_values_rev1_errors.log   -- any failures
 
 Run from the experiment repo root (or via sbatch S8_extract_manuscript_values.sh):
@@ -27,24 +27,20 @@ from scipy.stats import gaussian_kde
 
 from methods.config import (
     BASELINE_DATASET,
-    DATASET_CONFIGS,
     MGD_TO_MCM,
     N_YEARS,
     NYC_RESERVOIRS,
     NYC_TOTAL_CAPACITY,
     RECONSTRUCTION_N_YEARS,
     SSI_WINDOWS,
-    SSI_NODE,
     OUTPUT_DIR,
 )
 from methods.load import (
-    compute_event_exceedances,
     load_and_process_historical_models,
     load_baseline_historical_flow,
     load_contribution_metrics,
     load_drought_events,
     load_event_metrics,
-    load_ffmp_boundaries,
     load_zone_probabilities,
 )
 from methods.water_year import vectorized_water_year, vectorized_water_year_doy
@@ -132,7 +128,7 @@ def _compute_acf_per_year(series: pd.Series, max_lag: int = 30) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.1 — Ensemble validation
+# Section 4.1 - Ensemble validation
 # ---------------------------------------------------------------------------
 
 def section_41(out: dict) -> dict:
@@ -153,14 +149,12 @@ def section_41(out: dict) -> dict:
         out.setdefault("hist_acf_lag1", np.nan)
         out.setdefault("hist_acf_lag30", np.nan)
 
-    # --- max_abs_median_acf_offset: requires loading ensemble inflow, heavy ---
-    # We compute reconstruction median ACF at each lag, and compare to it using
-    # the per-realization inflow loaded from the postprocessed HDF5.  Because
-    # loading 2000 x 70 yr daily inflows is very expensive this is wrapped in
-    # try/except; it will fail gracefully if the HDF5 is unavailable.
+    # --- max_abs_median_acf_offset ---
+    # Compare the ensemble median ACF at each lag with the reconstruction median
+    # ACF. Loading every realization's daily inflow is expensive, so this is
+    # wrapped in try/except.
     try:
         import pywrdrb
-        from methods.config import RECONSTRUCTION_OUTPUT_FNAME
 
         # Reconstruct median ACF (lags 1..30) from above
         rec_hist_full = load_baseline_historical_flow(
@@ -232,9 +226,7 @@ def section_41(out: dict) -> dict:
             vals = nyc_fdc_flow[mask].dropna()
             rec_weekly_min[wk] = float(vals.min()) if len(vals) > 0 else np.nan
 
-        # For the ensemble we use the already-computed zone_probabilities as a proxy;
-        # a true ensemble weekly distribution requires loading the HDF5.
-        # We attempt the full computation but fall back to np.nan if HDF5 unavailable.
+        # Ensemble weekly values are read from the postprocessed HDF5; falls back to NaN if it is unavailable.
         import pywrdrb
         fname_ens = f"{OUTPUT_DIR}/stationary_ensemble_with_postprocessing.hdf5"
         data_ens2 = pywrdrb.Data()
@@ -269,7 +261,7 @@ def section_41(out: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.2 — Drought emergence
+# Section 4.2 - Drought emergence
 # ---------------------------------------------------------------------------
 
 def _compute_ssi_zone_coverage(dataset_id: str, ssi_window: int) -> float:
@@ -282,26 +274,10 @@ def _compute_ssi_zone_coverage(dataset_id: str, ssi_window: int) -> float:
     if zp is None:
         return np.nan
 
-    # Build a boolean mask over all ensemble realization-months using events.
-    # We approximate using the event-level fraction of weeks in drought zone
-    # by counting per-realization active weeks that fall in drought zone.
-
-    # Get all unique realizations in events
+    # Approximate coverage without reloading storage: (event-months / total
+    # ensemble-months) weighted by the mean stressed-zone probability from zone_probs.
     realizations = events["realization_id"].unique()
     n_reals = len(realizations)
-
-    # For each realization, compute fraction of weeks that are both:
-    #   (a) inside a SSI event window
-    #   (b) in a drought zone
-    # We use zone probabilities as a population-level estimate rather than
-    # reloading full storage timeseries.  Specifically:
-    #   coverage ≈ (fraction of realization-months active in SSI event) *
-    #              (fraction of those months where zone is stressed)
-    # Simpler approach: for each realization count event months / total months,
-    # then weight by the zone_probs stressed fraction over those weeks.
-    # The most direct implementable approach without loading raw storage:
-    # count total event-days across ensemble / total ensemble-days, restricted
-    # to stressed zone using zone probabilities as a proxy weight.
 
     total_months = n_reals * N_YEARS * 12  # approximate
     event_months = 0
@@ -337,7 +313,7 @@ def section_42(out: dict) -> dict:
     # --- Reconstruction 1960s event ---
     try:
         rec_events = load_drought_events("reconstruction", 3, observed=True)
-        # 1960s event: started in 1963 or 1964 — find by max severity in 1960s
+        # 1960s event: started in 1963-1965; take the most severe event in that window
         mask_1960s = (rec_events["start"].dt.year >= 1963) & (rec_events["start"].dt.year <= 1965)
         ev1960 = rec_events[mask_1960s].sort_values("severity", ascending=False).iloc[0]
         out["hist_1960s_ssi3_severity"]  = float(ev1960["severity"])
@@ -561,7 +537,7 @@ def section_42(out: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.3 — NYC drought zone values
+# Section 4.3 - NYC drought zone values
 # ---------------------------------------------------------------------------
 
 def _load_reconstruction_contribution_metrics() -> pd.DataFrame:
@@ -602,7 +578,7 @@ def _load_reconstruction_contribution_metrics() -> pd.DataFrame:
 def section_43(out: dict) -> dict:
     print("Section 4.3: NYC drought-zone values...")
 
-    # --- Seasonal timing (panel 6a) ---
+    # --- Seasonal timing (Fig6 panel a, manuscript Figure 5a) ---
     for key, ens_id in ENS_IDS.items():
         try:
             zp = load_zone_probabilities(ens_id, period="weekly")
@@ -648,7 +624,7 @@ def section_43(out: dict) -> dict:
             for k in [f"{key}_peak_frac", f"{key}_peak_week", f"{key}_peak_doy"]:
                 out.setdefault(k, np.nan)
 
-    # --- Zone-years per realization (panel 6b) ---
+    # --- Zone-years per realization (Fig6 panel b, manuscript Figure 5b) ---
     for key, ens_id in ENS_IDS.items():
         try:
             cm = load_contribution_metrics(ens_id)
@@ -682,7 +658,7 @@ def section_43(out: dict) -> dict:
             _safe(out, k_shift,
                   lambda a=k_src, b=k_ssb: out.get(a, np.nan) - out.get(b, np.nan))
 
-    # --- Reconstruction zone frequencies (panel 6b triangles) ---
+    # --- Reconstruction zone frequencies (Fig6 panel b triangles) ---
     try:
         rec_cm = _load_reconstruction_contribution_metrics()
         for zone_name, zone_code in [("watch", 4), ("warning", 5), ("emergency", 6)]:
@@ -695,7 +671,7 @@ def section_43(out: dict) -> dict:
             out.setdefault(f"hist_{zone_name}_years_raw", np.nan)
             out.setdefault(f"hist_{zone_name}_years_scaled", np.nan)
 
-    # --- Event durations per zone (panel 6c) ---
+    # --- Event durations per zone (Fig6 panel c, manuscript Figure 5c) ---
     # Uses zone_duration_metrics.calculate_drought_zone_events on res_level data
     for key, ens_id in ENS_IDS.items():
         try:
@@ -777,7 +753,7 @@ def section_43(out: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.4 — Figures 7 and 8
+# Section 4.4 - Fig7 (SI Figure S5.1) and Fig8 (manuscript Figure 6)
 # ---------------------------------------------------------------------------
 
 def section_44(out: dict) -> dict:
@@ -870,7 +846,7 @@ def section_44(out: dict) -> dict:
                   "hist_1960s_contribution_9mo", "hist_1960s_diversion_9mo"]:
             out.setdefault(k, np.nan)
 
-    # --- Figure 8: pooled daily mandated NYC share of Montague ---
+    # --- Fig8 (manuscript Figure 6): pooled daily NYC share of Montague flow ---
     # Indexed by day-of-water-year 1..365
     try:
         import pywrdrb
@@ -913,7 +889,7 @@ def section_44(out: dict) -> dict:
         # Summarize SSB
         ssb_doy = day_of_wy.get("ssb", {})
         if ssb_doy and any(len(v) > 0 for v in ssb_doy.values()):
-            # Jun 1 = day 1; Jun 1 through Jul 15 ≈ days 1-45
+            # Jun 1 = day 1; Jun 1 through Jul 15 is approximately days 1-45
             medians = {d: np.nanmedian(ssb_doy[d]) if ssb_doy[d] else np.nan
                        for d in range(1, 366)}
             q25_d  = {d: np.nanpercentile(ssb_doy[d], 25) if ssb_doy[d] else np.nan
@@ -942,7 +918,7 @@ def section_44(out: dict) -> dict:
                       "ssb_q99_share_peak"]:
                 out.setdefault(k, np.nan)
 
-        # --- Figure 8 climate shift quantile statistics ---
+        # --- Fig8 (manuscript Figure 6) climate-shift quantile statistics ---
         quantile_levels = np.arange(0.00, 1.01, 0.01)
         ssb_doy_ok = ssb_doy and any(len(v) > 0 for v in ssb_doy.values())
         for ens_key in ["wwds", "wwss"]:
@@ -953,7 +929,7 @@ def section_44(out: dict) -> dict:
                 out[f"{ens_key}_q99_shift_sep"] = np.nan
                 continue
 
-            # September: June 1 = day 1, Sep 1 ≈ day 93, Sep 30 ≈ day 122
+            # September: June 1 = day 1, Sep 1 is about day 93, Sep 30 about day 122
             sep_range = range(93, 123)
             sep_median_shifts: list[float] = []
             sep_q99_shifts: list[float] = []
@@ -992,11 +968,11 @@ def section_44(out: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.5 — Hazard-to-outcome mapping (Figure 9)
+# Section 4.5 - Hazard-to-outcome mapping (Fig9, manuscript Figure 7)
 # ---------------------------------------------------------------------------
 
 def section_45(out: dict) -> dict:
-    print("Section 4.5: Figure 9 hazard-outcome mapping...")
+    print("Section 4.5: hazard-outcome mapping (Fig9, manuscript Figure 7)...")
 
     severity_edges  = np.linspace(1.0, 4.5, 17)   # 16 bins
     magnitude_edges = np.logspace(0, 2, 17)         # 16 bins, 1..100
@@ -1192,11 +1168,11 @@ def section_45(out: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Section 4.6 — Focal drought event selection
+# Storyline drought events (Section 4.5; Fig10, manuscript Figure 8)
 # ---------------------------------------------------------------------------
 
 def section_46(out: dict, focal_selections: dict) -> tuple[dict, dict]:
-    print("Section 4.6: focal drought events...")
+    print("Storyline drought events (Section 4.5)...")
 
     anchor_sev = out.get("hist_1960s_ssi3_severity", np.nan)
     anchor_mag = out.get("hist_1960s_ssi3_magnitude", np.nan)
@@ -1462,7 +1438,7 @@ def _write_md_listings(out: dict) -> None:
 
     # Alphabetical listing
     lines = ["# Extracted manuscript values (rev1)\n\n",
-             "Generated by `analysis/extract_manuscript_values.py`.\n\n"]
+             "Generated by `extract_manuscript_values.py`.\n\n"]
     for k in alpha_keys:
         v = out[k]
         if v is None or (isinstance(v, float) and np.isnan(v)):
@@ -1510,18 +1486,18 @@ def _write_md_listings(out: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Validation against text_edits_by_section.md
+# Optional validation against a placeholder file
 # ---------------------------------------------------------------------------
 
 def _validate_against_text_edits(out: dict, n_written: int) -> str:
     """
-    Grep text_edits_by_section.md for every [value: <key>] placeholder,
-    check each key is present in out.  Log missing keys.
+    Check that every [value: <key>] placeholder in manuscript/text_edits_by_section.md
+    (if that file exists) has a value in out. Log missing keys.
     Returns a one-line summary string.
     """
     text_edits_path = MS / "text_edits_by_section.md"
     if not text_edits_path.exists():
-        return f"Wrote {n_written} values; text_edits_by_section.md not found — skipping validation."
+        return f"Wrote {n_written} values; text_edits_by_section.md not found, skipping validation."
 
     text = text_edits_path.read_text(encoding="utf-8")
     pattern = re.compile(r"\[value:\s*([a-zA-Z0-9_]+)\]")
@@ -1558,9 +1534,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    print("=" * 70)
-    print(f"extract_manuscript_values.py — starting extraction (section={args.section})")
-    print("=" * 70)
+    print(f"extract_manuscript_values.py: starting extraction (section={args.section})")
 
     out: dict = {}
     focal_selections: dict = {}
@@ -1568,11 +1542,10 @@ def main() -> None:
     json_path = MS_OUT / "extracted_values_rev1.json"
     focal_path = MS_OUT / "focal_event_selections.json"
 
-    # Targeted rerun: load prior values so other sections survive; the section
-    # functions overwrite their own keys in place. We deliberately do NOT
-    # pre-drop keys by prefix — SECTION_PREFIXES is a section-grouping hint for
-    # the markdown listing, not a precise per-section ownership map (e.g. 4.2's
-    # 'ssb_q' would clobber 4.3's ssb_q25_*_years and 4.4's ssb_q99_share_*).
+    # Targeted rerun: load prior values so other sections survive; each section
+    # overwrites its own keys in place. Keys are not pre-dropped by prefix because
+    # SECTION_PREFIXES is only a grouping hint for the markdown listing (e.g. 'ssb_q'
+    # in 4.2 also matches 4.3 and 4.4 keys).
     if args.section != "all" and json_path.exists():
         with open(json_path, encoding="utf-8") as f:
             out = json.load(f)
@@ -1594,7 +1567,7 @@ def main() -> None:
     if args.section in ("all", "4.6"):
         out, focal_selections = section_46(out, focal_selections)
 
-    # Write JSON (NaN → null)
+    # Write JSON (NaN -> null)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2, default=_nan_safe_default)
 
@@ -1604,7 +1577,7 @@ def main() -> None:
     # Write human-readable listings
     _write_md_listings(out)
 
-    # Validate against text_edits placeholders
+    # Validate against the placeholder file, if present
     summary = _validate_against_text_edits(out, len(out))
     print(summary)
 
@@ -1614,7 +1587,7 @@ def main() -> None:
         for msg in _error_log[:20]:
             print(f"  {msg}")
         if len(_error_log) > 20:
-            print(f"  ... and {len(_error_log) - 20} more — see {LOG_FILE}")
+            print(f"  ... and {len(_error_log) - 20} more, see {LOG_FILE}")
     else:
         print("No computation errors.")
 

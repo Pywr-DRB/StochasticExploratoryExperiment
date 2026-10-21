@@ -1,12 +1,12 @@
 """
-SI15: SSI Window Drought Emergency Capture Rate
+SI15: SSI window Drought Emergency capture rate (SI Figure S3.1).
 
 For each SSI window (3, 6, 12), shows what fraction of Drought Emergency (DE)
 zone events are captured (i.e., overlap with a detected SSI drought) versus
 missed entirely.  One grouped bar chart with all datasets side by side.
 
 Usage:
-    python SI15_plot_ssi_window_emergency_capture.py
+    python si_scripts/SI15_plot_ssi_window_emergency_capture.py
 """
 
 import sys
@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -35,7 +34,7 @@ DATASETS = ['stationary_ensemble', 'climate_adjusted_low', 'climate_adjusted_hig
 EMERGENCY_ZONE = 6
 
 
-# ── data helpers ─────────────────────────────────────────────────────
+# -- data helpers --
 
 def load_zone_events(dataset_id):
     """Load zone duration events, filter to Emergency."""
@@ -74,7 +73,7 @@ def compute_capture_rate(de_events, drought_events):
     for _, de in de_events.iterrows():
         rid = de['realization_id']
         if rid not in drought_by_r.groups:
-            continue  # no droughts at all for this realization → missed
+            continue  # no droughts at all for this realization -> missed
 
         dr = drought_by_r.get_group(rid)
         # Check if any drought event overlaps this DE event
@@ -92,7 +91,7 @@ def compute_capture_rate(de_events, drought_events):
     return captured / n_total, captured, n_missed, n_total
 
 
-# ── compute all rates ────────────────────────────────────────────────
+# -- compute all rates --
 
 def compute_all_rates():
     """Return DataFrame: dataset, ssi_window, capture_rate, captured, missed, total."""
@@ -118,7 +117,7 @@ def compute_all_rates():
     return pd.DataFrame(rows)
 
 
-# ── figure ───────────────────────────────────────────────────────────
+# -- figure --
 
 def plot_capture_rates(rates_df):
     apply_publication_style()
@@ -175,7 +174,7 @@ def plot_capture_rates(rates_df):
     plt.close(fig)
 
 
-# ── missed DE events: duration distribution ──────────────────────────
+# -- missed DE events: duration distribution --
 
 def plot_missed_duration_distribution(rates_df):
     """Supplementary panel: duration of captured vs missed DE events."""
@@ -253,7 +252,7 @@ def plot_missed_duration_distribution(rates_df):
     plt.close(fig)
 
 
-# ── main ─────────────────────────────────────────────────────────────
+# -- main --
 
 def main():
     print("SI15: SSI Window Drought Emergency Capture Rate")

@@ -1,7 +1,7 @@
 """
 Percentile band and difference band plotting for water-year timeseries.
 
-Shared by F4 contribution figures and potentially other timeseries analyses.
+Used by plotting_scripts/Fig8_plot_contribution_distributions.py (manuscript Figure 6).
 """
 
 import numpy as np
@@ -18,7 +18,7 @@ def calculate_percentiles(df):
 
 def calculate_pairwise_difference_percentiles(baseline_df, comparison_df):
     """
-    Quantile-matched difference percentiles (comparison − baseline).
+    Quantile-matched difference percentiles (comparison - baseline).
 
     For each day: quantile-match the two distributions, compute differences,
     then report 1/25/50/75/99 percentiles of those differences.
@@ -79,88 +79,6 @@ def plot_bands(ax, percentiles, color, alpha_outer=0.15, alpha_inner=0.35,
         year = representative_year['year']
         ax.plot(trace.index, trace.values, color=color, linewidth=1.5,
                 linestyle='--', alpha=0.8, label=f'Rep. Year ({year})')
-
-
-def plot_quantile_lines(
-    ax, traces_df, color,
-    median_q=0.50, outer_qs=(0.99,),
-    linewidth_med=1.7, linewidth_outer=1.4,
-    alpha_med=0.95, alpha_outer=0.75,
-    linestyle_outer='--', zorder_med=6, zorder_outer=5,
-    min_periods=20, label=None, show_median=True,
-):
-    """Plot a solid median line plus arbitrary outer quantile lines.
-
-    For a DOY-indexed event ensemble (no fill). The median is solid + bold;
-    outer quantiles are drawn in the same color with configurable linestyle.
-    DOYs with fewer than `min_periods` non-NaN events are masked to suppress
-    noisy edges.
-
-    Parameters
-    ----------
-    traces_df : pd.DataFrame
-        Rows = DOY (1-366), cols = events. NaN-tolerant.
-    color : matplotlib color
-        Used for the median and all outer lines.
-    median_q : float
-        Quantile drawn as the solid bold line (default 0.50).
-    outer_qs : iterable of float
-        Quantiles drawn as outer lines (default (0.99,)).
-    linestyle_outer : str or sequence of str
-        Linestyle for outer lines. If a string, applied uniformly. If a
-        sequence, must match the length of `outer_qs` (one linestyle per
-        outer quantile).
-    show_median : bool
-        If False, the median line is not drawn (and None is returned in its
-        place). Useful when the median is uninformative and only the
-        stressful tail percentiles should appear.
-    label : str or None
-        If provided, attached to the median line for legend purposes
-        (ignored when `show_median=False`).
-
-    Returns
-    -------
-    (median_line or None, [outer_lines])
-    """
-    if traces_df is None or traces_df.shape[1] == 0:
-        return None, []
-
-    outer_qs = list(outer_qs)
-    if isinstance(linestyle_outer, (list, tuple)):
-        outer_linestyles = list(linestyle_outer)
-        if len(outer_linestyles) != len(outer_qs):
-            raise ValueError(
-                "linestyle_outer sequence length must match outer_qs length"
-            )
-    else:
-        outer_linestyles = [linestyle_outer] * len(outer_qs)
-
-    all_qs = [median_q] + outer_qs
-    arr = traces_df.values.astype(float)
-    n_per_doy = np.sum(~np.isnan(arr), axis=1)
-    quantile_arr = np.full((len(all_qs), arr.shape[0]), np.nan)
-    valid_mask = n_per_doy >= min_periods
-    if valid_mask.any():
-        quantile_arr[:, valid_mask] = np.nanquantile(
-            arr[valid_mask, :], all_qs, axis=1
-        )
-
-    doy = traces_df.index.values
-    ln_med = None
-    if show_median:
-        ln_med, = ax.plot(
-            doy, quantile_arr[0], color=color, linewidth=linewidth_med,
-            alpha=alpha_med, linestyle='-', zorder=zorder_med, label=label,
-        )
-    outer_lines = []
-    for i in range(1, len(all_qs)):
-        ln, = ax.plot(
-            doy, quantile_arr[i], color=color, linewidth=linewidth_outer,
-            alpha=alpha_outer, linestyle=outer_linestyles[i - 1],
-            zorder=zorder_outer,
-        )
-        outer_lines.append(ln)
-    return ln_med, outer_lines
 
 
 def plot_difference_bands(ax, diff_percentiles, color, alpha_outer=0.15,

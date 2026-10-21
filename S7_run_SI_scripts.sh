@@ -11,9 +11,6 @@
 module load python/3.11.5
 source venv/bin/activate
 
-# Configuration name (determines output directory)
-export CONFIG_NAME=${CONFIG_NAME:-default}
-
 mkdir -p logs
 
 run() {
@@ -25,83 +22,35 @@ run() {
     fi
 }
 
-### SI0: Detailed stationary ensemble diagnostics
-# run si_scripts/SI0_full_ensemble_diagnostics.py stationary_ensemble
+### SI0: Ensemble diagnostics at every generation node (SI Figures S2.6 to S2.8)
+run si_scripts/SI0_full_ensemble_diagnostics.py stationary_ensemble
 
-### SI0b: Low-flow ensemble convergence diagnostics (standalone)
-# run si_scripts/SI0b_low_flow_convergence.py stationary_ensemble
+### SI0b: Low-flow ensemble convergence (SI Figure S2.9)
+run si_scripts/SI0b_low_flow_convergence.py stationary_ensemble
 
-### SI1: NYC, Montague, Trenton shortage occurrence by day of year
-# run si_scripts/SI1_plot_shortage_occurrence_by_day.py stationary_ensemble
+### SI2: Diversion demand diagnostics (SI Figures S2.2 to S2.4)
+run si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
+run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
 
-### SI2: Diversion diagnostics/distributions
-# run si_scripts/SI2_plot_diversion_diagnostics.py stationary_ensemble
-# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_low
-# run si_scripts/SI2_plot_diversion_diagnostics.py climate_adjusted_high
+### SI3: storage zone probabilities are calculated in S5_calculate_performance_metrics.sh
 
-### SI3 + SI4: Storage zone probabilities (calculate and plot)
-# SI3 (calculation) runs upstream in S5_calculate_performance_metrics.sh
-# run si_scripts/SI3_calculate_storage_zone_probabilities.py --all
-# run si_scripts/SI4_plot_reservoir_storage_zone_probabilities.py comparison
+### SI15: Share of Drought Emergency events captured by each SSI window (SI Figure S3.1)
+run si_scripts/SI15_plot_ssi_window_emergency_capture.py
 
-### SI5: NYC diversions relative to storage zone classification
-# run si_scripts/SI5_plot_shortages_by_zone.py stationary_ensemble
+### SI18: Climate-adjusted ensemble monthly-flow validation (SI Figure S2.1)
+run si_scripts/SI18_climate_adjustment_validation.py
 
-### SI6: Contribution ratio for years with storage < 20%
-# run si_scripts/SI6_plot_contribution_storage_timeseries.py --multipanel
+### SI19: Convergence of the joint-exceedance drought return period (SI Figures S2.10 to S2.12)
+run si_scripts/SI19_drought_return_period_convergence.py stationary_ensemble 3
+run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_low 3
+run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_high 3
 
-### SI7: Drought event scatter colored by satisficing outcomes
-# run si_scripts/SI7_plot_drought_satisficing_scatter.py 3
-# run si_scripts/SI7_plot_drought_satisficing_scatter.py 6
-# run si_scripts/SI7_plot_drought_satisficing_scatter.py 12
+### SI20: NYC aggregate inflow duration-severity curves (SI Figure S3.4)
+run si_scripts/SI20_duration_severity_curves.py
 
-### SI8: Rank contributions and storage for percentile-based realizations
-# run si_scripts/SI8_plot_storage_montague_exceedance.py 0.5
-# run si_scripts/SI8_plot_storage_montague_exceedance.py 0.1
-
-### SI9: All performance metrics as CDFs
-# run si_scripts/SI9_plot_metric_distributions.py
-
-### SI10: Montague/Trenton shortage by NYC storage zone
-# run si_scripts/SI10_plot_montague_trenton_shortage_by_zone.py stationary_ensemble
-
-### SI11: Lower basin reservoir storage
-# run si_scripts/SI11_plot_lower_basin_reservoir_storage.py
-
-### SI12: Drought duration vs magnitude scatter
-# run si_scripts/SI12_duration_magnitude_scatter.py
-
-### SI13: Drought outcome heatmaps (severity x magnitude)
-# run si_scripts/SI13_plot_drought_heatmap_with_storage_outcomes.py 3
-
-### SI14: Drought magnitude vs minimum storage
-# run si_scripts/SI14_plot_drought_storage_3d_scatter.py 3
-
-### SI15: SSI window drought emergency capture rate
-# run si_scripts/SI15_plot_ssi_window_emergency_capture.py
-
-### SI16: Performance outcomes (exceedance curves, ridgelines, quantile strips)
-# run si_scripts/SI16_plot_performance_outcomes.py
-
-### SI18: Climate-adjusted ensemble monthly-flow validation
-# run si_scripts/SI18_climate_adjustment_validation.py
-
-### SI19: Convergence of joint-exceedance drought return period (Fig9 metric)
-# run si_scripts/SI19_drought_return_period_convergence.py stationary_ensemble 3
-# run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_low 3
-# run si_scripts/SI19_drought_return_period_convergence.py climate_adjusted_high 3
-
-## SI20: NYC aggregate inflow duration-severity curves (Gold Fig 5b style)
-# run si_scripts/SI20_duration_severity_curves.py
-
-### SI21: Focal-region drought parallel-axis plot (expanded hazard metrics)
-# run si_scripts/SI21_focal_region_parallel_axis.py
-
-### SI22: Storyline droughts (Events A & B) selected per scenario
+### SI22: Storyline droughts (Events A and B) selected from each ensemble (SI Figures S6.1 to S6.3)
 run si_scripts/SI22_scenario_storyline_droughts.py
-
-# NOTE: si_scripts/clustering/ sources were removed in commit 9219f38;
-# the old cluster_diagnostics / cluster_preliminary_figure calls are gone.
 
 echo ""
 echo "========================================"

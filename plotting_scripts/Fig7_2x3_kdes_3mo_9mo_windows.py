@@ -1,7 +1,8 @@
 """
-F4 (Alternative): NYC contribution & diversion KDEs — 2x3 grid by window.
+Fig7: NYC contribution and diversion KDEs by storage zone and aggregation
+window (SI Figure S5.1).
 
-2 rows × 3 columns (storage zone groups):
+2 rows x 3 columns (storage zone groups):
   Row 1: 3-month aggregation window
   Row 2: 9-month aggregation window
 
@@ -14,7 +15,7 @@ Solid lines = NYC contribution / inflow ratio.
 Dashed lines = NYC diversion / inflow ratio.
 
 Usage:
-    python F4alt_2x3_kde_windows.py
+    python plotting_scripts/Fig7_2x3_kdes_3mo_9mo_windows.py
 """
 
 import sys
@@ -25,27 +26,20 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import seaborn as sns
 from scipy.stats import gaussian_kde
 import warnings
 warnings.filterwarnings("ignore")
 
 import pywrdrb
-from methods.config import FIG_DIR, OUTPUT_DIR, RECONSTRUCTION_OUTPUT_FNAME, verify_dataset_id
+from methods.config import FIG_DIR, RECONSTRUCTION_OUTPUT_FNAME
 from methods.plotting.styles import (
     DPI_HIGH,
     DATASET_COLORS, DATASET_LABELS,
-    FONTSIZE_LABEL, FONTSIZE_MEDIUM, FONTSIZE_SMALL,
+    FONTSIZE_LABEL, FONTSIZE_SMALL,
     apply_publication_style, label_panel,
 )
-import methods.plotting.water_balance_by_drought_zone as F4_module
-from methods.plotting.water_balance_by_drought_zone import (
-    aggregate_across_realizations,
-    categorize_by_drought_zone,
-    calculate_reconstruction_contribution_ratio,
-    MIN_INFLOW_THRESHOLD,
-    NYC_RESERVOIRS,
-)
+from methods.config import NYC_RESERVOIRS
+from methods.contribution import MIN_INFLOW_THRESHOLD
 
 
 # ============================================================================
@@ -201,7 +195,7 @@ def _kde_line(data, x_grid):
 def create_figure(all_categorized_by_window, recon_data,
                    col_zones=None, panel_letters=None):
     """
-    2-row × N-col KDE grid (N = 2 or 3).
+    2-row x N-col KDE grid (N = 2 or 3).
     Row 1: 3-mo window, Row 2: 9-mo window.
     Solid = contribution/inflow, dashed = diversion/inflow.
     """
@@ -274,7 +268,7 @@ def create_figure(all_categorized_by_window, recon_data,
             xmax = np.percentile(combined, XLIM_QUANTILE * 100)
             x_grid = np.linspace(0, xmax * 1.2, N_KDE_POINTS)
 
-            # Plot KDEs for each metric × scenario
+            # Plot KDEs for each metric x scenario
             for metric in METRICS:
                 numerator_col = metric['numerator']
                 ls = metric['linestyle']
@@ -343,7 +337,7 @@ def create_figure(all_categorized_by_window, recon_data,
             for col_i in range(n_cols):
                 axes[row_i][col_i].set_ylabel('Density', fontsize=FONTSIZE_LABEL)
 
-    # Legend: two rows — scenarios on top, line styles below
+    # Legend: two rows, scenarios on top, line styles below
     scenario_handles = [
         Line2D([0], [0], color=DATASET_COLORS[sc], linewidth=2.5,
                linestyle='-', label=DATASET_LABELS[sc])
@@ -371,8 +365,7 @@ def main():
     apply_publication_style()
     os.makedirs(FIG_OUTPUT_DIR, exist_ok=True)
 
-    print("F4 alt 2x3 windows: NYC contribution & diversion KDE grid")
-    print("=" * 70)
+    print("Fig7: NYC contribution and diversion KDE grid")
 
     from methods.load import load_contribution_metrics
     from methods.metrics.contribution import get_metrics_for_window, categorize_by_zone
@@ -387,7 +380,6 @@ def main():
     all_categorized_by_window = {}
     for n_mo in ROW_WINDOWS:
         print(f"\n  Loading {n_mo}-month window ...")
-        F4_module.N_MONTHS_PRIOR = n_mo
 
         if use_cached:
             window_days = n_mo * 30
@@ -428,9 +420,7 @@ def main():
         print(f"  Saved [{tag}]: {fname}")
         plt.close(fig)
 
-    print("\n" + "=" * 70)
-    print("Done!")
-    print("=" * 70)
+    print("Done.")
 
 
 if __name__ == '__main__':

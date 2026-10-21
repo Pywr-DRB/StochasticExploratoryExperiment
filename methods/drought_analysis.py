@@ -2,9 +2,9 @@
 Core functions for drought analysis using SSI-based metrics.
 
 This module contains functions for:
-- Calculating SSI-based drought metrics for historical and ensemble data
-- Processing drought events across multiple SSI windows
-- Calculating satisficing conditions during drought/non-drought years
+- Fitting the SSI calculator on the historical record
+- Calculating SSI drought events for the historical record
+- Statistical comparison of drought and non-drought years
 """
 
 import os
@@ -13,25 +13,18 @@ import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from synhydro.droughts.ssi import get_drought_metrics, SSI
 
-from scipy.stats import chi2_contingency, mannwhitneyu
-
-from .config import BASELINE_DATASET, NYC_RESERVOIRS, SSI_NODE, SSI_NODE_CONFIGS
+from .config import BASELINE_DATASET, SSI_NODE, SSI_NODE_CONFIGS
 from .load import load_baseline_historical_flow, load_wrf1960s_historical_flow
-from .metrics.satisficing import calculate_annual_satisficing
-from .print_summary import print_satisficing_summary
-from .save import save_annual_satisficing
 
 
 def fit_ssi_calculator(ssi_window, node=None):
     """
     Fit an SSI calculator on the baseline period (1980-2019) historical flow.
 
-    This is the single source of truth for SSI fitting across the codebase.
-    All drought analysis functions (historic, serial ensemble, MPI ensemble)
-    should use this helper to ensure consistent SSI parameterization.
+    All SSI calculations (historical record and ensembles) use this helper so
+    the SSI parameterization is consistent.
 
     Parameters
     ----------
@@ -96,9 +89,7 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir, node=None):
         node = SSI_NODE
     node_config = SSI_NODE_CONFIGS[node]
 
-    print("=" * 60)
-    print(f"CALCULATING HISTORIC OBSERVED DROUGHTS (node={node})")
-    print("=" * 60)
+    print(f"Calculating historic observed droughts (node={node})")
 
     # Load FULL historic record for transform (to find all droughts)
     Q = load_baseline_historical_flow(
@@ -150,7 +141,7 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir, node=None):
         # Save observed drought metrics
         obs_droughts.reset_index(inplace=True, drop=True)
 
-        # If baseline dataset is wrfaorc_withObsScaled, drop droughts spanning 1960s-1970s gap
+        # For the WRF-AORC baseline, drop droughts spanning the 1960s-1970s data gap
         if BASELINE_DATASET == 'wrfaorc_withObsScaled':
             obs_droughts = obs_droughts[~((obs_droughts['start'] < pd.to_datetime('1970-01-01')) &
                                            (obs_droughts['end'] > pd.to_datetime('1979-01-01')))]
@@ -159,97 +150,7 @@ def calculate_historic_observed_droughts(ssi_windows, output_dir, node=None):
         obs_droughts.to_csv(obs_fname, index=False)
         print(f"  Saved observed drought metrics: {obs_fname}")
 
-    print("\n" + "=" * 60)
-    print("Historic observed droughts calculation completed!")
-    print("=" * 60)
+    print("Historic observed droughts complete.")
     return True
-
-
-def calculate_statistical_significance(drought_results, non_drought_results):
-    """
-    Perform statistical tests comparing satisficing during drought vs non-drought years.
-
-    Tests:
-    - Chi-square test on satisficing rates
-    - Mann-Whitney U test on minimum storage levels
-    - Mann-Whitney U test on maximum violation days
-
-    Parameters
-    ----------
-    drought_results : pd.DataFrame
-        Satisficing results for years with droughts
-    non_drought_results : pd.DataFrame
-        Satisficing results for years without droughts
-
-    Returns
-    -------
-    dict
-        Statistical test results with keys: chi2_satisficing,
-        mannwhitney_storage, mannwhitney_violations
-    """
-    print("\n" + "=" * 80)
-    print("STATISTICAL SIGNIFICANCE TESTS")
-    print("=" * 80)
-
-    results = {}
-
-    # Chi-square test for satisficing rates
-    satisficing_contingency = np.array([
-        [drought_results['satisficing'].sum(), (~drought_results['satisficing']).sum()],
-        [non_drought_results['satisficing'].sum(), (~non_drought_results['satisficing']).sum()]
-    ])
-
-    chi2, p_value, dof, expected = chi2_contingency(satisficing_contingency)
-    results['chi2_satisficing'] = {'chi2': chi2, 'p_value': p_value, 'dof': dof}
-
-    print("\nChi-Square Test: Satisficing Rates (Years with vs without Droughts)")
-    print("-" * 80)
-    print(f"Chi-square statistic: {chi2:.4f}")
-    print(f"p-value: {p_value:.4e}")
-    print(f"Degrees of freedom: {dof}")
-    _print_significance(p_value)
-
-    # Mann-Whitney U test for storage levels
-    u_stat_storage, p_value_storage = mannwhitneyu(
-        drought_results['nyc_min_storage_pct'],
-        non_drought_results['nyc_min_storage_pct'],
-        alternative='two-sided'
-    )
-    results['mannwhitney_storage'] = {'u_statistic': u_stat_storage, 'p_value': p_value_storage}
-
-    print("\nMann-Whitney U Test: Minimum Storage Levels")
-    print("-" * 80)
-    print(f"U statistic: {u_stat_storage:.4f}")
-    print(f"p-value: {p_value_storage:.4e}")
-    _print_significance(p_value_storage)
-
-    # Mann-Whitney U test for violation days
-    u_stat_violations, p_value_violations = mannwhitneyu(
-        drought_results['max_violation_days'],
-        non_drought_results['max_violation_days'],
-        alternative='two-sided'
-    )
-    results['mannwhitney_violations'] = {'u_statistic': u_stat_violations, 'p_value': p_value_violations}
-
-    print("\nMann-Whitney U Test: Maximum Violation Days")
-    print("-" * 80)
-    print(f"U statistic: {u_stat_violations:.4f}")
-    print(f"p-value: {p_value_violations:.4e}")
-    _print_significance(p_value_violations)
-
-    print("=" * 80)
-    return results
-
-
-def _print_significance(p_value):
-    """Print significance interpretation for a p-value."""
-    if p_value < 0.001:
-        print("Result: HIGHLY SIGNIFICANT (p < 0.001)")
-    elif p_value < 0.01:
-        print("Result: VERY SIGNIFICANT (p < 0.01)")
-    elif p_value < 0.05:
-        print("Result: SIGNIFICANT (p < 0.05)")
-    else:
-        print("Result: NOT SIGNIFICANT (p >= 0.05)")
 
 

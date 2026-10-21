@@ -1,7 +1,7 @@
 """
 Calculate reservoir storage zone probabilities and percentiles for all datasets.
 
-Efficiently computes zone probabilities and storage percentiles by:
+Computes zone probabilities and storage percentiles by:
 - Loading only res_storage data per dataset
 - Processing realizations iteratively (memory efficient)
 - Caching FFMP boundaries
@@ -13,8 +13,8 @@ Outputs:
   storage levels for each week of the year
 
 Usage:
-  python 07_calculate_storage_zone_probabilities.py [dataset_id]
-  python 07_calculate_storage_zone_probabilities.py --all
+  python si_scripts/SI3_calculate_storage_zone_probabilities.py [dataset_id]
+  python si_scripts/SI3_calculate_storage_zone_probabilities.py --all
 """
 
 import sys
@@ -23,7 +23,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import warnings
 warnings.filterwarnings("ignore")
 
-import pywrdrb
 from methods.config import *
 from methods.save import save_zone_probabilities
 from methods.storage_zones import (
@@ -43,9 +42,7 @@ def main():
     period = 'weekly' 
     
     if arg == '--all':
-        print("=" * 60)
-        print("CALCULATING ZONE PROBABILITIES & PERCENTILES FOR ALL DATASETS")
-        print("=" * 60)
+        print("Calculating zone probabilities and storage percentiles for all datasets")
 
         for dataset_id in DATASET_CONFIGS.keys():
             # Calculate zone probabilities
@@ -57,16 +54,13 @@ def main():
             calculate_storage_percentiles(dataset_id, period)
             print()
 
-        print("=" * 60)
-        print("All zone probabilities and storage percentiles calculated!")
+        print("Done.")
 
     else:
         dataset_id = arg
         verify_dataset_id(dataset_id)
 
-        print("=" * 60)
-        print(f"CALCULATING ZONE PROBABILITIES & PERCENTILES: {dataset_id}")
-        print("=" * 60)
+        print(f"Calculating zone probabilities and storage percentiles: {dataset_id}")
 
         # Calculate zone probabilities
         df = calculate_zone_probabilities(dataset_id, period)
@@ -76,8 +70,7 @@ def main():
         # Calculate storage percentiles
         calculate_storage_percentiles(dataset_id, period)
 
-        print("=" * 60)
-        print("Done!")
+        print("Done.")
 
 
 if __name__ == "__main__":

@@ -1,32 +1,29 @@
 """
 Duration-adjusted drought return-period helpers.
 
-Three implementations are provided. The joint-exceedance version is the
-preferred public API and matches the bivariate return-period formulation
-as defined in the cited literature.
+Three implementations are provided; the joint-exceedance version is the one
+used for the figures and follows the bivariate return-period formulation in
+the cited literature.
 
-``compute_return_period_grid_exceedance`` — preferred; joint-exceedance
-    return period via the empirical copula. For each cell (i, j),
-    evaluates the bivariate "AND" survival probability at the
-    lower-left corner:
+``compute_return_period_grid_exceedance``: joint-exceedance return period
+    via the empirical copula. For each cell (i, j), evaluates the bivariate
+    "AND" survival probability at the lower-left corner:
 
-        P_exc(i,j) = P(S ≥ s_i AND M ≥ m_j)
-                   = 1 − F_S(s_i) − F_M(m_j) + Ĉ(F_S(s_i), F_M(m_j))
+        P_exc(i,j) = P(S >= s_i AND M >= m_j)
+                   = 1 - F_S(s_i) - F_M(m_j) + C_n(F_S(s_i), F_M(m_j))
 
-    This is the formulation used by Shiau & Shen (2001), Bonaccorso et
-    al. (2003), Shiau (2006), and Salvadori & De Michele (2004, 2010);
-    the empirical copula Ĉ (Deheuvels 1979; Nelsen 2006 §2.4) provides
-    the nonparametric estimate of the joint distribution.
+    This is the formulation used by Shiau and Shen (2001), Bonaccorso et
+    al. (2003), Shiau (2006), and Salvadori and De Michele (2004, 2010);
+    the empirical copula C_n (Deheuvels 1979; Nelsen 2006, Sect. 2.4)
+    provides the nonparametric estimate of the joint distribution.
 
-``compute_return_period_grid_copula`` — per-bin probability via the
-    empirical-copula inclusion-exclusion. Mathematically equivalent to
-    ``compute_return_period_grid`` for fixed grid edges (the empirical
-    copula at ECDF-transformed corners reduces to the raw bin count
-    by inclusion-exclusion). Kept for reference / comparison.
+``compute_return_period_grid_copula``: per-bin probability via the
+    empirical-copula inclusion-exclusion; equivalent to
+    ``compute_return_period_grid`` for fixed grid edges. Retained for
+    comparison.
 
-``compute_return_period_grid`` — naive per-bin rate inversion
-    P(class) = k_bin / n_total  (raw count fraction). Kept for
-    reference / comparison.
+``compute_return_period_grid``: per-bin rate inversion,
+    P(class) = k_bin / n_total. Retained for comparison.
 
 All three apply the Bonaccorso-Shiau interarrival-time formula:
 
@@ -35,7 +32,7 @@ All three apply the Bonaccorso-Shiau interarrival-time formula:
 
 and the duration-adjusted drought-free interval:
 
-  T_W  = T_R − E[duration | conditioning region]
+  T_W  = T_R - E[duration | conditioning region]
 
 For the joint-exceedance variant, ``E[duration | exc]`` is the mean
 duration over the exceedance region. For the per-bin variants, it is
@@ -43,32 +40,30 @@ the mean duration over events in the bin.
 
 References
 ----------
-- Loaiciga & Mariño (1991), J. Water Resour. Plan. Manage.
-  — geophysical events as a renewal process; T_recurrence = E[D] + E[W].
-- Fernández & Salas (1999), J. Hydrol. Eng.
-  — return period as expected interarrival time.
-- Shiau & Shen (2001), J. Water Resour. Plan. Manage.
-  — drought recurrence using the run method.
-- Bonaccorso, Cancelliere & Rossi (2003), Stoch. Environ. Res. Risk Assess.
-  — analytical formulation; defines interarrival = drought + non-drought.
-- Salas & Obeysekera (2014), J. Hydrol. Eng.  — review.
-- Deheuvels (1979), Stat. Ind. Acad. Publ. Bull.
-  — empirical copula definition.
-- Nelsen (2006), An Introduction to Copulas, §2.4.
-- Genest & Favre (2007), J. Hydrol. Eng.
-  — empirical copula for bivariate hydrological frequency analysis.
-- Salvadori & De Michele (2004), Water Resour. Res.
-  — bivariate copula return periods (AND/OR formulations).
-- Salvadori & De Michele (2010), J. Hydrol.
-  — multivariate real-time assessment of droughts via copulas.
-- Shiau (2006), Water Resour. Manage.
-  — bivariate return period for drought severity and duration.
+- Loaiciga and Mariño (1991), J. Water Resour. Plan. Manage.:
+  geophysical events as a renewal process; T_recurrence = E[D] + E[W].
+- Fernández and Salas (1999), J. Hydrol. Eng.:
+  return period as expected interarrival time.
+- Shiau and Shen (2001), J. Water Resour. Plan. Manage.:
+  drought recurrence using the run method.
+- Bonaccorso, Cancelliere and Rossi (2003), Stoch. Environ. Res. Risk Assess.:
+  analytical formulation; defines interarrival = drought + non-drought.
+- Salas and Obeysekera (2014), J. Hydrol. Eng.: review.
+- Deheuvels (1979), Stat. Ind. Acad. Publ. Bull.:
+  empirical copula definition.
+- Nelsen (2006), An Introduction to Copulas, Sect. 2.4.
+- Genest and Favre (2007), J. Hydrol. Eng.:
+  empirical copula for bivariate hydrological frequency analysis.
+- Salvadori and De Michele (2004), Water Resour. Res.:
+  bivariate copula return periods (AND/OR formulations).
+- Salvadori and De Michele (2010), J. Hydrol.:
+  multivariate real-time assessment of droughts via copulas.
+- Shiau (2006), Water Resour. Manage.:
+  bivariate return period for drought severity and duration.
 
-The drought-free interval ``T_W`` is what water-management planning
-cares about: the expected number of *non-drought* years between the end
-of one drought of the cell's severity-magnitude class and the start of
-the next. For multi-year drought events this can be substantially less
-than the nominal ``T_R``.
+``T_W`` is the expected number of non-drought years between the end of one
+drought of the cell's severity-magnitude class and the start of the next;
+for multi-year events it can be substantially less than ``T_R``.
 """
 
 import numpy as np
@@ -102,8 +97,8 @@ def compute_return_period_grid(df, sev_edges, mag_edges, n_years,
     mean_duration_grid : np.ndarray (ns, nm)
         Mean drought duration per bin in years.
     T_W_grid : np.ndarray (ns, nm)
-        Drought-free interval per bin in years (= T_R − E[D|bin]).
-        NaN where T_W would be ≤ 0 (only possible with k_bin = 1 and a
+        Drought-free interval per bin in years (= T_R - E[D|bin]).
+        NaN where T_W would be <= 0 (only possible with k_bin = 1 and a
         very long single event).
     count_grid : np.ndarray (ns, nm)
         Event count per bin (always populated, regardless of min_count).
@@ -145,7 +140,7 @@ def compute_return_period_grid(df, sev_edges, mag_edges, n_years,
 
 
 # ---------------------------------------------------------------------------
-# Joint-exceedance (bivariate "AND") return period — preferred public API
+# Joint-exceedance (bivariate AND) return period
 # ---------------------------------------------------------------------------
 
 def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
@@ -156,17 +151,17 @@ def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
     probability at the *lower-left corner* of the cell, using the
     survival-copula decomposition:
 
-        P_exc(i,j) = P(S ≥ sev_edges[i]  AND  M ≥ mag_edges[j])
-                   = 1 − F_S(s_i) − F_M(m_j) + Ĉ(F_S(s_i), F_M(m_j))
+        P_exc(i,j) = P(S >= sev_edges[i]  AND  M >= mag_edges[j])
+                   = 1 - F_S(s_i) - F_M(m_j) + C_n(F_S(s_i), F_M(m_j))
 
-    where F_S, F_M are empirical marginal CDFs and Ĉ is the empirical
-    copula (Deheuvels 1979; Nelsen 2006 §2.4). The Bonaccorso-Shiau
+    where F_S, F_M are empirical marginal CDFs and C_n is the empirical
+    copula (Deheuvels 1979; Nelsen 2006, Sect. 2.4). The Bonaccorso-Shiau
     formula then gives the recurrence interval and its duration-adjusted
-    counterpart (Shiau & Shen 2001; Bonaccorso et al. 2003; Shiau 2006;
-    Salvadori & De Michele 2004, 2010):
+    counterpart (Shiau and Shen 2001; Bonaccorso et al. 2003; Shiau 2006;
+    Salvadori and De Michele 2004, 2010):
 
         T_R(i,j) = E[L_inter] / P_exc(i,j)
-        T_W(i,j) = T_R(i,j) − E[D | sev ≥ s_i AND mag ≥ m_j]
+        T_W(i,j) = T_R(i,j) - E[D | sev >= s_i AND mag >= m_j]
 
     The cell color on the heatmap represents "the drought-free interval
     between events at least as severe and as long as the lower-left
@@ -193,10 +188,9 @@ def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
         Joint-exceedance metrics evaluated at the lower-left corner of
         each cell.
     count_grid : np.ndarray (ns, nm)
-        Per-bin event count (unchanged from the per-bin functions, so
-        existing hatching/overlay code keeps working). The min_count
-        threshold is applied to the **exceedance count** at each
-        corner, not to this per-bin count.
+        Per-bin event count (used for hatching). The min_count threshold
+        is applied to the exceedance count at each corner, not to this
+        per-bin count.
     """
     from scipy.stats import rankdata
 
@@ -209,8 +203,8 @@ def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
     total_years = n_real * n_years
     E_L_inter = total_years / n   # mean interarrival time (years)
 
-    # Pseudo-observations on (0, 1) — Weibull plotting positions keep the
-    # rank transform off the {0, 1} boundary (Genest & Favre 2007 §2).
+    # Pseudo-observations on (0, 1); Weibull plotting positions keep the
+    # rank transform off the {0, 1} boundary (Genest and Favre 2007, Sect. 2).
     u = rankdata(sev) / (n + 1)
     v = rankdata(mag) / (n + 1)
 
@@ -243,11 +237,11 @@ def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
 
     for i in range(ns):
         for j in range(nm):
-            # Per-bin count for hatching consistency with existing code.
+            # Per-bin count (used for hatching)
             mask_bin = (sev_idx == i) & (mag_idx == j)
             count_grid[i, j] = int(mask_bin.sum())
 
-            # Exceedance region: sev ≥ sev_edges[i] AND mag ≥ mag_edges[j].
+            # Exceedance region: sev >= sev_edges[i] AND mag >= mag_edges[j].
             mask_exc = (sev >= sev_edges[i]) & (mag >= mag_edges[j])
             n_exc = int(mask_exc.sum())
             if n_exc < min_count:
@@ -269,16 +263,16 @@ def compute_return_period_grid_exceedance(df, sev_edges, mag_edges, n_years,
 
 
 # ---------------------------------------------------------------------------
-# Empirical-copula (checkerboard) implementation — preferred
+# Empirical-copula (checkerboard) implementation
 # ---------------------------------------------------------------------------
 
 def _empirical_copula_at_corners(u, v, u_edges, v_edges):
-    """Evaluate the empirical copula Ĉ at all grid corner points.
+    """Evaluate the empirical copula C_n at all grid corner points.
 
-    # Deheuvels (1979); Nelsen (2006) §2.4.
-    # Ĉ(ue, ve) = fraction of events with rank_S ≤ ue AND rank_M ≤ ve.
-    # Evaluated at every (ns+1)×(nm+1) corner; inner loop is fully
-    # vectorised over n events, so cost is O((ns+1)*(nm+1)*n).
+    C_n(ue, ve) is the fraction of events with rank_S <= ue and rank_M <= ve
+    (Deheuvels 1979; Nelsen 2006, Sect. 2.4), evaluated at every
+    (ns+1) x (nm+1) corner; the inner loop is vectorised over the n events,
+    so the cost is O((ns+1)*(nm+1)*n).
 
     Parameters
     ----------
@@ -291,7 +285,7 @@ def _empirical_copula_at_corners(u, v, u_edges, v_edges):
     Returns
     -------
     C : np.ndarray, shape (ns+1, nm+1)
-        C[i, j] = Ĉ(u_edges[i], v_edges[j]).
+        C[i, j] = C_n(u_edges[i], v_edges[j]).
     """
     ns1 = len(u_edges)
     nm1 = len(v_edges)
@@ -309,17 +303,17 @@ def compute_return_period_grid_copula(df, sev_edges, mag_edges, n_years,
 
     Replaces the raw per-bin count ``P = k_bin / n_total`` used by
     :func:`compute_return_period_grid` with the checkerboard empirical
-    copula probability mass for each bin (Deheuvels 1979; Nelsen 2006 §2.4).
+    copula probability mass for each bin (Deheuvels 1979; Nelsen 2006, Sect. 2.4).
     This accounts for the positive dependence between severity and magnitude
-    (magnitude ≈ severity × duration implies strong right-tail co-movement)
+    (magnitude is approximately severity x duration, so the two co-move strongly in the right tail)
     and uses marginal information from all events, improving stability for
     sparse high-severity bins.
 
     T_R and T_W follow the Bonaccorso-Shiau interarrival-time formula
-    (Bonaccorso et al. 2003; Shiau & Shen 2001):
+    (Bonaccorso et al. 2003; Shiau and Shen 2001):
 
         T_R(i,j) = E[L_inter] / P_bin_copula(i,j)
-        T_W(i,j) = T_R(i,j) − E[D | bin]
+        T_W(i,j) = T_R(i,j) - E[D | bin]
 
     Signature and return values are identical to
     :func:`compute_return_period_grid`.
@@ -354,22 +348,22 @@ def compute_return_period_grid_copula(df, sev_edges, mag_edges, n_years,
     total_years = n_real * n_years
     E_L_inter = total_years / n   # mean interarrival time (years)
 
-    # Rank-transform to copula space — Weibull plotting position avoids the
-    # 0/1 boundary, preventing Ĉ from saturating at the upper-right corner
-    # (Genest & Favre 2007, §2).
+    # Rank-transform to copula space; the Weibull plotting position avoids the
+    # 0/1 boundary and keeps C_n from saturating at the upper-right corner
+    # (Genest and Favre 2007, Sect. 2).
     u = rankdata(sev) / (n + 1)
     v = rankdata(mag) / (n + 1)
 
-    # Empirical marginal CDFs at each bin edge: F_S(s) = #{sev ≤ s} / n
+    # Empirical marginal CDFs at each bin edge: F_S(s) = #{sev <= s} / n
     sev_sorted = np.sort(sev)
     mag_sorted = np.sort(mag)
     u_edges = np.searchsorted(sev_sorted, sev_edges, side='right') / n
     v_edges = np.searchsorted(mag_sorted, mag_edges, side='right') / n
 
-    # Empirical copula at all (ns+1)×(nm+1) corner points, then
-    # inclusion-exclusion to get bin probability mass.
-    # P_bin[i,j] = ΔĈ = Ĉ(i+1,j+1) - Ĉ(i+1,j) - Ĉ(i,j+1) + Ĉ(i,j)
-    # Salvadori & De Michele (2010); Genest & Favre (2007).
+    # Empirical copula at all (ns+1) x (nm+1) corner points, then
+    # inclusion-exclusion to get the bin probability mass:
+    # P_bin[i,j] = C_n(i+1,j+1) - C_n(i+1,j) - C_n(i,j+1) + C_n(i,j)
+    # (Salvadori and De Michele 2010; Genest and Favre 2007).
     C = _empirical_copula_at_corners(u, v, u_edges, v_edges)
     P_bin = C[1:, 1:] - C[1:, :-1] - C[:-1, 1:] + C[:-1, :-1]
 

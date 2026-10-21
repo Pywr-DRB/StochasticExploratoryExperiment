@@ -1,6 +1,9 @@
 numpy
 pandas
+scipy
 matplotlib
+statsmodels
+h5py
 mpi4py
 pywrdrb @ git+https://github.com/Pywr-DRB/Pywr-DRB.git@v2.2.0
 synhydro @ git+https://github.com/TrevorJA/SynHydro.git@v0.1.0

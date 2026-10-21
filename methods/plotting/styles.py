@@ -52,13 +52,13 @@ FFMP_ZONE_COLORS = {
 
 # Integer-keyed variant (for zone levels 1-7)
 FFMP_ZONE_COLORS_INT = {
-    1: '#42A5F5',                   # Flood — sky blue
-    2: '#42A5F5',                   # Flood — sky blue
-    3: '#A8D84E',                   # Normal — light lime green
-    4: '#f9a825',                   # Watch — yellow
-    5: '#ef6c00',                   # Warning — orange
-    6: '#d32f2f',                   # Emergency — red
-    7: '#4B0082',                   # Emergency sub-zone (severe) — indigo
+    1: '#42A5F5',                   # Flood - sky blue
+    2: '#42A5F5',                   # Flood - sky blue
+    3: '#A8D84E',                   # Normal - light lime green
+    4: '#f9a825',                   # Watch - yellow
+    5: '#ef6c00',                   # Warning - orange
+    6: '#d32f2f',                   # Emergency - red
+    7: '#4B0082',                   # Emergency sub-zone (severe) - indigo
 }
 
 # =============================================================================
@@ -90,28 +90,6 @@ DATASET_LABELS_DESCRIPTIVE = {
 # Historic/observed label
 HISTORIC_LABEL = 'Historical'
 RECONSTRUCTED_HIST_LABEL = 'Reconstructed Historical'
-
-# =============================================================================
-# IQR LABELS
-# =============================================================================
-
-IQR_LABELS = {
-    '50': '50% IQR (Q25-Q75)',
-    '99': '99% IQR (Q0.5-Q99.5)',
-}
-
-# =============================================================================
-# SSI DROUGHT CLASSIFICATION
-# =============================================================================
-
-# SSI drought-class thresholds on positive severity (severity = |min SSI|,
-# so larger = more severe). Single source of truth for Fig5a bands and caption.
-SSI_DROUGHT_CLASSES = [
-    {'name': 'Mild',     'range': (0.0, 1.0),          'color': '#FDD0A2'},
-    {'name': 'Moderate', 'range': (1.0, 1.5),          'color': '#FDAE6B'},
-    {'name': 'Severe',   'range': (1.5, 2.0),          'color': '#E6550D'},
-    {'name': 'Extreme',  'range': (2.0, float('inf')), 'color': '#A63603'},
-]
 
 # =============================================================================
 # DATASET ORDER
@@ -156,9 +134,9 @@ ALPHA_LINE = 0.8        # For line plots
 ALPHA_SCATTER = 0.7     # For scatter plots
 ALPHA_BAR = 0.8         # For bar plots
 
-# IQR band alphas — shared across all figures for consistent band appearance
-ALPHA_BAND_OUTER = 0.35  # 99% IQR fill (Q0.5–Q99.5)
-ALPHA_BAND_INNER = 0.35  # 50% IQR fill (Q25–Q75)
+# IQR band alphas shared across figures
+ALPHA_BAND_OUTER = 0.35  # 99% IQR fill (Q0.5-Q99.5)
+ALPHA_BAND_INNER = 0.35  # 50% IQR fill (Q25-Q75)
 
 # =============================================================================
 # LINE WIDTHS
@@ -177,11 +155,9 @@ CMAP_SEQUENTIAL = 'viridis'      # For sequential data
 CMAP_DIVERGING = 'BrBG'          # For diverging data (differences)
 CMAP_HEATMAP = 'magma'           # For heatmaps/return periods
 
-# Manuscript-wide two-palette rule. Every figure in the manuscript should
-# pull its sequential and diverging colormap from this dict so readers see
-# a consistent colour language across Fig5, Fig9, Fig10, etc. Individual
-# figures may reverse the diverging palette locally so "brown" always
-# marks the adverse direction of each specific metric.
+# Sequential and diverging colormaps shared by the heatmap figures (Fig9).
+# A figure may reverse the diverging palette so brown always marks the
+# adverse direction.
 import matplotlib.pyplot as _plt_for_cmaps
 MANUSCRIPT_CMAPS = {
     'sequential': _plt_for_cmaps.cm.viridis_r,
@@ -223,51 +199,6 @@ DPI_HIGH = 400          # For high-quality print/publication
 # HELPER FUNCTIONS
 # =============================================================================
 
-def get_dataset_color(dataset_id, alternative=False):
-    """
-    Get color for a dataset.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    alternative : bool, optional
-        If True, use alternative color scheme (default: False)
-
-    Returns
-    -------
-    str
-        Color hex code
-    """
-    colors = DATASET_COLORS_ALT if alternative else DATASET_COLORS
-    return colors.get(dataset_id, '#808080')  # Default to gray if not found
-
-
-def get_dataset_label(dataset_id, style='standard'):
-    """
-    Get label for a dataset.
-
-    Parameters
-    ----------
-    dataset_id : str
-        Dataset identifier
-    style : str, optional
-        Label style: 'standard', 'short', or 'descriptive' (default: 'standard')
-
-    Returns
-    -------
-    str
-        Dataset label
-    """
-    if style == 'short':
-        labels = DATASET_LABELS_SHORT
-    elif style == 'descriptive':
-        labels = DATASET_LABELS_DESCRIPTIVE
-    else:
-        labels = DATASET_LABELS
-
-    return labels.get(dataset_id, dataset_id)
-
 
 def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
                 fontweight='normal', x=0.02, y=0.97):
@@ -283,7 +214,7 @@ def label_panel(ax, letter, dataset_id=None, label=None, fontsize=12,
     letter : str
         Panel letter (e.g. 'a', 'b').
     dataset_id : str, optional
-        Dataset identifier — resolved via DATASET_LABELS.
+        Dataset identifier, resolved via DATASET_LABELS.
     label : str, optional
         Explicit label text (takes precedence over dataset_id).
     fontsize : int
@@ -309,7 +240,7 @@ def save_fig(fig, path_stem, dpi=600):
         Figure to save.
     path_stem : str or path-like
         Full path WITHOUT extension, e.g.
-        ``"/some/dir/F1_stationary_ensemble_diagnostics_rev1"``.
+        ``"/some/dir/Fig4_stationary_ensemble_diagnostics"``.
         The parent directory is created if it does not exist.
     dpi : int
         Resolution for raster formats (PNG). SVG and PDF are vector and
@@ -321,30 +252,6 @@ def save_fig(fig, path_stem, dpi=600):
         out_path = str(stem) + f'.{ext}'
         fig.savefig(out_path, dpi=dpi, bbox_inches='tight')
         print(f"Saved: {out_path}")
-
-
-def add_scope_annotation(ax, text, fontsize=8):
-    """Place a small italic annotation in the lower-left of *ax*.
-
-    Parameters
-    ----------
-    ax : matplotlib.axes.Axes
-        Target axes.
-    text : str
-        Annotation text.
-    fontsize : int
-        Font size (default 8 pt).
-    """
-    ax.text(
-        0.02, 0.03, text,
-        transform=ax.transAxes,
-        fontsize=fontsize,
-        va='bottom', ha='left',
-        style='italic',
-        color='#444444',
-        bbox=dict(boxstyle='round,pad=0.2', facecolor='white',
-                  edgecolor='none', alpha=0.7),
-    )
 
 
 def apply_publication_style():
@@ -396,7 +303,7 @@ def apply_publication_style():
 # Annual metrics display names (for plot labels)
 # These correspond to columns in the {dataset_id}_annual_metrics.csv
 METRIC_DISPLAY_NAMES = {
-    # Per-location shortage metrics (4 × 3 locations = 12)
+    # Per-location shortage metrics (4 x 3 locations = 12)
     'montague_reliability': 'Montague Weekly\nReliability',
     'montague_shortage_mg': 'Montague\nShortage (MG)',
     'montague_max_consec_shortage_days': 'Max Consec.\nMontague Shortage (d)',
@@ -485,7 +392,7 @@ Y_AXIS_LABELS = {
     'value': 'Value',  # Generic fallback
 }
 
-# Reconstruction scaling — use centralized year counts from config
+# Reconstruction scaling uses the year counts from methods.config
 from methods.config import N_YEARS as ENSEMBLE_YEARS, RECONSTRUCTION_N_YEARS as RECONSTRUCTION_YEARS
 RECONSTRUCTION_SCALE_FACTOR = ENSEMBLE_YEARS / RECONSTRUCTION_YEARS
 
@@ -504,26 +411,3 @@ HISTORIC_MARKER_STYLE = {
 }
 
 
-def get_ylabel_for_metrics(metric_list):
-    """
-    Determine appropriate y-axis label for a list of metrics.
-    If all metrics have same units, return that unit's label.
-    Otherwise, return a generic label.
-
-    Parameters
-    ----------
-    metric_list : list
-        List of metric names
-
-    Returns
-    -------
-    str
-        Appropriate y-axis label
-    """
-    units = set(METRIC_UNITS.get(m, 'value') for m in metric_list)
-
-    if len(units) == 1:
-        unit = units.pop()
-        return Y_AXIS_LABELS.get(unit, 'Value')
-    else:
-        return 'Value'

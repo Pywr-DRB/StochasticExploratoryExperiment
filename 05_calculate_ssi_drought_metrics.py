@@ -3,7 +3,7 @@ Calculate SSI-based drought metrics for ensembles using MPI parallelization.
 
 Each rank independently:
   1. Reads realization IDs from HDF5 metadata (no data loaded)
-  2. Loads ONLY its assigned realizations (selective HDF5 reading)
+  2. Loads only its assigned realizations (selective HDF5 reading)
   3. Computes SSI and drought metrics
   4. Sends results to rank 0 via point-to-point send/recv
 
@@ -80,7 +80,7 @@ def calculate_ssi_drought_metrics(dataset_id, ssi_windows=[3, 6, 12]):
     if len(my_realizations) == 0:
         local_syn_ensemble = {}
     else:
-        # Each rank loads ONLY its assigned realizations (staggered I/O)
+        # Each rank loads only its assigned realizations (staggered I/O)
         local_data = load_rank_subset_from_export(
             fname, my_realizations, [results_set_key], rank, size
         )

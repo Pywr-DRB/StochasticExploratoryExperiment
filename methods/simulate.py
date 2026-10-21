@@ -47,7 +47,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
     set_id : int
         Ensemble set identifier (0-indexed)
     dataset_id : str
-        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_ssp245_min')
+        Dataset identifier (e.g., 'stationary_ensemble', 'climate_adjusted_low')
     use_mpi : bool
         If True, use MPI for parallel execution. If False, run serially.
     comm : MPI.Comm or None
@@ -133,8 +133,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
                 print(f"  Expected: {expected_realization_ids}")
                 print(f"  Found in HDF5: {realization_ids}")
 
-        # Optimized distribution: balance load across ranks
-        # Use numpy array_split for better load balancing
+        # Split realizations evenly across ranks
         rank_realization_ids = np.array_split(realization_ids, size)[rank]
         rank_realization_ids = list(rank_realization_ids)
         n_rank_realizations = len(rank_realization_ids)
@@ -216,7 +215,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
 
             batch_filenames.append(batch_output_filename)
 
-            # Clean up model object to free memory (optimization)
+            # Free the model object
             del model
 
         # Wait for all ranks to complete their batches
@@ -238,7 +237,7 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
                 print(f"Set {set_id + 1}: No batch files found!")
                 return False
 
-            # IMPORTANT! Sort batch files by (rank, batch) to preserve realization order
+            # Sort batch files by (rank, batch) to preserve realization order
             def sort_batch_files(filename):
                 match = re.search(r'rank(\d+)_batch(\d+)', filename)
                 if match:
@@ -259,8 +258,8 @@ def run_ensemble_set_simulations(set_id, dataset_id, use_mpi=True,
             # Combine batch files
             combine_batched_hdf5_outputs(all_batch_files, output_file)
 
-            # Cleanup batch files if requested
-            if True:  # always clean up batch files after combining
+            # Remove batch and model files after combining
+            if True:
                 for file in all_batch_files:
                     if os.path.exists(file):
                         os.remove(file)

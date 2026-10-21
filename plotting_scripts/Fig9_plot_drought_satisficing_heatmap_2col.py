@@ -1,16 +1,17 @@
 """
-Fig9: Drought Satisficing Heatmaps (3 rows x 2 columns).
+Fig9: Consequential drought region heatmaps (manuscript Figure 7).
 
-Row 1 shows the Stationary Baseline in absolute units (drought-free
-interval between events ``T_W`` and percent of droughts reaching
-Drought Emergency). Rows 2-3 show the two climate-adjusted scenarios as
-absolute change versus the Stationary Baseline.
+Two metric rows (drought-free interval ``T_W`` between joint-exceedance
+events; percent of droughts reaching Drought Emergency) by three columns
+(Stationary Baseline in absolute units; the two climate-adjusted scenarios
+as change versus the baseline), plus a summary row (focal-region
+drought-years, criteria text, symbol key).
 
-The drought-free interval ``T_W = T_R − E[D|exc]`` is the
+The drought-free interval ``T_W = T_R - E[D|exc]`` is the
 Bonaccorso-Shiau interarrival time minus the mean event duration over
 the joint exceedance region. Each cell's value is evaluated at its
 lower-left corner, giving the recurrence interval for events
-*at least as severe and as long* as that point — the bivariate "AND"
+*at least as severe and as long* as that point, the bivariate "AND"
 return period (Shiau & Shen 2001; Bonaccorso, Cancelliere & Rossi 2003;
 Shiau 2006; Salvadori & De Michele 2004, 2010), with the empirical
 copula (Deheuvels 1979; Nelsen 2006) used to estimate the joint
@@ -19,7 +20,7 @@ inflating the recurrence interval with the drought event itself
 (Loaiciga & Mariño 1991; Fernández & Salas 1999; Salas & Obeysekera 2014).
 
 Usage:
-    python Fig9_plot_drought_satisficing_heatmap_2col.py [ssi_window]
+    python plotting_scripts/Fig9_plot_drought_satisficing_heatmap_2col.py [ssi_window]
 """
 
 import sys
@@ -65,21 +66,18 @@ PANEL_LETTERS = list('abcdefghi')
 
 SHOW_CHANGE = False
 
-# Override FOCAL_WORST_STORAGE_THRESH for ad-hoc sensitivity figures (e.g.
-# regenerate the same plot with the × marker / criterion (iii) threshold
-# at 25 % instead of the manuscript default 15 %). Set to None to use the
-# value from methods.config; the output filename's `_stoNN` suffix tracks
-# whichever threshold was used, so 15 % and 25 % versions don't overwrite.
+# Optional override of FOCAL_WORST_STORAGE_THRESH (criterion iii and the x
+# markers) for sensitivity figures. None uses methods.config; the output
+# filename carries a _stoNN suffix so versions do not overwrite each other.
 STORAGE_THRESH_OVERRIDE = None
 
-# Override FOCAL_FRAC_THRESH the same way for criterion (ii) sensitivity
-# figures. FOCAL_FRAC_THRESH is the fraction of droughts AVOIDING Drought
-# Emergency, so 0.90 means "≥10% of droughts reach DE"; the output
-# filename's `_fracNN` suffix tracks whichever threshold was used. Set to
-# None to use the manuscript default from methods.config (0.90, i.e. ≥10%).
+# Optional override of FOCAL_FRAC_THRESH (criterion ii). FOCAL_FRAC_THRESH is
+# the fraction of droughts avoiding Drought Emergency, so 0.90 means at least
+# 10% reach DE. None uses methods.config; the output filename carries a
+# _fracNN suffix.
 FRAC_THRESH_OVERRIDE = None
 
-# Grey dividing lines that separate the absolute (col 0) from Δ (cols 1-2)
+# Grey dividing lines that separate the absolute (col 0) from change (cols 1-2)
 # heatmaps and the metric rows from each other. Toggle off if these will be
 # added in postprocessing of the SVG.
 SHOW_DIVIDERS = True
@@ -224,7 +222,7 @@ def _audit_text_overlaps(fig, extra_artists=()):
                 collisions.append((artists[i].get_text(),
                                    artists[j].get_text()))
     if collisions:
-        msg = '\n'.join(f'  {a!r}  ⇄  {b!r}' for a, b in collisions)
+        msg = '\n'.join(f'  {a!r}  <->  {b!r}' for a, b in collisions)
         raise RuntimeError(f'Text overlaps detected:\n{msg}')
 
 
@@ -239,11 +237,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     baseline_id = DATASETS[0]
 
-    # Resolve the worst-case-storage threshold once. Propagated to:
-    # (i) identify_focal_region's `storage_thresh` argument so criterion
-    #     (iii) of the focal-region selection uses the override, (ii) the
-    # × marker draw loop, (iii) the criteria + legend text, and
-    # (iv) the output filename suffix.
+    # Resolve the storage and fraction thresholds once; they feed the
+    # focal-region criteria, the x markers, the criteria text and the
+    # output filename.
     storage_thresh = (FOCAL_WORST_STORAGE_THRESH
                       if STORAGE_THRESH_OVERRIDE is None
                       else float(STORAGE_THRESH_OVERRIDE))
@@ -259,7 +255,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     # -- compute grids ------------------------------------------------------
     # Bonaccorso-Shiau return-period grids: T_R is the mean interarrival
-    # time per bin; T_W = T_R − E[D|bin] is the duration-adjusted
+    # time per bin; T_W = T_R - E[D|bin] is the duration-adjusted
     # drought-free interval (the displayed quantity and the focal-region
     # threshold metric).
     T_R_grids, dur_grids, T_W_grids = {}, {}, {}
@@ -293,7 +289,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
             all_data[did], sev_edges, mag_edges, focal_cells)
         for did in DATASETS
     }
-    print(f"  Focal region (T_W ≤ {FOCAL_RP_THRESH_YEARS} yr): "
+    print(f"  Focal region (T_W <= {FOCAL_RP_THRESH_YEARS} yr): "
           f"{len(focal_cells)} cells")
     for did in DATASETS:
         cell_durs = [dur_grids[did][i, j]
@@ -325,43 +321,34 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         pct_de_grids[did] = pct_masked
 
     # -- colormaps & continuous norms ---------------------------------------
-    # Three palettes total. The two Δ-panel pairs share a single
-    # brown-green diverging family — brown always marks the adverse side,
-    # which lives on the *negative* axis for ΔRP (shorter return period =
-    # more frequent droughts) and on the *positive* axis for Δ%DE (more
-    # emergencies). The shared palette signals "these four panels show
-    # the same kind of thing — change vs. baseline".
+    # Three palettes. The two change-panel pairs share one brown-green diverging
+    # family; brown always marks the adverse side, which is the negative axis
+    # for change in return period (shorter = more frequent droughts) and the
+    # positive axis for change in %DE (more emergencies).
     #
-    # Row 0 — Drought Return Period
-    #   abs (a)        viridis_r — manuscript sequential
-    #   Δ   (b, c)     BrBG — brown on negative side = more frequent
-    #
-    # Row 1 — Droughts reaching DE
-    #   abs (d)        Reds — red intensity = more droughts hit DE
-    #   Δ   (e, f)     BrBG_r — brown on positive side = more emergencies
+    # Row 0, return period:        abs (a) viridis_r; change (b, c) BrBG, brown on negative side
+    # Row 1, droughts reaching DE: abs (d) Reds; change (e, f) BrBG_r, brown on positive side
     cmap_sequential = MANUSCRIPT_CMAPS['sequential']         # viridis_r
     cmap_diverging_pos_brown = MANUSCRIPT_CMAPS['diverging']  # BrBG_r
     cmap_diverging_neg_brown = cmap_diverging_pos_brown.reversed()  # BrBG
     cmap_pct_abs_base = plt.get_cmap('Reds')
 
-    # All four colormaps are discretized via BoundaryNorm so the heatmaps
-    # show distinct colour bands rather than continuous gradients. Each
-    # palette is the same as before; only the binning is new.
+    # All four colormaps are discretized with BoundaryNorm so the heatmaps
+    # show distinct colour bands.
 
     # Panel (a): joint-exceedance return period (years), discrete log bands
-    # from 10 → 1,000 yr using a 1-2-5 pattern (3 bands per decade). Values
+    # from 10 to 1,000 yr using a 1-2-5 pattern (3 bands per decade). Values
     # above 1,000 yr saturate to the over-range colour via extend='both'.
     rp_abs_boundaries = np.array(
         [10, 20, 50, 100, 200, 500, 1000], dtype=float)
     n_rp_bins = len(rp_abs_boundaries) - 1
     cmap_rp_abs = cmap_sequential.resampled(n_rp_bins)
     norm_rp_abs = mcolors.BoundaryNorm(rp_abs_boundaries, ncolors=n_rp_bins)
-    # Label only the decade boundaries to prevent tick-label overlap on
-    # the discrete 1-2-5 colorbar; the underlying binning is unchanged.
+    # Label only the decade boundaries to avoid tick-label overlap.
     rp_abs_ticks = [10, 100, 1000]
     rp_abs_tick_labels = [_fmt_years(v) for v in rp_abs_ticks]
 
-    # Panel (b): percent reaching DE, discrete 10-pp bands from 0 → ceil-to-10pp
+    # Panel (b): percent reaching DE, discrete 10-pp bands from 0 to the max rounded up to 10 pp
     # of the observed max.
     pct_de_data_max = float(np.nanmax(
         [np.nanmax(pct_de_grids[did]) for did in DATASETS]
@@ -374,9 +361,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     pct_de_ticks = list(pct_de_boundaries)
     pct_de_tick_labels = [f'{int(round(v))}' for v in pct_de_ticks]
 
-    # Panels (c, e): Δ return period (years), discrete sym-log bands.
-    # Brown should mark the adverse side (negative Δ = T_W shortened).
-    # Central bin [-10, 10] is the "no significant change" band (≈ white).
+    # Panels (c, e): change in return period (years), discrete sym-log bands.
+    # Brown marks the adverse side (negative change = T_W shortened).
+    # Central bin [-10, 10] is the "no significant change" band (near white).
     rp_diff_grids = {
         did: _absolute_change(rp_grids[did], rp_grids[baseline_id])
         for did in DATASETS[1:]
@@ -389,8 +376,8 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     rp_diff_ticks = [-1000, -100, -10, 10, 100, 1000]
     rp_diff_tick_labels = [_fmt_signed_years(v) for v in rp_diff_ticks]
 
-    # Panels (d, f): Δ percent reaching DE (percentage points), discrete 10-pp
-    # bands from -50 to +50. Brown marks the adverse side (positive Δ).
+    # Panels (d, f): change in percent reaching DE (percentage points), discrete 10-pp
+    # bands from -50 to +50. Brown marks the adverse side (positive change).
     pct_de_diff_grids = {
         did: _absolute_change(pct_de_grids[did], pct_de_grids[baseline_id])
         for did in DATASETS[1:]
@@ -408,18 +395,18 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     # and the summary footer is controlled explicitly (rather than emerging
     # from a uniform hspace). The bottom colorbars sit in that gap.
     #
-    #   gs_heat  — 2 rows × 3 cols of heatmaps (top ~70% of figure)
+    #   gs_heat: 2 rows x 3 cols of heatmaps (top ~70% of figure)
     #     row 0   joint-exceedance return period (RP)
     #     row 1   % droughts reaching Drought Emergency (%DE)
-    #   gs_summary — 1 row × 3 cols of summary panels (bottom ~15%)
+    #   gs_summary: 1 row x 3 cols of summary panels (bottom ~15%)
     #     col 0   bar chart (drought-years per scenario)
     #     col 1   focal-region criteria text
     #     col 2   symbol legend
     #
     # Column meaning (heatmap rows):
     #   col 0   Stationary Baseline (absolute units)
-    #   col 1   Δ vs. baseline, Wetter Winter / Drier Summer
-    #   col 2   Δ vs. baseline, Wetter Winter / Similar Summer
+    #   col 1   change vs. baseline, Wetter Winter / Drier Summer
+    #   col 2   change vs. baseline, Wetter Winter / Similar Summer
     fig = plt.figure(figsize=(14.0, 13.5))
     GS_LEFT = 0.085
     GS_RIGHT = 0.97
@@ -451,7 +438,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     axes_heat = [[None, None, None], [None, None, None]]
 
     # Per-(metric, col) selection of grid + cmap + norm. Col 0 always uses the
-    # absolute scale; cols 1-2 use the Δ scale. Hatching uses the *displayed*
+    # absolute scale; cols 1-2 use the change scale. Hatching uses the *displayed*
     # dataset's count grid: stationary for col 0 (so 1-4-event bins of the
     # baseline are flagged on panel a/d) and the climate-adjusted dataset
     # for cols 1-2 (where insufficiency reflects the scenario, not baseline).
@@ -519,14 +506,14 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     # Subpanel descriptive titles (panel letter + metric/scenario phrase).
     # The column titles supply the scenario; the title here disambiguates
-    # absolute vs. Δ within each row.
+    # absolute vs. change within each row.
     panel_titles = [
-        [  # row 0 — joint-exceedance return period
+        [  # row 0: joint-exceedance return period
             '(a) Joint-exc. return period',
             '(b) Δ Return period vs. Stationary',
             '(c) Δ Return period vs. Stationary',
         ],
-        [  # row 1 — % droughts reaching DE
+        [  # row 1: % droughts reaching DE
             '(d) % Droughts reaching DE',
             '(e) Δ % reaching DE vs. Stationary',
             '(f) Δ % reaching DE vs. Stationary',
@@ -704,7 +691,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
     # so the panels are square. Axes.get_position() returns the original
     # GridSpec bbox (unaware of the shrink), so we query the renderer to
     # get the actual on-screen extent, then propagate that geometry to
-    # column titles, colorbars, summary panels, and dividers — keeping
+    # column titles, colorbars, summary panels, and dividers, keeping
     # all rows the same visual width.
     fig.canvas.draw()
     _renderer = fig.canvas.get_renderer()
@@ -731,9 +718,9 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
 
     # -- column titles & row metric labels ---------------------------------
     # Column titles: scenario name above the top-row colorbars. Col 0 is
-    # the absolute baseline; cols 1-2 are Δ vs. baseline (the "Δ" prefix
-    # is added explicitly so a reader skimming column titles knows the
-    # column displays a difference, not absolute values).
+    # the absolute baseline; cols 1-2 are change vs. baseline (a delta prefix
+    # is added so a reader skimming column titles knows the column shows a
+    # difference).
     column_titles = [
         DATASET_LABELS['stationary_ensemble'],
         f"Δ {DATASET_LABELS['climate_adjusted_low']}",
@@ -764,7 +751,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
                  rotation=90, ha='left', va='center',
                  fontsize=FONTSIZE_LABEL)
 
-    # -- colorbar geometry: col 0 (abs) vs. cols 1-2 (Δ) -------------------
+    # -- colorbar geometry: col 0 (abs) vs. cols 1-2 (change) --------------
 
     rel_top_x0 = bb_row0_col1.x0
     rel_top_x1 = bb_row0_col2.x1
@@ -846,10 +833,10 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         cb.outline.set_linewidth(0.8)
 
     # -- optional grey dividing lines --------------------------------------
-    # Three dividers: vertical between col 0 (absolute) and col 1 (Δ), and
+    # Three dividers: vertical between col 0 (absolute) and col 1 (change), and
     # horizontal between metric rows + between heatmap rows and the summary
-    # row. Drawn in figure coords and gated by SHOW_DIVIDERS so the user
-    # can switch them off and add cleaner versions to the SVG by hand.
+    # row. Drawn in figure coords and gated by SHOW_DIVIDERS so they can be
+    # switched off and added to the SVG by hand.
     if SHOW_DIVIDERS:
         from matplotlib.lines import Line2D
 
@@ -865,7 +852,7 @@ def plot_satisficing_heatmaps(all_data, ssi_window):
         # Vertical: midway between col 0 right edge and col 1 left edge,
         # spanning from just above the top colorbar down to just below the
         # bottom colorbar so the divider visually brackets the entire
-        # absolute-vs-Δ split for both metric rows.
+        # absolute-vs-change split for both metric rows.
         vx = (bb_row0_col0.x1 + bb_row0_col1.x0) / 2
         vy_top = cbar_top_y + cbar_h + 0.020
         vy_bot = cbar_bot_y - 0.020

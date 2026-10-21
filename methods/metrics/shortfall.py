@@ -14,9 +14,7 @@ def calculate_shortage_series(target, flow, tolerance=None,
     """
     Calculate shortage timeseries from target/demand and flow/delivery series.
 
-    This is the single authoritative function for computing shortage timeseries
-    anywhere in the codebase.  All other code that needs a shortage series
-    should call this rather than reimplementing the logic.
+    All shortage series in the analysis are computed with this function.
 
     Parameters
     ----------
@@ -62,7 +60,7 @@ def calculate_shortage_series(target, flow, tolerance=None,
     if warmup_days > 0 and len(shortage) > warmup_days:
         shortage.iloc[:warmup_days] = 0.0
 
-    # Apply tolerance — treat sub-tolerance values as zero
+    # Treat shortages below the tolerance as zero
     shortage[shortage < tolerance] = 0.0
 
     # Filter short-duration events
@@ -75,70 +73,6 @@ def calculate_shortage_series(target, flow, tolerance=None,
 
     return shortage
 
-
-def calculate_shortage_by_day_of_year(data, dataset_id, location):
-    """
-    Calculate shortage occurrence by day of year for a specific location.
-
-    Parameters
-    ----------
-    data : pywrdrb.Data
-        Data object with shortage or demand/delivery data
-    dataset_id : str
-        Dataset identifier
-    location : str
-        Location identifier: 'delMontague', 'delTrenton', or 'nyc'
-
-    Returns
-    -------
-    np.ndarray
-        Array of length 366 with count of shortage days for each day of year
-    """
-    realizations = list(data.shortage[dataset_id].keys())
-    n_realizations = len(realizations)
-
-    print(f"  Processing {location}...")
-    print(f"    Realizations: {n_realizations}")
-
-    # Initialize array for all days of year (366 to account for leap years)
-    shortage_counts = np.zeros(366, dtype=int)
-
-    for r in realizations:
-        if location in ['delMontague', 'delTrenton']:
-            # Use pre-calculated shortage
-            shortage = data.shortage[dataset_id][r][location]
-
-            # Shortage > 0 means violation
-            violation_days = shortage > 0
-
-        elif location == 'nyc':
-            # Calculate NYC diversion shortage using central function
-            delivery = data.ibt_diversions[dataset_id][r]['delivery_nyc']
-            demand = data.ibt_demands[dataset_id][r]['demand_nyc']
-
-            shortage = calculate_shortage_series(
-                demand, delivery, min_duration=0, warmup_days=0
-            )
-
-            # Any shortage > 0 is a violation
-            violation_days = shortage > 0
-
-        else:
-            raise ValueError(f"Unknown location: {location}")
-
-        # Get day of year for each violation
-        dates = violation_days.index
-        day_of_year = dates.dayofyear
-
-        # Count violations for each day of year
-        for doy, is_violation in zip(day_of_year, violation_days):
-            if is_violation:
-                shortage_counts[doy - 1] += 1  # Convert 1-indexed to 0-indexed
-
-    print(f"    Total shortage days: {shortage_counts.sum():,}")
-    print(f"    Max shortage days for a single DOY: {shortage_counts.max()}")
-
-    return shortage_counts
 
 def calculate_hashimoto_metrics(flows,
                                 thresholds,
@@ -184,7 +118,7 @@ def calculate_hashimoto_metrics(flows,
     intensities = []        # intensity of each event = avg deficit within event
     severities = []         # severity = duration * intensity
     vulnerabilities = []    # vulnerability = max daily deficit within event
-    event_starts = []       # define event to start with nonzero shortfall and end with the next shortfall date that preceeds shortfall_break_length non-shortfall dates.
+    event_starts = []       # define event to start with nonzero shortfall and end with the next shortfall date that precedes shortfall_break_length non-shortfall dates.
     event_ends = []
 
     if reliability_frac > eps and reliability_frac < 1 - eps:
@@ -352,6 +286,5 @@ def get_flow_and_target_values(data,
     
     return flows, thresholds
     
-
 
 

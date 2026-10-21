@@ -1,13 +1,13 @@
 """
-Fig10: Focal-region drought event landscape + two anchored droughts
-(5 rows x 2 cols, panels a-j).
+Fig10: Drought storylines from the consequential drought region
+(manuscript Figure 8; 5 rows x 2 cols, panels a-j).
 
 Row 1   (a) Grey 2-D drought-event support grid (stationary, focal-region
             outline, A/B markers)               | (b) Text key / event metadata
 Row 2   (c) SSI-3 monthly for event A            | (d) SSI-3 monthly for event B
 Row 3   (e) NYC storage % with FFMP dotted       | (f) same for event B
             zone thresholds for event A
-Row 4   (g) NYC outflow — directed Montague      | (h) same for event B
+Row 4   (g) NYC outflow: directed Montague       | (h) same for event B
             release (solid) vs NYC diversion
             (dashed), both ensemble-colored
 Row 5   (i) NYC diversion shortage (% of demand) | (j) same for event B
@@ -20,14 +20,12 @@ middle. Dynamics in each column are colored by the event's ensemble
 (Stationary blue / WWDS orange); row 4 uses line style for release vs
 diversion within a column.
 
-Event slots are picked from the focal-region pool by the per-slot
-`selection_method` ('rank_max' / 'rank_min' for extremum on a column,
-'target_nearest' for z-scored (severity, min_storage) nearest to a
-target tuple). Edit FOCAL_EVENTS at the top of the script to iterate
-without code changes.
+Event slots are configured in FOCAL_EVENTS and FIG_VERSIONS; each slot picks
+one focal-region event by `selection_method` ('rank_max' / 'rank_min' on a
+column, or 'target_nearest' in z-scored (severity, min_storage)).
 
 Usage:
-    python Fig10_focal_drought_dynamics.py
+    python plotting_scripts/Fig10_focal_drought_dynamics.py
 """
 
 import sys
@@ -117,13 +115,12 @@ FOCAL_EVENTS = {
 }
 EVENT_SLOT_ORDER = ['A', 'B']
 
-# -- alternative figure versions ---------------------------------------------
-# Candidate storyline pairings for manuscript review. Each version is a full
-# {'A': cfg, 'B': cfg} slot mapping rendered to its own suffixed filename
-# (FIG_NAME_STEM + '_' + suffix); the unsuffixed FIG_NAME_STEM output from
-# the original FOCAL_EVENTS configuration is left untouched on disk.
+# -- figure versions --------------------------------------------------------
+# Storyline pairings. Each version is a full {'A': cfg, 'B': cfg} slot mapping
+# rendered to FIG_NAME_STEM + '_' + suffix. The manuscript figure uses
+# 'v3_wwssA' (see si_scripts/SI22_scenario_storyline_droughts.py).
 #
-# Slot-B rationale (manuscript Fig 8 / code Fig 9): the WWDS scenario
+# Slot-B rationale (Fig9, manuscript Figure 7): the WWDS scenario
 # shortens joint-exceedance return periods most in the upper-severity bins,
 # so Event B is drawn from the severity > 2.8 class whose frequency
 # increases under WWDS. The sub-annual duration filter (<= 366 d) targets
@@ -190,14 +187,13 @@ WINDOW_YEARS = 3
 # crossover and the multi-month shortage envelope read clearly.
 DIVERSION_SMOOTHING_DAYS = 30
 
-# Line-style scheme for row 4 (and any future panel) where two release
-# types share an axis — color = ensemble (per panel column), style =
-# release type. Convention matches Fig7_2x3_kdes_3mo_9mo_windows.py:
-# Montague release = solid, NYC diversion = dashed.
+# Row 4 line styles: color = ensemble (per column), style = release type,
+# as in Fig7_2x3_kdes_3mo_9mo_windows.py (Montague release solid, NYC
+# diversion dashed).
 NYC_RELEASE_LINE_STYLE = '-'
 NYC_DIVERSION_LINE_STYLE = '--'
 
-# FFMP rule-curve overlay (rows e, f) — drawn as faint dotted lines per
+# FFMP rule-curve overlay (rows e, f), drawn as faint dotted lines per
 # zone threshold (Watch / Warning / Emergency), colored by zone via
 # FFMP_ZONE_COLORS. The Normal zone has no upper line of its own (it is
 # everything above the Watch threshold).
@@ -210,7 +206,7 @@ FIG_OUTPUT_DIR = os.path.join(FIG_DIR, 'Fig10')
 FIG_NAME_STEM = f'Fig10_focal_drought_dynamics_ssi{SSI_WINDOW}'
 
 # Cache for the focal-region setup (grid edges, focal_cells, stationary
-# count grid). Invariant to FOCAL_EVENTS — only invalidated when SSI_WINDOW
+# count grid). Invariant to FOCAL_EVENTS; only invalidated when SSI_WINDOW
 # or the focal thresholds change, or when CACHE_VERSION is bumped.
 CACHE_DIR = os.path.join(OUTPUT_DIR, 'cache')
 CACHE_VERSION = 'v1'
@@ -248,7 +244,7 @@ def _compute_3yr_window(event, total_years=WINDOW_YEARS):
       recovery occupies the back of the window.
     - If the drought is one year or shorter, the window starts at the
       June 1 that places the drought midpoint as close as possible to
-      the window's geometric center — the drought lives in the middle
+      the window's geometric center, so the drought sits in the middle
       of the 3-year span.
 
     Both events end up with the same window length so panels c-j across
@@ -394,7 +390,7 @@ def _load_event_window(event, results_sets, ssi_calc):
     -------
     dict
         ``{'daily': pd.DataFrame, 'ssi3': pd.Series}``
-        - ``daily`` is the 2-yr daily window of:
+        - ``daily`` is the WINDOW_YEARS-year daily window of:
             nyc_storage_pct, nyc_diversion (MCM/day),
             nyc_release_montague (MCM/day).
         - ``ssi3`` is the monthly SSI-3 series clipped to the same window,
@@ -444,7 +440,7 @@ def _load_event_window(event, results_sets, ssi_calc):
         'nyc_shortage_pct': nyc_shortage_pct_daily,
     })
 
-    # SSI-3 monthly series. NYC-aggregate daily inflow → monthly sum →
+    # SSI-3 monthly series. NYC-aggregate daily inflow -> monthly sum ->
     # baseline-fit SSI calculator. Slice to the plotting window after
     # transform so the rolling sum has the full realization context.
     inflow_daily = data.inflow[ds][r][NYC_RESERVOIRS].sum(axis=1)
@@ -584,7 +580,7 @@ def _panel_key(ax, selected_events, support_label='stationary-ensemble'):
 def _panel_ssi3(ax, ssi3, daily_index, event):
     """Row 2 panel: SSI-3 monthly series across the event window, drawn in
     the event's ensemble color. The light fill is restricted to the
-    SSI-classified drought period (event['start'] - event['end']) — not
+    SSI-classified drought period (event['start'] - event['end']), not
     to every negative SSI excursion in the window."""
     ens_color = DATASET_COLORS[event['ensemble']]
     if ssi3 is not None and len(ssi3) > 0:
@@ -608,7 +604,7 @@ def _panel_ssi3(ax, ssi3, daily_index, event):
 
 
 def _build_ffmp_seasonal_lookup():
-    """Seasonal (cal_doy → Watch / Warning / Emergency) FFMP threshold table.
+    """Seasonal (cal_doy -> Watch / Warning / Emergency) FFMP threshold table.
 
     Returns a DataFrame indexed by calendar day-of-year (1..366) with
     columns Watch / Warning / Emergency (% of capacity), aggregated as
@@ -642,7 +638,7 @@ def _build_ffmp_seasonal_lookup():
 
 def _draw_ffmp_lines(ax, daily_index, ffmp_seasonal):
     """Draw faint dotted FFMP rule-curve lines behind a date-indexed storage
-    panel — one line per zone threshold (Watch / Warning / Emergency),
+    panel, one line per zone threshold (Watch / Warning / Emergency),
     colored by zone. The threshold values vary by calendar day-of-year so
     the lines track the seasonal rule curve across the full window.
     """
@@ -684,7 +680,7 @@ def _panel_div_release(ax, window, event):
     """Row 4 panel: NYC diversion vs NYC directed release to Montague.
 
     Both lines drawn in the event's ensemble color; differentiated by
-    line style (Fig7 convention) — Montague release is solid, NYC
+    line style (Fig7 convention): Montague release is solid, NYC
     diversion is dashed. Where the lines cross, the relative priority
     between NYC's own diversion and the Montague-MRF contribution flips.
     """
@@ -712,11 +708,9 @@ def _panel_div_release(ax, window, event):
 def _panel_shortage(ax, window, event):
     """Row 5 panel: NYC diversion shortage as % of demand.
 
-    Smoothing parity with _panel_div_release: numerator (shortage MCM) and
-    denominator (demand MCM) are each 7-day-centered-mean smoothed
-    independently, then divided. Smoothing the ratio directly amplifies
-    noise when daily demand and diversion are both small; smoothing the
-    flows first matches the visual smoothness of rows g/h.
+    Shortage (demand - diversion) and demand are each smoothed with the same
+    DIVERSION_SMOOTHING_DAYS centered mean before dividing; smoothing the
+    ratio directly amplifies noise when both flows are small.
     """
     t = window.index
     shortage_mcm = (
@@ -758,7 +752,7 @@ def _compute_focal_setup(all_data):
     min-storage grids, focal-cell identification, stationary count grid.
 
     All outputs depend only on the event_metrics CSVs and the focal
-    thresholds — they are invariant to FOCAL_EVENTS, so they cache cleanly.
+    thresholds; they are invariant to FOCAL_EVENTS, so they cache cleanly.
     """
     sev_edges, mag_edges, _, _ = make_shared_edges_logmag(
         all_data, DATASETS, n_bins=GRID_N_BINS,
@@ -880,11 +874,8 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
             f"[{sel_detail}]"
         )
 
-    # Load 2-yr HDF5 windows for the two anchored events. ibt_demands
-    # is kept in the load even though it is not currently plotted, so a
-    # later shortage-metric overlay (demand - diversion) can be added
-    # without changing the HDF5 read. Windows are cached across versions
-    # so events shared between versions load once.
+    # Load the daily HDF5 windows for the two anchored events. Windows are
+    # cached across versions so shared events load once.
     results_sets = ['res_storage', 'ibt_diversions', 'ibt_demands',
                     'inflow', 'contribution']
     event_windows = {}
@@ -899,19 +890,14 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
                 ev, results_sets, ssi_calc)
         event_windows[slot] = window_cache[cache_key]
 
-    # 6. Figure layout — two stacked GridSpecs so the gap between the
-    #    landscape row (a/b) and the timeseries stack (c-j) stays generous,
-    #    while the four timeseries rows themselves sit tight against each
-    #    other. Rows 2-5 share x within each column so SSI / storage /
-    #    diversion / shortage align vertically per event.
+    # Figure layout: two stacked GridSpecs so the gap between the landscape
+    # row (a/b) and the timeseries stack (c-j) stays wide while the four
+    # timeseries rows sit close together. Rows 2-5 share x within each column.
     fig = plt.figure(figsize=(13.8, 14.6))
     outer = gridspec.GridSpec(
         2, 1,
-        # A touch more left margin so the rotated y-axis labels in the
-        # timeseries stack don't get pinched by the figure edge.
         left=0.095, right=0.975, top=0.965, bottom=0.085,
         height_ratios=[1.0, 2.95],
-        # Tighten the gap below row 1 (a/b -> c/d).
         hspace=0.10,
     )
     top_gs = gridspec.GridSpecFromSubplotSpec(
@@ -919,9 +905,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     )
     bot_gs = gridspec.GridSpecFromSubplotSpec(
         4, 2, subplot_spec=outer[1],
-        # c/d and g-j shrunk a further 20% off their prior 70% height;
-        # e/f — the storage row, carrying FFMP curves — kept at full
-        # narrative-anchor height.
+        # The storage row (e/f) is taller than the SSI, release and shortage rows.
         height_ratios=[0.476, 0.78, 0.437, 0.437],
         hspace=0.10, wspace=0.22,
     )
@@ -950,11 +934,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
                 event_windows['A']['daily'].index, selected_events['A'])
     _panel_ssi3(ax_d, event_windows['B']['ssi3'],
                 event_windows['B']['daily'].index, selected_events['B'])
-    # Timeseries y-labels are kept short + one line so the rotated text
-    # fits within the shortened c/d, g/h, i/j panel heights and the
-    # bottom of one label doesn't bleed into the panel below. FONTSIZE 11
-    # is a touch smaller than the panel-letter font, which keeps the
-    # column's letter labels visually dominant.
+    # Short one-line y-labels at 11 pt so they fit the reduced panel heights.
     YAX_LABEL_FONTSIZE = 11
     ax_c.set_ylabel('NYC inflow SSI-3',
                     fontsize=YAX_LABEL_FONTSIZE, labelpad=6)
@@ -974,7 +954,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     label_panel(ax_c, 'c', fontsize=FONTSIZE_LABEL)
     label_panel(ax_d, 'd', fontsize=FONTSIZE_LABEL)
 
-    # Panels (e), (f): NYC storage timeseries with FFMP rule-curve bands.
+    # Panels (e), (f): NYC storage timeseries with FFMP rule-curve lines.
     _panel_storage(ax_e, event_windows['A']['daily'], selected_events['A'],
                    ffmp_seasonal=ffmp_seasonal)
     _panel_storage(ax_f, event_windows['B']['daily'], selected_events['B'],
@@ -984,7 +964,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     label_panel(ax_e, 'e', fontsize=FONTSIZE_LABEL)
     label_panel(ax_f, 'f', fontsize=FONTSIZE_LABEL)
 
-    # Panels (g), (h): NYC diversion vs NYC release to Montague — the
+    # Panels (g), (h): NYC diversion vs NYC release to Montague; the
     # crossing point marks the priority shift.
     _panel_div_release(ax_g, event_windows['A']['daily'], selected_events['A'])
     _panel_div_release(ax_h, event_windows['B']['daily'], selected_events['B'])
@@ -1025,7 +1005,7 @@ def _render_version(version_suffix, focal_events, all_data, setup, ssi_calc,
     # Three groups along the bottom:
     #   1) Ensemble identity + marker per anchored event (color = column).
     #   2) FFMP zone threshold lines (panels e, f).
-    #   3) Row-4 line styles — solid = Montague release, dashed = diversion.
+    #   3) Row-4 line styles: solid = Montague release, dashed = diversion.
     ensemble_handles = [
         Line2D(
             [0], [0],
@@ -1121,7 +1101,7 @@ def main():
         print(f"  {ds}: {len(all_data[ds])} events")
 
     # 2. Focal-region setup (grid edges, focal cells, stationary count grid)
-    #    — cached because it is the dominant cost and is invariant to the
+    #    cached because it is the dominant cost and is invariant to the
     #    event-slot configurations.
     setup = _load_or_compute_focal_setup(all_data)
     print(f"  Focal region: {len(setup['focal_cells'])} cells")
@@ -1134,11 +1114,11 @@ def main():
     ssi_calc = fit_ssi_calculator(SSI_WINDOW)
 
     # 3b. FFMP seasonal rule curves (Watch / Warning / Emergency by
-    #     calendar day-of-year), drawn as faint bands behind panels e/f.
+    #     calendar day-of-year), drawn as dotted lines behind panels e/f.
     ffmp_seasonal = _build_ffmp_seasonal_lookup()
     if ffmp_seasonal is None:
         print("  Warning: FFMP boundaries unavailable; storage panels "
-              "will be drawn without rule-curve bands.")
+              "will be drawn without rule-curve lines.")
 
     # 4. Render each configured figure version. HDF5 event windows are
     #    cached across versions so shared events load only once.

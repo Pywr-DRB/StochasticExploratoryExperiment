@@ -1,7 +1,6 @@
 import pywrdrb
 import pandas as pd
 import numpy as np
-import sys
 
 
 def distribute_realizations_across_ranks(realization_ids, rank, num_ranks):

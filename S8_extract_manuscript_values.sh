@@ -11,13 +11,10 @@
 module load python/3.11.5
 source venv/bin/activate
 
-# Configuration name (determines output directory read from outputs/<CONFIG_NAME>/...)
-export CONFIG_NAME=${CONFIG_NAME:-default}
-
 mkdir -p logs
 
 echo "========================================"
-echo "Extracting manuscript values (CONFIG_NAME=$CONFIG_NAME)"
+echo "Extracting manuscript values"
 echo "========================================"
 
 python3 extract_manuscript_values.py
@@ -29,4 +26,4 @@ fi
 
 echo ""
 echo "Manuscript value extraction complete."
-echo "Outputs in: StochasticExploratoryExperiment/manuscript/"
+echo "Outputs in: manuscript/ensemble_stats/"
